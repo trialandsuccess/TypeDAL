@@ -27,7 +27,14 @@ class TypeDAL(pydal.DAL):
     """@DynamicAttrs"""
     dal: Table
 
-    def define(self, cls):
+    default_kwargs = {
+        # more risky to enable by default, so false:
+        'notnull': False,
+        # fields are required by default and can be nullable/optional with typing.Optional or Union with None (| None)
+        'required': True
+    }
+
+    def define(self, cls: typing.Type["TypedTable"]):
         tablename = self._to_snake(cls.__name__)
         table = self.define_table(
             tablename,
@@ -37,41 +44,57 @@ class TypeDAL(pydal.DAL):
               ]
         )
 
-        # todo: document:
-        table.cls = self
-        self.dal = table
+        cls.__set_internals__(db=self, table=table)
 
         return table
+
+    def __call__(self, *args, **kwargs) -> pydal.objects.Set:
+        args = list(args)
+        if args:
+            cls = args[0]
+            if issubclass(type(cls), type) and issubclass(cls, TypedTable):
+                # table defined without @db.define decorator!
+                args[0] = cls.id != None
+
+        return super().__call__(*args, **kwargs)
 
     # todo: insert etc shadowen?
 
     @classmethod
-    def _to_field(cls, fname, ftype):
+    def _build_field(cls, name, type, **kw):
+        return Field(name, type, **{**cls.default_kwargs, **kw})
+
+    @classmethod
+    def _to_field(cls, fname, ftype, **kw):
         fname = cls._to_snake(fname)
 
         if mapping := BASIC_MAPPINGS.get(ftype):
             # basi types
-            return Field(fname, mapping)
+            return cls._build_field(fname, mapping, **kw)
         elif isinstance(ftype, Table):
             # db.table
-            return Field(fname, f"reference {ftype._tablename}")
-        elif type(ftype) is type and issubclass(ftype, TypedRow):
+            return cls._build_field(fname, f"reference {ftype._tablename}", **kw)
+        elif issubclass(type(ftype), type) and issubclass(ftype, TypedTable):
             # SomeTable
             snakename = cls._to_snake(ftype.__name__)
-            return Field(fname, f"reference {snakename}")
+            return cls._build_field(fname, f"reference {snakename}", **kw)
         elif isinstance(ftype, TypedFieldType):
             # FieldType(type, ...)
-            return ftype.to_field(fname)
+            return ftype._to_field(fname, **kw)
         elif isinstance(ftype, types.GenericAlias):
             # list[...]
             _childtype = TypedFieldType._convert_generic_alias_list(ftype)
-            return Field(fname, f"list:{_childtype}")
+            return cls._build_field(fname, f"list:{_childtype}", **kw)
         elif isinstance(ftype, typing._UnionGenericAlias) or isinstance(ftype, types.UnionType):
             # typing.Optional[type] == type | None
             match ftype.__args__:
                 case (_child_type, _Types.NONETYPE):
                     # good union
-                    return cls._to_field(fname, _child_type)
+
+                    # if a field is optional, it can't be required or nutnull!
+                    kw['required'] = False
+                    kw['notnull'] = False
+                    return cls._to_field(fname, _child_type, **kw)
                 case other:
                     raise NotImplementedError(f"Invalid type union '{other}'")
         else:
@@ -84,13 +107,44 @@ class TypeDAL(pydal.DAL):
         return ''.join(['_' + c.lower() if c.isupper() else c for c in camel]).lstrip('_')
 
 
-class TypedRow(Row):
+class TypedTableMeta(type):
+    # meta class allows getattribute on class variables instead instance variables
+    def __getattr__(self, key):
+        # getattr is only called when getattribute can't find something
+        return self.__get_table_column__(key)
+
+
+class TypedTable(Table, metaclass=TypedTableMeta):
     id: int
 
+    # set up by db.define:
+    __db: TypeDAL = None
+    __table: Table = None
 
-class TypedRows(Rows):
-    # list of TypedRow
-    ...
+    @classmethod
+    def __set_internals__(cls, db, table):
+        cls.__db = db
+        cls.__table = table
+
+    @classmethod
+    def __get_table_column__(cls, col):
+        # db.table.col -> SomeTypedTable.col (via TypedTableMeta.__getattr__)
+        return cls.__table[col]
+
+    def __new__(cls, *a, **kw):
+        # when e.g. Table(id=0) is called without db.define,
+        # this catches it and forwards for proper behavior
+        return cls.__table(**kw)
+
+    @classmethod
+    def insert(cls, **fields):
+        # this is only called when db.define is not used as a decorator
+        # cls.__table functions as 'self'
+        super().insert(cls.__table, **fields)
+
+
+# backwards compat:
+TypedRow = TypedTable
 
 
 class TypedFieldType(Field):
@@ -108,16 +162,18 @@ class TypedFieldType(Field):
         if 'type' in self.kwargs:
             t = self.kwargs['type']
         else:
-            t = self.type.__name__ if type(self.type) is type else self.type
+            t = self.type.__name__ if issubclass(type(self.type), type) else self.type
         return f"TypedField.{t}"
 
-    def to_field(self, name: str) -> Field:
+    def _to_field(self, name: str, **extra_kwargs) -> Field:
         other_kwargs = self.kwargs.copy()
+        other_kwargs.update(extra_kwargs)
         if 'type' in other_kwargs:
             _type = other_kwargs.pop('type')
         else:
             _type = self._to_field_type(self.type)
-        return Field(name, _type, **other_kwargs)
+
+        return TypeDAL._build_field(name, _type, **other_kwargs)
 
     @classmethod
     def _to_field_type(cls, _type: type) -> str:
@@ -125,7 +181,7 @@ class TypedFieldType(Field):
         if mapping := BASIC_MAPPINGS.get(_type):
             # basic types
             return mapping
-        elif type(_type) is type and issubclass(_type, TypedRow):
+        elif issubclass(type(_type), type) and issubclass(_type, TypedTable):
             # SomeTable
             snakename = TypeDAL._to_snake(_type.__name__)
             return f"reference {snakename}"

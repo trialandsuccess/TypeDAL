@@ -1,1 +1,1 @@
-from .core import TypeDAL, TypedField, TypedRow
+from .core import TypeDAL, TypedField, TypedTable
