@@ -98,10 +98,12 @@ class TypedFieldType(Field):
         return f"TypedField.{t}"
 
     def to_field(self, name: str) -> Field:
-        _type = self._to_field_type(self.type)
-        if 'type' in self.kwargs:
-            _type = self.kwargs.pop('type')
-        return Field(name, _type, **self.kwargs)
+        other_kwargs = self.kwargs.copy()
+        if 'type' in other_kwargs:
+            _type = other_kwargs.pop('type')
+        else:
+            _type = self._to_field_type(self.type)
+        return Field(name, _type, **other_kwargs)
 
     @classmethod
     def _to_field_type(cls, _type: type) -> str:

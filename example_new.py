@@ -144,7 +144,7 @@ db.other_table.insert()
 other1 = db.other_table(id=1)
 other2 = db.other_table(id=2)
 
-with open('typedal.py', 'rb') as stream:
+with open('example_new.py', 'rb') as stream:
     db.all_fields_basic.insert(
         string="hi!",
         text="hi but longer",
@@ -167,7 +167,7 @@ with open('typedal.py', 'rb') as stream:
         bigint=42,
     )
 
-with open('typedal.py', 'rb') as stream:
+with open('example_new.py', 'rb') as stream:
     (
         AllFieldsAdvanced.insert(
             string="hi!",
