@@ -83,13 +83,19 @@ class TypedRows(Rows):
 
 
 class TypedFieldType(Field):
+    _table = "<any table>"
+
     def __init__(self, _type, **kwargs):
         self.type = _type
         self.kwargs = kwargs
 
     def __repr__(self):
+        s = self.__str__()
+        return f"<{s} with options {self.kwargs}>"
+
+    def __str__(self):
         t = self.type.__name__ if type(self.type) is type else self.type
-        return f"<TypedField {t} with options {self.kwargs}>"
+        return f"TypedField.{t}"
 
     def to_field(self, name: str) -> Field:
         _type = self._to_field_type(self.type)

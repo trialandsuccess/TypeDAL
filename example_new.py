@@ -110,7 +110,7 @@ class AllFieldsBasic(TypedRow):
     bigint: TypedField(int, type="bigint")
 
 
-# @db.define
+@db.define
 class AllFieldsAdvanced(TypedRow):
     # http://www.web2py.com/books/default/chapter/29/06/the-database-abstraction-layer#Field-types
 
