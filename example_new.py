@@ -99,7 +99,7 @@ class AllFieldsBasic(TypedRow):
     time: dt.time
     datetime: dt.datetime
     password: TypedField(str, type="password")
-    upload: TypedField(str, uploadfield="upload_data")
+    upload: TypedField(str, type="upload", uploadfield="upload_data")
     upload_data: bytes
     reference: OtherTable
     reference_two: TypedField(db.other_table)
@@ -110,7 +110,7 @@ class AllFieldsBasic(TypedRow):
     bigint: TypedField(int, type="bigint")
 
 
-@db.define
+# @db.define
 class AllFieldsAdvanced(TypedRow):
     # http://www.web2py.com/books/default/chapter/29/06/the-database-abstraction-layer#Field-types
 
@@ -126,7 +126,7 @@ class AllFieldsAdvanced(TypedRow):
     time: TypedField(dt.time)
     datetime: TypedField(dt.datetime)
     password: TypedField(str, type="password")
-    upload: TypedField(str, uploadfield="upload_data")
+    upload: TypedField(str, type="upload", uploadfield="upload_data")
     upload_data: TypedField(bytes)
     reference: TypedField(OtherTable)
     reference_two: TypedField(db.other_table)
