@@ -1,4 +1,4 @@
-from typedal import TypeDAL, TypedField, TypedRow
+from typedal import TypeDAL, TypedField, TypedTable
 
 import typing
 from decimal import Decimal
@@ -10,7 +10,7 @@ db = TypeDAL("sqlite:memory")
 ### basic examples
 
 @db.define
-class Person(TypedRow):
+class Person(TypedTable):
     name: str
 
     # todo: let pycharm know age is actually int
@@ -19,13 +19,13 @@ class Person(TypedRow):
 
 
 @db.define
-class Pet(TypedRow):
+class Pet(TypedTable):
     name: str
     owners: list[Person]
 
 
 # delayed define (without decorator):
-class Later(TypedRow):
+class Later(TypedTable):
     # date: date
     # time: time
     # datetime: datetime
@@ -57,11 +57,11 @@ print(type(db.later))
 ### example with all possible field types;
 
 @db.define
-class OtherTable(TypedRow):
+class OtherTable(TypedTable):
     ...
 
 
-# class AllFields(TypedRow):
+# class AllFields(TypedTable):
 #     # http://www.web2py.com/books/default/chapter/29/06/the-database-abstraction-layer#Field-types
 #     string: str | TypedField(str)
 #     text: TypedField(str, type="text")
@@ -85,7 +85,7 @@ class OtherTable(TypedRow):
 
 
 @db.define
-class AllFieldsBasic(TypedRow):
+class AllFieldsBasic(TypedTable):
     # http://www.web2py.com/books/default/chapter/29/06/the-database-abstraction-layer#Field-types
     string: typing.Optional[str]
     # string: str | None
@@ -102,7 +102,7 @@ class AllFieldsBasic(TypedRow):
     upload: TypedField(str, type="upload", uploadfield="upload_data")
     upload_data: bytes
     reference: OtherTable
-    reference_two: TypedField(db.other_table)
+    reference_two: typing.Optional[db.other_table]
     list_string: list[str]
     list_integer: list[int]
     list_reference: list[OtherTable]
@@ -111,7 +111,7 @@ class AllFieldsBasic(TypedRow):
 
 
 @db.define
-class AllFieldsAdvanced(TypedRow):
+class AllFieldsAdvanced(TypedTable):
     # http://www.web2py.com/books/default/chapter/29/06/the-database-abstraction-layer#Field-types
 
     # typing.Optional won't work on a TypedField! todo: document caveat
@@ -129,7 +129,7 @@ class AllFieldsAdvanced(TypedRow):
     upload: TypedField(str, type="upload", uploadfield="upload_data")
     upload_data: TypedField(bytes)
     reference: TypedField(OtherTable)
-    reference_two: TypedField(db.other_table)
+    reference_two: TypedField(db.other_table, required=False)
     list_string: TypedField(list[str])
     list_integer: TypedField(list[int])
     list_reference: TypedField(list[OtherTable])
