@@ -18,21 +18,32 @@ BASIC_MAPPINGS = {
     dt.datetime: "datetime",
 }
 
+
 class _Types:
     NONETYPE = type(None)
 
+
 class TypeDAL(pydal.DAL):
     """@DynamicAttrs"""
+    dal: Table
 
     def define(self, cls):
         tablename = self._to_snake(cls.__name__)
-        return self.define_table(
+        table = self.define_table(
             tablename,
             *[self._to_field(fname, ftype)
 
               for fname, ftype in cls.__annotations__.items()
               ]
         )
+
+        # todo: document:
+        table.cls = self
+        self.dal = table
+
+        return table
+
+    # todo: insert etc shadowen?
 
     @classmethod
     def _to_field(cls, fname, ftype):
@@ -94,7 +105,10 @@ class TypedFieldType(Field):
         return f"<{s} with options {self.kwargs}>"
 
     def __str__(self):
-        t = self.type.__name__ if type(self.type) is type else self.type
+        if 'type' in self.kwargs:
+            t = self.kwargs['type']
+        else:
+            t = self.type.__name__ if type(self.type) is type else self.type
         return f"TypedField.{t}"
 
     def to_field(self, name: str) -> Field:

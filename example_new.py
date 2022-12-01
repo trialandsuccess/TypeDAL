@@ -137,6 +137,13 @@ class AllFieldsAdvanced(TypedRow):
     bigint: TypedField(int, type="bigint")
 
 
+# todo: fix:
+# for fname, ftype in AllFieldsBasic.__annotations__.items():
+#     print(fname, repr(ftype))
+#
+# for fname, ftype in AllFieldsAdvanced.__annotations__.items():
+#     print(fname, repr(ftype))
+
 now = dt.datetime.utcnow()
 
 db.other_table.insert()
