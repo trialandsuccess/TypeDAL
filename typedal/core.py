@@ -23,6 +23,12 @@ class _Types:
     NONETYPE = type(None)
 
 
+# the input and output of TypeDAL.define
+T = typing.TypeVar("T",
+                   typing.Type["TypedTable"],
+                   typing.Type["Table"])
+
+
 class TypeDAL(pydal.DAL):
     """@DynamicAttrs"""
     dal: Table
@@ -34,7 +40,18 @@ class TypeDAL(pydal.DAL):
         'required': True
     }
 
-    def define(self, cls: typing.Type["TypedTable"]):
+    def define(self, cls: T) -> T:
+        # when __future__.annotations is implemented, cls.__annotations__ will not work anymore as below.
+        # proper way to handle this would be (but gives error right now due to Table implementing magic methods):
+        # typing.get_type_hints(cls, globalns=None, localns=None)
+
+        # dirty way (with evil eval):
+        # [eval(v) for k, v in cls.__annotations__.items()]
+        # this however also stops working when variables outside this scope or even references to other
+        # objects are used. So for now, this package will NOT work when from __future__ import annotations is used,
+        # and might break in the future, when this annotations behavior is enabled by default.
+        # todo: add to caveats
+
         tablename = self._to_snake(cls.__name__)
         table = self.define_table(
             tablename,
@@ -46,6 +63,8 @@ class TypeDAL(pydal.DAL):
 
         cls.__set_internals__(db=self, table=table)
 
+        # the ACTUAL output is not TypedTable but rather pydal.Table
+        # but telling the editor it is T helps with hinting.
         return table
 
     def __call__(self, *args, **kwargs) -> pydal.objects.Set:
@@ -65,7 +84,7 @@ class TypeDAL(pydal.DAL):
         return Field(name, type, **{**cls.default_kwargs, **kw})
 
     @classmethod
-    def _to_field(cls, fname, ftype, **kw):
+    def _to_field(cls, fname: str, ftype: type, **kw):
         fname = cls._to_snake(fname)
 
         if mapping := BASIC_MAPPINGS.get(ftype):
@@ -129,7 +148,8 @@ class TypedTable(Table, metaclass=TypedTableMeta):
     @classmethod
     def __get_table_column__(cls, col):
         # db.table.col -> SomeTypedTable.col (via TypedTableMeta.__getattr__)
-        return cls.__table[col]
+        if cls.__table:
+            return cls.__table[col]
 
     def __new__(cls, *a, **kw):
         # when e.g. Table(id=0) is called without db.define,
@@ -205,12 +225,3 @@ class TypedFieldType(Field):
         childtype = ftype.__args__[0]
 
         return cls._to_field_type(childtype)
-
-
-T = typing.TypeVar('T')
-
-
-def TypedField(_type: T, **kwargs) -> T:
-    # sneaky: het is een functie en geen class opdat er een return type is :)
-    # en de return type (T) is de input type in _type
-    return TypedFieldType(_type, **kwargs)

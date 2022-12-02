@@ -4,7 +4,7 @@ with open('README.md') as f:
     long_desc = f.read()
 
 setup(name='TypeDal',
-      version='0.3.0',
+      version='0.4.0',
       description='Typing support for PyDAL',
       author='Robin van der Noord',
       author_email='contact@trialandsuccess.nl',

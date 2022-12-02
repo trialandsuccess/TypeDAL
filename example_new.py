@@ -1,8 +1,10 @@
-from typedal import TypeDAL, TypedField, TypedTable
+from typedal import TypeDAL, TypedField, TypedTable, fields
 
 import typing
 from decimal import Decimal
 import datetime as dt
+
+from typedal.fields import TextField
 
 db = TypeDAL("sqlite:memory")
 
@@ -116,7 +118,7 @@ class AllFieldsAdvanced(TypedTable):
 
     # typing.Optional won't work on a TypedField! todo: document caveat
     string: TypedField(str, length=1000, notnull=False)
-    text: TypedField(str, notnull=True)
+    text: TextField()
     blob: TypedField(bytes)
     boolean: TypedField(bool)
     integer: TypedField(int)
@@ -136,6 +138,35 @@ class AllFieldsAdvanced(TypedTable):
     json: TypedField(object)
     bigint: TypedField(int, type="bigint")
 
+
+@db.define
+class AllFieldsExplicit(TypedTable):
+    # http://www.web2py.com/books/default/chapter/29/06/the-database-abstraction-layer#Field-types
+
+    # typing.Optional won't work on a TypedField! todo: document caveat
+    string: fields.StringField(length=1000, notnull=False)
+    text: fields.TextField()
+    blob: fields.BlobField()
+    boolean: fields.BooleanField()
+    integer: fields.IntegerField()
+    double: fields.DoubleField()
+    decimal: fields.DecimalField(n=2, m=3)
+    date: fields.DateField()
+    time: fields.TimeField()
+    datetime: fields.DatetimeField()
+    password: fields.PasswordField()
+    upload: fields.UploadField(uploadfield="upload_data")
+    upload_data: fields.BlobField()
+    reference: fields.ReferenceField("other_table")
+    reference_two: fields.ReferenceField("other_table", required=False)
+    list_string: fields.ListStringField()
+    list_integer: fields.ListIntegerField()
+    list_reference: fields.ListReferenceField('other_table')
+    json: fields.JSONField()
+    bigint: fields.BigintField()
+
+
+xyz = AllFieldsExplicit.text
 
 # todo: fix:
 # for fname, ftype in AllFieldsBasic.__annotations__.items():
@@ -199,6 +230,29 @@ with open('example_new.py', 'rb') as stream:
         )
     )
 
+with open('example_new.py', 'rb') as stream:
+    AllFieldsExplicit.insert(
+        string="hi!",
+        text="hi but longer",
+        blob=b"\x23",
+        boolean=True,
+        integer=1,
+        double=1.11111111111111111111111111111,
+        decimal=1.11111111111111111111111111111,
+        date=now.date(),
+        time=now.time(),
+        datetime=now,
+        password="secret",
+        upload=stream,
+        upload_data=stream.read(),
+        reference=other1,
+        list_string=["hi", "there"],
+        list_integer=[1, 2],
+        list_reference=[other1, other2],
+        json={'hi': 'there'},
+        bigint=42,
+    )
+
 rowa = db.all_fields_advanced(string="hi!")
 print('advanced')
 # for field in rowa:
@@ -207,6 +261,12 @@ print(rowa)
 
 print('basic')
 rowb = db.all_fields_basic(string="hi!")
+# for field in rowa:
+#     print(field, type(rowa[field]))
+print(rowb)
+
+print('explicit')
+rowb = db.all_fields_explicit(string="hi!")
 # for field in rowa:
 #     print(field, type(rowa[field]))
 print(rowb)

@@ -4,6 +4,8 @@ from sqlite3 import IntegrityError
 from typedal import *
 import pydal
 
+from typedal.fields import TextField
+
 db = TypeDAL("sqlite:memory")
 
 ### DEFINE
@@ -61,12 +63,11 @@ class SecondNewSyntax(TypedTable):
     # note: TypedField can NOT be used with typing.Optional or '| None' !!
     age: TypedField(float, required=True)
     # with extra options (and non-native type 'text'):
-    location: TypedField(str, type="text", default="Amsterdam")
+    location: TextField(default="Rotterdam")
     first_new_relation: TypedField(NewRelation)
     second_new_relation: TypedField(SecondNewRelation)
     # backwards compatible:
     old_relation: TypedField(db.relation, required=False)
-
 
 db.define(SecondNewSyntax)
 
