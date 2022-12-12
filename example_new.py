@@ -1,4 +1,6 @@
-from typedal import TypeDAL, TypedField, TypedTable, fields
+from pydal.objects import Set, Rows
+
+from typedal import TypeDAL, TypedField, TypedTable, TypedRows, fields
 
 import typing
 from decimal import Decimal
@@ -48,12 +50,12 @@ Pet.insert(name="Max", owners=[henk, ingrid])
 max = Pet(name="Max")
 print(max)
 
-people: list[Person] = db(db.person.id > 0).select()
+people: TypedRows[Person] = db(Person).select()  # db(db.person.id > 0).select()
+
+print(people.first())
 
 for person in people:
-    print(person.age)
-
-print(type(db.later))
+    print(person.nicknames)
 
 
 ### example with all possible field types;

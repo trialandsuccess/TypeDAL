@@ -225,3 +225,15 @@ class TypedFieldType(Field):
         childtype = ftype.__args__[0]
 
         return cls._to_field_type(childtype)
+
+
+S = typing.TypeVar('S')
+
+
+class TypedRows(typing.Collection[S], Rows):
+    """
+    Can be used as the return type of a .select()
+    e.g.
+
+    people: TypedRows[Person] = db(Person).select()
+    """

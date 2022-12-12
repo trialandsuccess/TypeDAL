@@ -6,6 +6,14 @@ type hinting the result of queries can improve the experience while developing. 
 generated and executed by pydal itself, this package only proves some logic to properly pass calls from class methods to
 the underlying `db.define_table` pydal Tables.
 
+- `TypeDAL` is the replacement class for DAL that manages the code on top of DAL.
+- `TypedTable` must be the parent class of any custom Tables you define (e.g. `class SomeTable(TypedTable)`)
+- `TypedField` can be used instead of Python native types when extra settings (such as default) are required (
+  e.g. `name: TypedField(str, default="John Doe")`)
+- `TypedRows`: can be used as the return type of .select() and subscribed with the actual table class, so
+  e.g. `rows: TypedRows[SomeTable]`. If you're lazy, `list[SomeTable]` works fine too but that misses hinting
+  possibilities such as `.first()`.
+
 ### Translations from pydal to typedal
 
 <table>
@@ -30,7 +38,7 @@ db = DAL(...)
 <td>
 
 ```python
-from typedal import TypeDAL, TypedTable, TypedField
+from typedal import TypeDAL, TypedTable, TypedField, TypedRows
 from typedal.fields import TextField
 from typing import Optional
 
@@ -121,7 +129,8 @@ TableName.insert(fieldname="value")
 <td>
 
 ```python
-row = db.table_name(id=1)  # -> Any
+rows = db(db.table_name).select()  # -> Any (Rows)
+row = db.table_name(id=1)  # -> Any (Row)
 ```
 
 </td>
@@ -131,12 +140,14 @@ row = db.table_name(id=1)  # -> Any
 <td>
 
 ```python
+rows: TypedRows[TableName] = db(db.table_name).select()  # -> TypedRows[TableName]
 row: TableName = db.table_name(id=1)  # -> TableName
 ```
 
 <td>
 
 ```python
+rows: TypedRows[TableName] = db(TableName).select()  # -> TypedRows[TableName]
 row = TableName(id=1)  # -> TableName
 ```
 
