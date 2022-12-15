@@ -58,7 +58,7 @@ Boolean = BooleanField
 
 def IntegerField(**kw) -> type(int):
     kw["type"] = "integer"
-    return TypedField(int(), **kw)
+    return TypedField(int, **kw)
 
 
 Integer = IntegerField
