@@ -4,7 +4,7 @@ from sqlite3 import IntegrityError
 from typedal import *
 import pydal
 
-from typedal.fields import TextField
+from typedal.fields import TextField, ReferenceField
 
 db = TypeDAL("sqlite:memory")
 
@@ -15,8 +15,8 @@ db = TypeDAL("sqlite:memory")
 db.define_table("relation")
 
 db.define_table("old_syntax",
-                pydal.Field("name", "string", required=True),
-                pydal.Field("age", "float", required=False),
+                pydal.Field("name", "string", notnull=True),
+                pydal.Field("age", "float", notnull=False),
                 pydal.Field("location", "text", default="Amsterdam"),
                 pydal.Field("relation", "reference relation")
                 )
@@ -61,13 +61,13 @@ class SecondNewSyntax(TypedTable):
     name: TypedField(str)
     # optional: (sets required=False and notnull=False)
     # note: TypedField can NOT be used with typing.Optional or '| None' !!
-    age: TypedField(float, required=True)
+    age: TypedField(float, notnull=False)
     # with extra options (and non-native type 'text'):
     location: TextField(default="Rotterdam")
-    first_new_relation: TypedField(NewRelation)
-    second_new_relation: TypedField(SecondNewRelation)
+    first_new_relation: ReferenceField(NewRelation)
+    second_new_relation: ReferenceField(db.second_new_relation)
     # backwards compatible:
-    old_relation: TypedField(db.relation, required=False)
+    old_relation: TypedField(db.relation, notnull=False)
 
 db.define(SecondNewSyntax)
 
@@ -84,13 +84,13 @@ SecondNewRelation.insert()
 try:
     db.old_syntax.insert()
     raise ValueError("RuntimeError should be raised (required)")
-except RuntimeError:
+except IntegrityError:
     # Table: missing required field: name
     ...
 
 try:
     db.first_new_syntax.insert()
-except RuntimeError:
+except IntegrityError:
     # Table: missing required field: name
     ...
 
@@ -98,14 +98,14 @@ except RuntimeError:
 
 try:
     FirstNewSyntax.insert()
-except RuntimeError:
+except IntegrityError:
     # Table: missing required field: name
     ...
 
 try:
     SecondNewSyntax.insert()
     raise ValueError("RuntimeError should be raised (required)")
-except RuntimeError:
+except IntegrityError:
     # Table: missing required field: name
     ...
 

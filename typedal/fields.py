@@ -1,6 +1,6 @@
 import types
 import typing
-from .core import TypedFieldType
+from .core import TypedFieldType, TypedTable, TypeDAL
 
 import decimal
 import datetime as dt
@@ -119,9 +119,23 @@ def UploadField(**kw) -> TYPE_STR:
 
 Upload = UploadField
 
+from pydal.objects import Table
+
 
 def ReferenceField(other_table, **kw) -> TYPE_INT:
-    kw["type"] = "reference " + other_table
+    if isinstance(other_table, str):
+        kw["type"] = "reference " + other_table
+
+    elif isinstance(other_table, Table):
+        # db.table
+        kw["type"] = f"reference {other_table._tablename}"
+    elif issubclass(type(other_table), type) and issubclass(other_table, TypedTable):
+        # SomeTable
+        snakename = TypeDAL._to_snake(other_table.__name__)
+        kw["type"] = f"reference {snakename}"
+    else:
+        raise ValueError(f"Don't know what to do with {type(other_table)}")
+
     return TypedField(int, **kw)
 
 

@@ -34,10 +34,8 @@ class TypeDAL(pydal.DAL):
     dal: Table
 
     default_kwargs = {
-        # more risky to enable by default, so false:
-        'notnull': False,
-        # fields are required by default and can be nullable/optional with typing.Optional or Union with None (| None)
-        'required': True
+        # fields are 'required' (notnull) by default:
+        'notnull': True,
     }
 
     def define(self, cls: T) -> T:
@@ -110,8 +108,7 @@ class TypeDAL(pydal.DAL):
                 case (_child_type, _Types.NONETYPE):
                     # good union
 
-                    # if a field is optional, it can't be required or nutnull!
-                    kw['required'] = False
+                    # if a field is optional, it is nullable:
                     kw['notnull'] = False
                     return cls._to_field(fname, _child_type, **kw)
                 case other:
