@@ -28,6 +28,44 @@ T = typing.TypeVar("T",
                    typing.Type["TypedTable"],
                    typing.Type["Table"])
 
+import builtins, ast
+def chatgpt_get_class(class_name: str):
+    # noinspection PyUnresolvedReferences
+    # required for get_class:
+    from .fields import TypedField
+
+    # Check if the class name is a built-in type
+    if hasattr(builtins, class_name):
+        return getattr(builtins, class_name)
+
+    # Parse the string representation of the class
+    node = ast.parse(class_name).body[0]
+
+    # Extract the class object
+    if isinstance(node, ast.ClassDef):
+        # Evaluate the class definition
+        return eval(class_name, globals(), locals())
+    elif isinstance(node, ast.FunctionDef):
+        # Evaluate the function call
+        return eval(class_name, globals(), locals())
+    elif isinstance(node, ast.Expr):
+        # Check the type of the expression
+        if isinstance(node.value, ast.Name):
+            return eval(class_name, globals(), locals())
+        elif isinstance(node.value, ast.Call):
+            # Evaluate the function call
+            return eval(class_name, globals(), locals())
+        elif isinstance(node.value, ast.Subscript):
+            # Evaluate the subscripted object
+
+            print(globals())
+
+            return eval(class_name, globals(), locals())
+        else:
+            raise ValueError(f"Invalid class definition: {class_name}")
+    else:
+        raise ValueError(f"Invalid class definition: {class_name}")
+
 
 class TypeDAL(pydal.DAL):
     """@DynamicAttrs"""
@@ -43,6 +81,14 @@ class TypeDAL(pydal.DAL):
         # proper way to handle this would be (but gives error right now due to Table implementing magic methods):
         # typing.get_type_hints(cls, globalns=None, localns=None)
 
+        annotations = {}
+        for name, annotation in cls.__annotations__.items():
+            result = chatgpt_get_class(annotation)
+            annotations[name] = result
+
+        # old:
+        # annotations = cls.__annotations__
+
         # dirty way (with evil eval):
         # [eval(v) for k, v in cls.__annotations__.items()]
         # this however also stops working when variables outside this scope or even references to other
@@ -55,7 +101,7 @@ class TypeDAL(pydal.DAL):
             tablename,
             *[self._to_field(fname, ftype)
 
-              for fname, ftype in cls.__annotations__.items()
+              for fname, ftype in annotations.items()
               ]
         )
 

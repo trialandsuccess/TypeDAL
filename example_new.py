@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pydal.objects import Set, Rows
 
 from typedal import TypeDAL, TypedField, TypedTable, TypedRows, fields
