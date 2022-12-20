@@ -21,6 +21,9 @@ class Person(TypedTable):
     age: TypedField(int, default=18)
     nicknames: list[str]
 
+    format = "%(name)s"
+
+assert db.person._format == "%(name)s"
 
 @db.define
 class Pet(TypedTable):

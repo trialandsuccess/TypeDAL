@@ -24,18 +24,17 @@ class _Types:
 
 
 # the input and output of TypeDAL.define
-T = typing.TypeVar("T",
-                   typing.Type["TypedTable"],
-                   typing.Type["Table"])
+T = typing.TypeVar("T", typing.Type["TypedTable"], typing.Type["Table"])
 
 
 class TypeDAL(pydal.DAL):
     """@DynamicAttrs"""
+
     dal: Table
 
     default_kwargs = {
         # fields are 'required' (notnull) by default:
-        'notnull': True,
+        "notnull": True,
     }
 
     def define(self, cls: T) -> T:
@@ -50,14 +49,19 @@ class TypeDAL(pydal.DAL):
         # and might break in the future, when this annotations behavior is enabled by default.
         # todo: add to caveats
 
-        tablename = self._to_snake(cls.__name__)
-        table = self.define_table(
-            tablename,
-            *[self._to_field(fname, ftype)
+        # non-annotated variables have to be passed to define_table as kwargs
 
-              for fname, ftype in cls.__annotations__.items()
-              ]
-        )
+        tablename = self._to_snake(cls.__name__)
+        fields = [
+            self._to_field(fname, ftype) for fname, ftype in cls.__annotations__.items()
+        ]
+        other_kwargs = {
+            k: v
+            for k, v in cls.__dict__.items()
+            if k not in cls.__annotations__ and not k.startswith("_")
+        }
+
+        table = self.define_table(tablename, *fields, **other_kwargs)
 
         cls.__set_internals__(db=self, table=table)
 
@@ -102,14 +106,16 @@ class TypeDAL(pydal.DAL):
             # list[...]
             _childtype = TypedFieldType._convert_generic_alias_list(ftype)
             return cls._build_field(fname, f"list:{_childtype}", **kw)
-        elif isinstance(ftype, typing._UnionGenericAlias) or isinstance(ftype, types.UnionType):
+        elif isinstance(ftype, typing._UnionGenericAlias) or isinstance(
+            ftype, types.UnionType
+        ):
             # typing.Optional[type] == type | None
             match ftype.__args__:
                 case (_child_type, _Types.NONETYPE):
                     # good union
 
                     # if a field is optional, it is nullable:
-                    kw['notnull'] = False
+                    kw["notnull"] = False
                     return cls._to_field(fname, _child_type, **kw)
                 case other:
                     raise NotImplementedError(f"Invalid type union '{other}'")
@@ -120,7 +126,9 @@ class TypeDAL(pydal.DAL):
     @staticmethod
     def _to_snake(camel: str) -> str:
         # https://stackoverflow.com/a/44969381
-        return ''.join(['_' + c.lower() if c.isupper() else c for c in camel]).lstrip('_')
+        return "".join(["_" + c.lower() if c.isupper() else c for c in camel]).lstrip(
+            "_"
+        )
 
 
 class TypedTableMeta(type):
@@ -176,8 +184,8 @@ class TypedFieldType(Field):
         return f"<{s} with options {self.kwargs}>"
 
     def __str__(self):
-        if 'type' in self.kwargs:
-            t = self.kwargs['type']
+        if "type" in self.kwargs:
+            t = self.kwargs["type"]
         else:
             t = self.type.__name__ if issubclass(type(self.type), type) else self.type
         return f"TypedField.{t}"
@@ -185,8 +193,8 @@ class TypedFieldType(Field):
     def _to_field(self, name: str, **extra_kwargs) -> Field:
         other_kwargs = self.kwargs.copy()
         other_kwargs.update(extra_kwargs)
-        if 'type' in other_kwargs:
-            _type = other_kwargs.pop('type')
+        if "type" in other_kwargs:
+            _type = other_kwargs.pop("type")
         else:
             _type = self._to_field_type(self.type)
 
@@ -224,7 +232,7 @@ class TypedFieldType(Field):
         return cls._to_field_type(childtype)
 
 
-S = typing.TypeVar('S')
+S = typing.TypeVar("S")
 
 
 class TypedRows(typing.Collection[S], Rows):

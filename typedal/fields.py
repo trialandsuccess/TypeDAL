@@ -5,14 +5,16 @@ from .core import TypedFieldType, TypedTable, TypeDAL
 import decimal
 import datetime as dt
 
-T = typing.TypeVar('T')
+T = typing.TypeVar("T")
 
 
 ## general
 
-def TypedField(_type: T,
-               **kwargs,
-               ) -> T:
+
+def TypedField(
+    _type: T,
+    **kwargs,
+) -> T:
     # sneaky: het is een functie en geen class opdat er een return type is :)
     # en de return type (T) is de input type in _type
     return TypedFieldType(_type, **kwargs)
@@ -25,7 +27,7 @@ TYPE_LIST_OF_INT = type(list[int])
 
 ## specific
 def StringField(**kw) -> TYPE_STR:
-    kw['type'] = "string"
+    kw["type"] = "string"
     return TypedField(str, **kw)
 
 
@@ -33,7 +35,7 @@ String = StringField
 
 
 def TextField(**kw) -> TYPE_STR:
-    kw['type'] = "text"
+    kw["type"] = "text"
     return TypedField(str, **kw)
 
 
@@ -73,7 +75,7 @@ Double = DoubleField
 
 
 def DecimalField(n, m, **kw) -> type(decimal.Decimal):
-    kw['type'] = f'decimal({n}, {m})'
+    kw["type"] = f"decimal({n}, {m})"
     return TypedField(decimal.Decimal, **kw)
 
 
@@ -81,7 +83,7 @@ Decimal = DecimalField
 
 
 def DateField(**kw) -> type(dt.date):
-    kw['type'] = 'date'
+    kw["type"] = "date"
     return TypedField(dt.date, **kw)
 
 
@@ -89,7 +91,7 @@ Date = DateField
 
 
 def TimeField(**kw) -> type(dt.time):
-    kw['type'] = 'time'
+    kw["type"] = "time"
     return TypedField(dt.time, **kw)
 
 
@@ -97,7 +99,7 @@ Time = TimeField
 
 
 def DatetimeField(**kw) -> type(dt.datetime):
-    kw['type'] = 'datetime'
+    kw["type"] = "datetime"
     return TypedField(dt.datetime, **kw)
 
 
@@ -105,7 +107,7 @@ Datetime = DatetimeField
 
 
 def PasswordField(**kw) -> TYPE_STR:
-    kw['type'] = "password"
+    kw["type"] = "password"
     return TypedField(str, **kw)
 
 
@@ -113,7 +115,7 @@ Password = PasswordField
 
 
 def UploadField(**kw) -> TYPE_STR:
-    kw['type'] = 'upload'
+    kw["type"] = "upload"
     return TypedField(str, **kw)
 
 
@@ -143,7 +145,7 @@ Reference = ReferenceField
 
 
 def ListStringField(**kw) -> type(list[str]):
-    kw['type'] = "list:string"
+    kw["type"] = "list:string"
     return TypedField(list[str], **kw)
 
 
@@ -151,7 +153,7 @@ ListString = ListStringField
 
 
 def ListIntegerField(**kw) -> TYPE_LIST_OF_INT:
-    kw['type'] = "list:integer"
+    kw["type"] = "list:integer"
     return TypedField(list, **kw)
 
 
@@ -159,7 +161,7 @@ ListInteger = ListIntegerField
 
 
 def ListReferenceField(other_table, **kw) -> TYPE_LIST_OF_INT:
-    kw['type'] = f"list:reference {other_table}"
+    kw["type"] = f"list:reference {other_table}"
     return TypedField(list, **kw)
 
 
@@ -167,7 +169,7 @@ ListReference = ListReferenceField
 
 
 def JSONField(**kw) -> type(object):
-    kw['type'] = 'json'
+    kw["type"] = "json"
     return TypedField(object, **kw)
 
 
