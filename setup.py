@@ -5,7 +5,7 @@ with open('README.md') as f:
 
 setup(
     name='TypeDal',
-    version='0.6.0',
+    version='0.6.1',
     description='Typing support for PyDAL',
     author='Robin van der Noord',
     author_email='contact@trialandsuccess.nl',
