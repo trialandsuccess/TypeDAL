@@ -137,5 +137,9 @@ _print_and_assert_len(db(db.first_new_syntax.id > 0).select().as_list(), 2)
 _print_and_assert_len(db(FirstNewSyntax).select().as_list(), 2)
 _print_and_assert_len(db(FirstNewSyntax.id > 0).select().as_list(), 2)
 
+assert SecondNewSyntax(id=1) is not None
+assert SecondNewSyntax(1) is not None
+assert SecondNewSyntax(id=2) is None
+assert SecondNewSyntax(2) is None
 _print_and_assert_len(db(SecondNewSyntax).select().as_list(), 1)
 _print_and_assert_len(db(SecondNewSyntax.id > 0).select().as_list(), 1)

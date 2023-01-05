@@ -159,7 +159,7 @@ class TypedTable(Table, metaclass=TypedTableMeta):
     def __new__(cls, *a, **kw):
         # when e.g. Table(id=0) is called without db.define,
         # this catches it and forwards for proper behavior
-        return cls.__table(**kw)
+        return cls.__table(*a, **kw)
 
     @classmethod
     def insert(cls, **fields):
