@@ -1,9 +1,9 @@
-import types
 import typing
 from .core import TypedFieldType, TypedTable, TypeDAL
 
 import decimal
 import datetime as dt
+from pydal.objects import Table
 
 T = typing.TypeVar("T")
 
@@ -20,9 +20,9 @@ def TypedField(
     return TypedFieldType(_type, **kwargs)
 
 
-TYPE_STR = type(str)
-TYPE_INT = type(int)
-TYPE_LIST_OF_INT = type(list[int])
+TYPE_STR = typing.Type[str]
+TYPE_INT = typing.Type[int]
+TYPE_LIST_OF_INT = typing.Type[list[int]]
 
 
 ## specific
@@ -42,7 +42,7 @@ def TextField(**kw) -> TYPE_STR:
 Text = TextField
 
 
-def BlobField(**kw) -> type(bytes):
+def BlobField(**kw) -> typing.Type[bytes]:
     kw["type"] = "blob"
     return TypedField(bytes, **kw)
 
@@ -50,7 +50,7 @@ def BlobField(**kw) -> type(bytes):
 Blob = BlobField
 
 
-def BooleanField(**kw) -> type(bool):
+def BooleanField(**kw) -> typing.Type[bool]:
     kw["type"] = "boolean"
     return TypedField(bool, **kw)
 
@@ -58,7 +58,7 @@ def BooleanField(**kw) -> type(bool):
 Boolean = BooleanField
 
 
-def IntegerField(**kw) -> type(int):
+def IntegerField(**kw) -> typing.Type[int]:
     kw["type"] = "integer"
     return TypedField(int, **kw)
 
@@ -66,7 +66,7 @@ def IntegerField(**kw) -> type(int):
 Integer = IntegerField
 
 
-def DoubleField(**kw) -> type(float):
+def DoubleField(**kw) -> typing.Type[float]:
     kw["type"] = "double"
     return TypedField(float, **kw)
 
@@ -74,7 +74,7 @@ def DoubleField(**kw) -> type(float):
 Double = DoubleField
 
 
-def DecimalField(n, m, **kw) -> type(decimal.Decimal):
+def DecimalField(n, m, **kw) -> typing.Type[decimal.Decimal]:
     kw["type"] = f"decimal({n}, {m})"
     return TypedField(decimal.Decimal, **kw)
 
@@ -82,7 +82,7 @@ def DecimalField(n, m, **kw) -> type(decimal.Decimal):
 Decimal = DecimalField
 
 
-def DateField(**kw) -> type(dt.date):
+def DateField(**kw) -> typing.Type[dt.date]:
     kw["type"] = "date"
     return TypedField(dt.date, **kw)
 
@@ -90,7 +90,7 @@ def DateField(**kw) -> type(dt.date):
 Date = DateField
 
 
-def TimeField(**kw) -> type(dt.time):
+def TimeField(**kw) -> typing.Type[dt.time]:
     kw["type"] = "time"
     return TypedField(dt.time, **kw)
 
@@ -98,7 +98,7 @@ def TimeField(**kw) -> type(dt.time):
 Time = TimeField
 
 
-def DatetimeField(**kw) -> type(dt.datetime):
+def DatetimeField(**kw) -> typing.Type[dt.datetime]:
     kw["type"] = "datetime"
     return TypedField(dt.datetime, **kw)
 
@@ -121,8 +121,6 @@ def UploadField(**kw) -> TYPE_STR:
 
 Upload = UploadField
 
-from pydal.objects import Table
-
 
 def ReferenceField(other_table, **kw) -> TYPE_INT:
     if isinstance(other_table, str):
@@ -144,7 +142,7 @@ def ReferenceField(other_table, **kw) -> TYPE_INT:
 Reference = ReferenceField
 
 
-def ListStringField(**kw) -> type(list[str]):
+def ListStringField(**kw) -> typing.Type[list[str]]:
     kw["type"] = "list:string"
     return TypedField(list[str], **kw)
 
@@ -168,7 +166,7 @@ def ListReferenceField(other_table, **kw) -> TYPE_LIST_OF_INT:
 ListReference = ListReferenceField
 
 
-def JSONField(**kw) -> type(object):
+def JSONField(**kw) -> typing.Type[object]:
     kw["type"] = "json"
     return TypedField(object, **kw)
 
