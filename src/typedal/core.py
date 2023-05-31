@@ -4,7 +4,7 @@ import typing
 from decimal import Decimal
 
 import pydal
-from pydal.objects import Field, Row, Rows, Table  # *?
+from pydal.objects import Field, Rows, Table
 
 BASIC_MAPPINGS = {
     str: "string",
