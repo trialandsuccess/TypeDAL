@@ -57,7 +57,7 @@ build_command = "hatch build"
 directory = "src"
 include = []
 exclude = []
-coverage = 99
+coverage = 100
 badge = true
 
 [tool.black]
@@ -75,7 +75,7 @@ extend-exclude = '''
 '''
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 
 # `some: int = None` looks nicer than `some: int | None = None` and pycharm still understands it
 no_implicit_optional = false  # I guess 'strict_optional' should be true, but disable this one because it's double!
@@ -96,14 +96,28 @@ exclude = ["venv", ".bak"]
 [tool.ruff]
 target-version = "py310"
 line-length = 120
+
+select = [
+    "F", # pyflake error
+    "E", # pycodestyle error
+    "W", # pycodestyle warning
+    "Q", # quotes
+    "A", # builtins
+    # "C4", # comprehensions - NO: doesn't allow dict()
+    # "RET", # return - NO: annoying
+    "SIM", # simplify
+    "ARG", # unused arguments
+    # "COM", # comma's - NO: annoying
+    # "PTH", # use pathlib - NO: annoying
+    "RUF", # ruff rules
+]
 unfixable = [
     # Don't touch unused imports
     "F401",
 ]
-
 extend-ignore = [
     # db.field == None should NOT be fixed to db.field is None
-    "E711"
+    "E711",
 ]
 
 extend-exclude = ["*.bak/", "venv*/"]

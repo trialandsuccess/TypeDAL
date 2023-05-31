@@ -6,7 +6,7 @@ from decimal import Decimal
 import pydal
 from pydal.objects import Field, Query, Row, Rows, Table
 
-BASIC_MAPPINGS = {
+BASIC_MAPPINGS: dict[type, str] = {
     str: "string",
     int: "integer",
     bool: "boolean",
@@ -92,8 +92,8 @@ class TypeDAL(pydal.DAL):  # type: ignore
     # todo: insert etc shadowen?
 
     @classmethod
-    def _build_field(cls, name: str, type: str, **kw: typing.Any) -> Field:
-        return Field(name, type, **{**cls.default_kwargs, **kw})
+    def _build_field(cls, name: str, _type: str, **kw: typing.Any) -> Field:
+        return Field(name, _type, **{**cls.default_kwargs, **kw})
 
     @classmethod
     def _to_field(cls, fname: str, ftype: type, **kw: typing.Any) -> Field:
@@ -168,7 +168,7 @@ class TypedTableMeta(type):
 
 
 class TypedTable(Table, metaclass=TypedTableMeta):  # type: ignore
-    id: int
+    id: int  # noqa: 'id' has to be id since that's the db column
 
     # set up by db.define:
     __db: TypeDAL | None = None
@@ -224,11 +224,11 @@ TypedRow = TypedTable
 
 class TypedFieldType(Field):  # type: ignore
     _table = "<any table>"
-    type: type
+    _type: type
     kwargs: typing.Any
 
     def __init__(self, _type: typing.Type[typing.Any], **kwargs: typing.Any) -> None:
-        self.type = _type
+        self._type = _type
         self.kwargs = kwargs
 
     def __repr__(self) -> str:
@@ -239,16 +239,13 @@ class TypedFieldType(Field):  # type: ignore
         if "type" in self.kwargs:
             t = self.kwargs["type"]
         else:
-            t = self.type.__name__ if issubclass(type(self.type), type) else self.type
+            t = self._type.__name__ if issubclass(type(self._type), type) else self._type
         return f"TypedField.{t}"
 
     def _to_field(self, name: str, **extra_kwargs: typing.Any) -> Field:
         other_kwargs = self.kwargs.copy()
         other_kwargs.update(extra_kwargs)
-        if "type" in other_kwargs:
-            _type = other_kwargs.pop("type")
-        else:
-            _type = self._to_field_type(self.type)
+        _type = other_kwargs.pop("type", False) or self._to_field_type(self._type)
 
         return TypeDAL._build_field(name, _type, **other_kwargs)
 
