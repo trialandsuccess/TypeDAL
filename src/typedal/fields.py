@@ -1,9 +1,10 @@
-import typing
-from .core import TypedFieldType, TypedTable, TypeDAL
-
-import decimal
 import datetime as dt
+import decimal
+import typing
+
 from pydal.objects import Table
+
+from .core import TypeDAL, TypedFieldType, TypedTable
 
 T = typing.TypeVar("T")
 

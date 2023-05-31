@@ -1,9 +1,10 @@
-import pydal
-from pydal.objects import Row, Rows, Field, Table  # *?
-import typing
-import types
 import datetime as dt
+import types
+import typing
 from decimal import Decimal
+
+import pydal
+from pydal.objects import Field, Row, Rows, Table  # *?
 
 BASIC_MAPPINGS = {
     str: "string",
@@ -52,14 +53,8 @@ class TypeDAL(pydal.DAL):
         # non-annotated variables have to be passed to define_table as kwargs
 
         tablename = self._to_snake(cls.__name__)
-        fields = [
-            self._to_field(fname, ftype) for fname, ftype in cls.__annotations__.items()
-        ]
-        other_kwargs = {
-            k: v
-            for k, v in cls.__dict__.items()
-            if k not in cls.__annotations__ and not k.startswith("_")
-        }
+        fields = [self._to_field(fname, ftype) for fname, ftype in cls.__annotations__.items()]
+        other_kwargs = {k: v for k, v in cls.__dict__.items() if k not in cls.__annotations__ and not k.startswith("_")}
 
         table = self.define_table(tablename, *fields, **other_kwargs)
 
@@ -106,9 +101,7 @@ class TypeDAL(pydal.DAL):
             # list[...]
             _childtype = TypedFieldType._convert_generic_alias_list(ftype)
             return cls._build_field(fname, f"list:{_childtype}", **kw)
-        elif isinstance(ftype, typing._UnionGenericAlias) or isinstance(
-            ftype, types.UnionType
-        ):
+        elif isinstance(ftype, typing._UnionGenericAlias) or isinstance(ftype, types.UnionType):
             # typing.Optional[type] == type | None
             match ftype.__args__:
                 case (_child_type, _Types.NONETYPE):
@@ -126,9 +119,7 @@ class TypeDAL(pydal.DAL):
     @staticmethod
     def _to_snake(camel: str) -> str:
         # https://stackoverflow.com/a/44969381
-        return "".join(["_" + c.lower() if c.isupper() else c for c in camel]).lstrip(
-            "_"
-        )
+        return "".join(["_" + c.lower() if c.isupper() else c for c in camel]).lstrip("_")
 
 
 class TypedTableMeta(type):

@@ -38,8 +38,8 @@ db = DAL(...)
 <td>
 
 ```python
-from typedal import TypeDAL, TypedTable, TypedField, TypedRows
-from typedal.fields import TextField
+from src.typedal import TypeDAL, TypedTable, TypedField, TypedRows
+from src.typedal.fields import TextField
 from typing import Optional
 
 db = TypeDAL(...)

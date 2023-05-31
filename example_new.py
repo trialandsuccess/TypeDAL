@@ -1,12 +1,10 @@
-from pydal.objects import Set, Rows
-
-from typedal import TypeDAL, TypedField, TypedTable, TypedRows, fields
+from src.typedal import TypeDAL, TypedField, TypedTable, TypedRows, fields
 
 import typing
 from decimal import Decimal
 import datetime as dt
 
-from typedal.fields import TextField
+from src.typedal.fields import TextField
 
 db = TypeDAL("sqlite:memory")
 

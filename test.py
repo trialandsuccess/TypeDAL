@@ -1,10 +1,10 @@
 import typing
 from sqlite3 import IntegrityError
 
-from typedal import *
+from src.typedal import *
 import pydal
 
-from typedal.fields import TextField, ReferenceField
+from src.typedal.fields import TextField, ReferenceField
 
 db = TypeDAL("sqlite:memory")
 

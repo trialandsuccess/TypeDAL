@@ -1,0 +1,142 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "TypeDal"
+dynamic = ["version"]
+description = 'Typing support for PyDAL'
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+keywords = []
+authors = [
+    { name = "Robin van der Noord", email = "robinvandernoord@gmail.com" },
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+]
+dependencies = [
+    "pydal",
+]
+
+[template.plugins.default]
+src-layout = true
+
+[project.optional-dependencies]
+dev = [
+    "hatch",
+    "su6[all]",
+    "python-semantic-release",
+]
+
+[project.urls]
+Documentation = "https://github.com/trialandsuccess/TypeDAL#readme"
+Issues = "https://github.com/trialandsuccess/TypeDAL/issues"
+Source = "https://github.com/trialandsuccess/TypeDAL"
+
+[tool.hatch.version]
+path = "src/typedal/__about__.py"
+
+[tool.semantic_release]
+branch = "master"
+version_variable = "src/typedal/__about__.py:__version__"
+change_log = "CHANGELOG.md"
+upload_to_repository = false
+upload_to_release = false
+build_command = "hatch build"
+
+### required in every su6 pyproject: ###
+[tool.su6]
+directory = "src"
+include = []
+exclude = []
+coverage = 99
+badge = true
+
+[tool.black]
+target-version = ["py310"]
+line-length = 120
+# 'extend-exclude' excludes files or directories in addition to the defaults
+extend-exclude = '''
+# A regex preceded with ^/ will apply only to files and directories
+# in the root of the project.
+(
+  ^.*\.bak\/.+     # ignore every .bak directory
+  ^.*venv.+\/.+    # ignore every venv directory
+  venv.+|.+\.bak   # idk why it suddenly works, let's not touch it
+)
+'''
+
+[tool.mypy]
+python_version = "3.10"
+
+# `some: int = None` looks nicer than `some: int | None = None` and pycharm still understands it
+no_implicit_optional = false  # I guess 'strict_optional' should be true, but disable this one because it's double!
+# same as above (thrown if no_implicit_optional = False)
+# ACTUALLY: not the same! Setting strict_optional = false may miss some type errors like
+# 'Item "None" of "Optional" has no attribute "lower"'
+# 'strict_optional' complains more for class properties and 'no_implicit_optional' for function arguments
+# strict_optional = false
+# 3rd party packages may not be typed, that's not my fault!
+ignore_missing_imports = true
+# kinda hypocritical to disable Optional and still enable strict, but I do agree with some other strict rules.
+strict = true
+# fixes defs with clear return var (doesn't seem to work for __init__ which is the most obvious case)
+# check_untyped_defs = True
+
+exclude = ["venv", ".bak"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+unfixable = [
+    # Don't touch unused imports
+    "F401",
+]
+extend-exclude = ["*.bak/", "venv*/"]
+
+[tool.bandit]
+# bandit -c pyproject.toml -r .
+exclude_dirs = [".bak", "venv"]
+skips = [
+    "B108"  # hard coded /tmp/... files are fine for me tbh
+]
+
+[tool.isort]
+profile = "black"
+extend_skip_glob = ["*.bak/*"]
+
+[tool.pydocstyle]
+convention = "google"
+match-dir = '(?!venv)[^\.].*'
+add_select = [
+    "D213", # = Multi-line docstring summary should start at the second line
+    "D416", # = Google-style section name checks.
+    "D417", # = Missing argument descriptions in the docstring
+]
+add_ignore = [
+    "D200", # = One-line docstring should fit on one line with quotes
+    "D212", # = Multi-line docstring summary should start at the first line
+]
+
+### and if it's a project and NOT a package, add this to make it not look for anything buildable: ###
+# make this a meta package: not a library but simply allow me to run `pip install .[dev]`
+#[build-system]
+#build-backend = "setuptools.build_meta"
+#requires = ["setuptools"]
+#
+#[tool.setuptools.packages.find]
+## look nowhere for any code to 'build' since this is just used to manage (dev) dependencies
+#where = []
+
+[tool.pytest.ini_options]
+pythonpath = [
+    "src",
+]
