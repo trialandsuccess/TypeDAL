@@ -3,9 +3,9 @@
 <!--next-version-placeholder-->
 
 ## v1.0.0 (2023-06-05)
+Refactored pre-1.0 code and added [su6](https://github.com/robinvandernoord/su6-checker) checker tool.  
+Moved to `pyproject.toml` based build system.
 
-
-## v1.0.0-beta.1 (2023-06-05)
 ### Feature
 * **su6:** Add github workflow with checkers ([`d462387`](https://github.com/trialandsuccess/TypeDAL/commit/d46238705b27137ed60806eca5c53d8c2940052f))
 * **tests:** Moved tests.py to pytest ([`de33d20`](https://github.com/trialandsuccess/TypeDAL/commit/de33d2053e6499c4a8628cfc4b8813b5a649c584))
