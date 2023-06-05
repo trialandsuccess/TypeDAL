@@ -2,6 +2,9 @@
 
 <!--next-version-placeholder-->
 
+## v1.0.0 (2023-06-05)
+
+
 ## v1.0.0-beta.1 (2023-06-05)
 ### Feature
 * **su6:** Add github workflow with checkers ([`d462387`](https://github.com/trialandsuccess/TypeDAL/commit/d46238705b27137ed60806eca5c53d8c2940052f))
