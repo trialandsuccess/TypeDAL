@@ -1,3 +1,7 @@
+"""
+Core functionality of TypeDAL.
+"""
+
 import datetime as dt
 import types
 import typing
@@ -6,7 +10,10 @@ from decimal import Decimal
 import pydal
 from pydal.objects import Field, Query, Row, Rows, Table
 
-BASIC_MAPPINGS: dict[type, str] = {
+# use typing.cast(type, ...) to make mypy happy with unions
+T_annotation = typing.Type[typing.Any] | types.UnionType
+
+BASIC_MAPPINGS: dict[T_annotation, str] = {
     str: "string",
     int: "integer",
     bool: "boolean",
@@ -22,7 +29,7 @@ BASIC_MAPPINGS: dict[type, str] = {
 
 class _Types:
     """
-    Internal type storage for stuff that mypy otherwise won't understand
+    Internal type storage for stuff that mypy otherwise won't understand.
     """
 
     NONETYPE = type(None)
@@ -33,10 +40,21 @@ T = typing.TypeVar("T", typing.Type["TypedTable"], typing.Type["Table"])
 
 
 def is_union(some_type: type) -> bool:
+    """
+    Check if a type is some type of Union.
+
+    Args:
+        some_type: types.UnionType = type(int | str); typing.Union = typing.Union[int, str]
+
+    """
     return typing.get_origin(some_type) in (types.UnionType, typing.Union)
 
 
 class TypeDAL(pydal.DAL):  # type: ignore
+    """
+    Drop-in replacement for pyDAL with layer to convert class-based table definitions to classical pydal define_tables.
+    """
+
     dal: Table
 
     default_kwargs = {
@@ -45,6 +63,27 @@ class TypeDAL(pydal.DAL):  # type: ignore
     }
 
     def define(self, cls: T) -> Table:
+        """
+        Can be used as a decorator on a class that inherits `TypedTable`, \
+          or as a regular method if you need to define your classes before you have access to a 'db' instance.
+
+        Args:
+            cls:
+
+        Example:
+            @db.define
+            class Person(TypedTable):
+                ...
+
+            class Article(TypedTable):
+                ...
+
+            # at a later time:
+            db.define(Article)
+
+        Returns:
+            the result of pydal.define_table
+        """
         # when __future__.annotations is implemented, cls.__annotations__ will not work anymore as below.
         # proper way to handle this would be (but gives error right now due to Table implementing magic methods):
         # typing.get_type_hints(cls, globalns=None, localns=None)
@@ -54,7 +93,6 @@ class TypeDAL(pydal.DAL):  # type: ignore
         # this however also stops working when variables outside this scope or even references to other
         # objects are used. So for now, this package will NOT work when from __future__ import annotations is used,
         # and might break in the future, when this annotations behavior is enabled by default.
-        # todo: add to caveats
 
         # non-annotated variables have to be passed to define_table as kwargs
 
@@ -96,6 +134,50 @@ class TypeDAL(pydal.DAL):  # type: ignore
         return Field(name, _type, **{**cls.default_kwargs, **kw})
 
     @classmethod
+    def _annotation_to_pydal_fieldtype(
+        cls, _ftype: T_annotation, mut_kw: typing.MutableMapping[str, typing.Any]
+    ) -> typing.Optional[str]:
+        # ftype can be a union or type. typing.cast is sometimes used to tell mypy when it's not a union.
+        ftype = typing.cast(type, _ftype)  # cast from typing.Type to type to make mypy happy)
+
+        if mapping := BASIC_MAPPINGS.get(ftype):
+            # basi types
+            return mapping
+        elif isinstance(ftype, Table):
+            # db.table
+            return f"reference {ftype._tablename}"
+        elif issubclass(type(ftype), type) and issubclass(ftype, TypedTable):
+            # SomeTable
+            snakename = cls._to_snake(ftype.__name__)
+            return f"reference {snakename}"
+        elif isinstance(ftype, TypedFieldType):
+            # FieldType(type, ...)
+            return ftype._to_field(mut_kw)
+        elif isinstance(ftype, types.GenericAlias) and typing.get_origin(ftype) is list:
+            # list[str] -> str -> string -> list:string
+            _child_type = typing.get_args(ftype)[0]
+            _child_type = cls._annotation_to_pydal_fieldtype(_child_type, mut_kw)
+            return f"list:{_child_type}"
+        elif is_union(ftype):
+            # str | int -> UnionType
+            # typing.Union[str | int] -> typing._UnionGenericAlias
+
+            # typing.Optional[type] == type | None
+
+            match typing.get_args(ftype):
+                case (_child_type, _Types.NONETYPE):
+                    # good union of Nullable
+
+                    # if a field is optional, it is nullable:
+                    mut_kw["notnull"] = False
+                    return cls._annotation_to_pydal_fieldtype(_child_type, mut_kw)
+                case _:
+                    # two types is not supported by the db!
+                    return None
+        else:
+            return None
+
+    @classmethod
     def _to_field(cls, fname: str, ftype: type, **kw: typing.Any) -> Field:
         """
         Convert a annotation into a pydal Field.
@@ -118,41 +200,11 @@ class TypeDAL(pydal.DAL):  # type: ignore
         """
         fname = cls._to_snake(fname)
 
-        if mapping := BASIC_MAPPINGS.get(ftype):
-            # basi types
-            return cls._build_field(fname, mapping, **kw)
-        elif isinstance(ftype, Table):
-            # db.table
-            return cls._build_field(fname, f"reference {ftype._tablename}", **kw)
-        elif issubclass(type(ftype), type) and issubclass(ftype, TypedTable):
-            # SomeTable
-            snakename = cls._to_snake(ftype.__name__)
-            return cls._build_field(fname, f"reference {snakename}", **kw)
-        elif isinstance(ftype, TypedFieldType):
-            # FieldType(type, ...)
-            return ftype._to_field(fname, **kw)
-        elif isinstance(ftype, types.GenericAlias):
-            # list[...]
-            _childtype = TypedFieldType._convert_generic_alias_list(ftype)
-            return cls._build_field(fname, f"list:{_childtype}", **kw)
-        elif is_union(ftype):
-            # str | int -> UnionType
-            # typing.Union[str | int] -> typing._UnionGenericAlias
-
-            # typing.Optional[type] == type | None
-
-            match typing.get_args(ftype):
-                case (_child_type, _Types.NONETYPE):
-                    # good union
-
-                    # if a field is optional, it is nullable:
-                    kw["notnull"] = False
-                    return cls._to_field(fname, _child_type, **kw)
-                case other:
-                    raise NotImplementedError(f"Invalid type union '{other}'")
-        else:
-            # todo: catch other types
+        converted_type = cls._annotation_to_pydal_fieldtype(ftype, kw)
+        if not converted_type:
             raise NotImplementedError(f"Unsupported type {ftype}/{type(ftype)}")
+
+        return cls._build_field(fname, converted_type, **kw)
 
     @staticmethod
     def _to_snake(camel: str) -> str:
@@ -161,13 +213,26 @@ class TypeDAL(pydal.DAL):  # type: ignore
 
 
 class TypedTableMeta(type):
-    # meta class allows getattribute on class variables instead instance variables
+    """
+    Meta class allows getattribute on class variables instead instance variables.
+
+    Used in `class TypedTable(Table, metaclass=TypedTableMeta)`
+    """
+
     def __getattr__(self, key: str) -> Field:
-        # getattr is only called when getattribute can't find something
+        """
+        The getattr method is only called when getattribute can't find something.
+
+        `__get_table_column__` is defined in `TypedTable`
+        """
         return self.__get_table_column__(key)
 
 
 class TypedTable(Table, metaclass=TypedTableMeta):  # type: ignore
+    """
+    Typed version of pydal.Table, does not really do anything itself but forwards logic to pydal.
+    """
+
     id: int  # noqa: 'id' has to be id since that's the db column
 
     # set up by db.define:
@@ -176,19 +241,29 @@ class TypedTable(Table, metaclass=TypedTableMeta):  # type: ignore
 
     @classmethod
     def __set_internals__(cls, db: pydal.DAL, table: Table) -> None:
+        """
+        Store the related database and pydal table for later usage.
+        """
         cls.__db = db
         cls.__table = table
 
     @classmethod
     def __get_table_column__(cls, col: str) -> Field:
-        # db.table.col -> SomeTypedTable.col (via TypedTableMeta.__getattr__)
+        """
+        Magic method used by TypedTableMeta to get a database field with dot notation on a class.
+
+        Example:
+            SomeTypedTable.col -> db.table.col (via TypedTableMeta.__getattr__)
+
+        """
+        #
         if cls.__table:
             return cls.__table[col]
 
     def __new__(cls, *a: typing.Any, **kw: typing.Any) -> Row:  # or none!
         """
-        when e.g. Table(id=0) is called without db.define,
-        this catches it and forwards for proper behavior
+        When e.g. Table(id=0) is called without db.define, \
+        this catches it and forwards for proper behavior.
 
         Args:
             *a: can be for example Table(<id>)
@@ -201,7 +276,8 @@ class TypedTable(Table, metaclass=TypedTableMeta):  # type: ignore
     @classmethod
     def insert(cls, **fields: typing.Any) -> int:
         """
-        this is only called when db.define is not used as a decorator
+        This is only called when db.define is not used as a decorator.
+
         cls.__table functions as 'self'
 
         Args:
@@ -223,73 +299,60 @@ TypedRow = TypedTable
 
 
 class TypedFieldType(Field):  # type: ignore
+    """
+    Typed version of pydal.Field, which will be converted to a normal Field in the background.
+    """
+
     _table = "<any table>"
-    _type: type
+    _type: T_annotation
     kwargs: typing.Any
 
-    def __init__(self, _type: typing.Type[typing.Any], **kwargs: typing.Any) -> None:
+    def __init__(self, _type: T_annotation, **kwargs: typing.Any) -> None:
+        """
+        A TypedFieldType should not be inited manually, but TypedField (from `fields.py`) should be used!
+        """
         self._type = _type
         self.kwargs = kwargs
 
-    def __repr__(self) -> str:
-        s = self.__str__()
-        return f"<{s} with options {self.kwargs}>"
-
     def __str__(self) -> str:
+        """
+        String representation of a Typed Field.
+
+        If `type` is set explicitly (e.g. TypedField(str, type="text")), that type is used: `TypedField.text`,
+        otherwise the type annotation is used (e.g. TypedField(str) -> TypedField.str)
+        """
         if "type" in self.kwargs:
+            # manual type in kwargs supplied
             t = self.kwargs["type"]
-        else:
-            t = self._type.__name__ if issubclass(type(self._type), type) else self._type
+        elif issubclass(type, type(self._type)):
+            # normal type, str.__name__ = 'str'
+            t = getattr(self._type, "__name__", str(self._type))
+        elif t_args := typing.get_args(self._type):
+            # list[str] -> 'str'
+            t = t_args[0].__name__
+        else:  # pragma: no cover
+            # fallback - something else, may not even happen, I'm not sure
+            t = self._type
         return f"TypedField.{t}"
 
-    def _to_field(self, name: str, **extra_kwargs: typing.Any) -> Field:
+    def __repr__(self) -> str:
+        """
+        More detailed string representation of a Typed Field.
+
+        Uses __str__ and adds the provided extra options (kwargs) in the representation.
+        """
+        s = self.__str__()
+        kw = self.kwargs.copy()
+        kw.pop("type", None)
+        return f"<{s} with options {kw}>"
+
+    def _to_field(self, extra_kwargs: typing.MutableMapping[str, typing.Any]) -> typing.Optional[str]:
+        """
+        Convert a Typed Field instance to a pydal.Field.
+        """
         other_kwargs = self.kwargs.copy()
-        other_kwargs.update(extra_kwargs)
-        _type = other_kwargs.pop("type", False) or self._to_field_type(self._type)
-
-        return TypeDAL._build_field(name, _type, **other_kwargs)
-
-    @classmethod
-    def _to_field_type(cls, _type: typing.Type[typing.Any]) -> str:
-        # todo: merge with TypeDAL._to_field (kinda?)
-        if mapping := BASIC_MAPPINGS.get(_type):
-            # basic types
-            return mapping
-        elif issubclass(type(_type), type) and issubclass(_type, TypedTable):
-            # SomeTable
-            snakename = TypeDAL._to_snake(_type.__name__)
-            return f"reference {snakename}"
-        elif isinstance(_type, Table):
-            # db.sometable
-            return f"reference {_type._tablename}"
-        elif isinstance(_type, types.GenericAlias):
-            # list[type]
-            _child_type = cls._convert_generic_alias_list(_type)
-            return f"list:{_child_type}"
-        else:
-            raise NotImplementedError(_type)
-
-    @classmethod
-    def _convert_generic_alias_list(cls, ftype: types.GenericAlias) -> str:
-        """
-        Extract the type from a generic alias: list[str] -> str.
-
-        In `_to_field_type`, `list:<field>` will be created.
-
-        Args:
-            ftype: a complex annotation
-
-        Returns: the corresponding Field type (as str) for the inner type.
-
-        """
-        # e.g. list[str]
-        basetype = ftype.__origin__
-        # e.g. list
-        if basetype is not list:
-            raise NotImplementedError("Only parameterized list is currently available.")
-        childtype = ftype.__args__[0]
-
-        return cls._to_field_type(childtype)
+        extra_kwargs.update(other_kwargs)
+        return extra_kwargs.pop("type", False) or TypeDAL._annotation_to_pydal_fieldtype(self._type, extra_kwargs)
 
 
 S = typing.TypeVar("S")
@@ -297,8 +360,8 @@ S = typing.TypeVar("S")
 
 class TypedRows(typing.Collection[S], Rows):  # type: ignore
     """
-    Can be used as the return type of a .select()
-    e.g.
+    Can be used as the return type of a .select().
 
-    people: TypedRows[Person] = db(Person).select()
+    Example:
+        people: TypedRows[Person] = db(Person).select()
     """

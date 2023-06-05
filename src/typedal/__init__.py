@@ -1,3 +1,7 @@
+"""
+TypeDAL Library.
+"""
+
 from . import fields  # noqa: imports are there for library reasons
 from .core import (  # noqa: imports are there for library reasons
     TypeDAL,
