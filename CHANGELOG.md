@@ -2,6 +2,19 @@
 
 <!--next-version-placeholder-->
 
+## v1.1.0 (2023-06-22)
+### Feature
+
+* **types:** You should use `param = TypedField()` instead of `param: TypedField()` from now on for better mypy support ([`ed50273`](https://github.com/trialandsuccess/TypeDAL/commit/ed50273ded4a178a30ec8c9d6f492b871853a568))
+
+### Fix
+
+* **version:** We were already on 1.0.0 ([`d6a8d0d`](https://github.com/trialandsuccess/TypeDAL/commit/d6a8d0d17274a5a89e7c0260ba00bb916533866c))
+
+### Documentation
+
+* More info about new release ([`ddfffe2`](https://github.com/trialandsuccess/TypeDAL/commit/ddfffe2c5e6a8f7799449d059e5a2b8dd9c95dab))
+
 ## v1.0.0 (2023-06-05)
 Refactored pre-1.0 code and added [su6](https://github.com/robinvandernoord/su6-checker) checker tool.  
 Moved to `pyproject.toml` based build system.
