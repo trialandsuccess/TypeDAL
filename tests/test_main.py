@@ -54,7 +54,7 @@ def test_mixed_defines():
         # optional: (sets required=False and notnull=False)
         age: float | None
         # with extra options (and non-native type 'text'):
-        location: TypedField(str, type="text", default="Amsterdam")
+        location = TypedField(str, type="text", default="Amsterdam")
         # references:
         # can only be made optional with typing.Optional, not '| None'
         first_new_relation: typing.Optional[NewRelation]
@@ -67,18 +67,18 @@ def test_mixed_defines():
     # instead of using just a native type, TypedField can also always be used:
     class SecondNewSyntax(TypedTable):
         # simple:
-        name: TypedField(str)
+        name = TypedField(str)
         # optional: (sets required=False and notnull=False)
         # note: TypedField can NOT be used with typing.Optional or '| None' !!
-        age: TypedField(float, notnull=False)
+        age = TypedField(float, notnull=False)
         # with extra options (and non-native type 'text'):
-        location: TextField(default="Rotterdam")
-        first_new_relation: ReferenceField(NewRelation)
-        second_new_relation: ReferenceField(db.second_new_relation)
+        location = TextField(default="Rotterdam")
+        first_new_relation = ReferenceField(NewRelation)
+        second_new_relation = ReferenceField(db.second_new_relation)
         # backwards compatible:
-        old_relation: TypedField(db.relation, notnull=False)
+        old_relation = TypedField(db.relation, notnull=False)
         # generics:
-        tags: TypedField(list[str])
+        tags = TypedField(list[str])
 
     db.define(SecondNewSyntax)
 
@@ -148,6 +148,8 @@ def test_mixed_defines():
     _print_and_assert_len(db(SecondNewSyntax).select().as_list(), 1)
     _print_and_assert_len(db(SecondNewSyntax.id > 0).select().as_list(), 1)
 
+    assert SecondNewSyntax(1).location == "Rotterdam"
+
 
 def test_invalid_union():
     with pytest.raises(NotImplementedError):
@@ -191,20 +193,20 @@ def test_typedfield_reprs():
 def test_typedfield_to_field_type():
     @db.define
     class SomeTable(TypedTable):
-        name: TypedField(str)  # basic mapping
+        name = TypedField(str)  # basic mapping
 
     @db.define
     class OtherTable(TypedTable):
-        second: ReferenceField(SomeTable)  # reference to TypedTable
-        third: ReferenceField(db.some_table)  # reference to pydal table
-        third: TypedField(list[str])  # generic alias
-        optional_one: TypedField(typing.Optional[str])
-        optional_two: TypedField(str | None)
+        second = ReferenceField(SomeTable)  # reference to TypedTable
+        third = ReferenceField(db.some_table)  # reference to pydal table
+        fourth = TypedField(list[str])  # generic alias
+        optional_one = TypedField(typing.Optional[str])
+        optional_two = TypedField(str | None)
 
     with pytest.raises(NotImplementedError):
         @db.define
         class Invalid(TypedTable):
-            third: TypedField(dict[str, int])  # not supported
+            third = TypedField(dict[str, int])  # not supported
 
 
 def test_fields():

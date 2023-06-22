@@ -16,7 +16,7 @@ the underlying `db.define_table` pydal Tables.
 - `TypeDAL` is the replacement class for DAL that manages the code on top of DAL.
 - `TypedTable` must be the parent class of any custom Tables you define (e.g. `class SomeTable(TypedTable)`)
 - `TypedField` can be used instead of Python native types when extra settings (such as default) are required (
-  e.g. `name: TypedField(str, default="John Doe")`)
+  e.g. `name = TypedField(str, default="John Doe")`)
 - `TypedRows`: can be used as the return type of .select() and subscribed with the actual table class, so
   e.g. `rows: TypedRows[SomeTable]`. If you're lazy, `list[SomeTable]` works fine too but that misses hinting
   possibilities such as `.first()`.
@@ -78,7 +78,7 @@ db.define_table("table_name",
 class TableName(TypedTable):
     fieldname: str
     otherfield: float | None
-    yet_another: TypedField(str, type="text", default="something", required=False)
+    yet_another = TypedField(str, type="text", default="something", required=False)
 ```
 
 </td>
@@ -92,7 +92,7 @@ import typing
 class TableName(TypedTable):
     fieldname: str
     otherfield: typing.Optional[float]
-    yet_another: TextField(default="something", required=False)
+    yet_another = TextField(default="something", required=False)
 
 
 db.define(TableName)
@@ -191,35 +191,35 @@ row = TableName(id=1)  # -> TableName
 
 ### All Types
 
-| pydal                                     | typedal (native python type) | typedal (using TypedField)               | typedal (using specific Field)      |
-|-------------------------------------------|------------------------------|------------------------------------------|-------------------------------------|
-| `Field('name', 'string')`                 | `name: str`                  | `name: TypedField(str)`                  | `name: StringField()`               |
-| `Field('name', 'text')`                   | ×                            | `name: TypedField(str, type="text")`     | `name: TextField()`                 |
-| `Field('name', 'blob')`                   | `name: bytes`                | `name: TypedField(bytes)`                | `name: BlobField()`                 |
-| `Field('name', 'boolean')`                | `name: bool`                 | `name: TypedField(bool)`                 | `name: BooleanField()`              |
-| `Field('name', 'integer')`                | `name: int`                  | `name: TypedField(int)`                  | `name: IntegerField()`              |
-| `Field('name', 'double')`                 | `name: float`                | `name: TypedField(float)`                | `name: DoubleField()`               |
-| `Field('name', 'decimal(n,m)')`           | `name: decimal.Decimal`      | `name: TypedField(decimal.Decimal)`      | `name: DecimalField(n=n, m=m)`      |
-| `Field('name', 'date')`                   | `name: datetime.date`        | `name: TypedField(datetime.date)`        | `name: DateField()`                 |
-| `Field('name', 'time')`                   | `name: datetime.time`        | `name: TypedField(datetime.time)`        | `name: TimeField()`                 |
-| `Field('name', 'datetime')`               | `name: datetime.datetime`    | `name: TypedField(datetime.datetime)`    | `name: DatetimeField()`             |
-| `Field('name', 'password')`               | ×                            | `name: TypedField(str, type="password")` | `name: PasswordField()`             |
-| `Field('name', 'upload')`                 | ×                            | `name: TypedField(str, type="upload)`    | `name: UploadField()`               |
-| `Field('name', 'reference <table>')`      | `name: Table`                | `name: TypedField(Table)`                | `name: ReferenceField('table')`     |
-| `Field('name', 'list:string')`            | `name: list[str]`            | `name: TypedField(list[str])`            | `name: ListStringField()`           |
-| `Field('name', 'list:integer')`           | `name: list[int]`            | `name: TypedField()`                     | `name: ListIntegerField()`          |
-| `Field('name', 'list:reference <table>')` | `name: list[Table]`          | `name: TypedField()`                     | `name: ListReferenceField('table')` |
-| `Field('name', 'json')`                   | ×                            | `name: TypedField()`                     | `name: JSONField()`                 |
-| `Field('name', 'bigint')`                 | ×                            | `name: TypedField()`                     | `name: BigintField()`               |
-| `Field('name', 'big-id')`                 | ×                            | ×                                        | ×                                   |
-| `Field('name', 'big-reference')`          | ×                            | ×                                        | ×                                   |
+| pydal                                     | typedal (native python type) | typedal (using TypedField)                | typedal (using specific Field)       |
+|-------------------------------------------|------------------------------|-------------------------------------------|--------------------------------------|
+| `Field('name', 'string')`                 | `name: str`                  | `name = TypedField(str)`                  | `name = StringField()`               |
+| `Field('name', 'text')`                   | ×                            | `name = TypedField(str, type="text")`     | `name = TextField()`                 |
+| `Field('name', 'blob')`                   | `name: bytes`                | `name = TypedField(bytes)`                | `name = BlobField()`                 |
+| `Field('name', 'boolean')`                | `name: bool`                 | `name = TypedField(bool)`                 | `name = BooleanField()`              |
+| `Field('name', 'integer')`                | `name: int`                  | `name = TypedField(int)`                  | `name = IntegerField()`              |
+| `Field('name', 'double')`                 | `name: float`                | `name = TypedField(float)`                | `name = DoubleField()`               |
+| `Field('name', 'decimal(n,m)')`           | `name: decimal.Decimal`      | `name = TypedField(decimal.Decimal)`      | `name = DecimalField(n=n, m=m)`      |
+| `Field('name', 'date')`                   | `name: datetime.date`        | `name = TypedField(datetime.date)`        | `name = DateField()`                 |
+| `Field('name', 'time')`                   | `name: datetime.time`        | `name = TypedField(datetime.time)`        | `name = TimeField()`                 |
+| `Field('name', 'datetime')`               | `name: datetime.datetime`    | `name = TypedField(datetime.datetime)`    | `name = DatetimeField()`             |
+| `Field('name', 'password')`               | ×                            | `name = TypedField(str, type="password")` | `name = PasswordField()`             |
+| `Field('name', 'upload')`                 | ×                            | `name = TypedField(str, type="upload)`    | `name = UploadField()`               |
+| `Field('name', 'reference <table>')`      | `name: Table`                | `name = TypedField(Table)`                | `name = ReferenceField('table')`     |
+| `Field('name', 'list:string')`            | `name: list[str]`            | `name = TypedField(list[str])`            | `name = ListStringField()`           |
+| `Field('name', 'list:integer')`           | `name: list[int]`            | `name = TypedField()`                     | `name = ListIntegerField()`          |
+| `Field('name', 'list:reference <table>')` | `name: list[Table]`          | `name = TypedField()`                     | `name = ListReferenceField('table')` |
+| `Field('name', 'json')`                   | ×                            | `name = TypedField()`                     | `name = JSONField()`                 |
+| `Field('name', 'bigint')`                 | ×                            | `name = TypedField()`                     | `name = BigintField()`               |
+| `Field('name', 'big-id')`                 | ×                            | ×                                         | ×                                    |
+| `Field('name', 'big-reference')`          | ×                            | ×                                         | ×                                    |
 
 ### Making a field required/optional
 
-| pydal                                    | typedal (native python type)                                              | typedal (using TypedField)                           | typedal (using specific Field)      |
-|------------------------------------------|---------------------------------------------------------------------------|------------------------------------------------------|-------------------------------------|
-| `Field('name', 'string', required=True)` | `name: str`                                                               | `name: TypedField(str, required=True)`               | `name: StringField(required=True)`  |
-| `Field('name', 'text', required=False)`  | `name: typing.Optional[str]` or  <br/> <code>name: str &#124; None</code> | `name: TypedField(str, type="text", required=False)` | `name: StringField(required=False)` |
+| pydal                                    | typedal (native python type)                                              | typedal (using TypedField)                            | typedal (using specific Field)       |
+|------------------------------------------|---------------------------------------------------------------------------|-------------------------------------------------------|--------------------------------------|
+| `Field('name', 'string', required=True)` | `name: str`                                                               | `name = TypedField(str, required=True)`               | `name = StringField(required=True)`  |
+| `Field('name', 'text', required=False)`  | `name: typing.Optional[str]` or  <br/> <code>name: str &#124; None</code> | `name = TypedField(str, type="text", required=False)` | `name = StringField(required=False)` |
 
 ## Caveats
 

@@ -34,6 +34,7 @@ dev = [
     "hatch",
     "su6[all]",
     "python-semantic-release",
+    "pytest-mypy-testing",
 ]
 
 [project.urls]
@@ -55,6 +56,7 @@ build_command = "hatch build"
 ### required in every su6 pyproject: ###
 [tool.su6]
 directory = "src"
+stop-after-first-failure = true
 include = []
 exclude = []
 coverage = 100

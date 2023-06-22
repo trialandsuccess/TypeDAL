@@ -1,10 +1,10 @@
 """
 Core functionality of TypeDAL.
 """
-
 import datetime as dt
 import types
 import typing
+from collections import ChainMap
 from decimal import Decimal
 
 import pydal
@@ -48,6 +48,27 @@ def is_union(some_type: type) -> bool:
 
     """
     return typing.get_origin(some_type) in (types.UnionType, typing.Union)
+
+
+def _all_annotations(cls: type) -> ChainMap[str, type]:
+    """
+    Returns a dictionary-like ChainMap that includes annotations for all \
+    attributes defined in cls or inherited from superclasses.
+    """
+    return ChainMap(*(c.__annotations__ for c in getattr(cls, "__mro__", []) if "__annotations__" in c.__dict__))
+
+
+def all_annotations(cls: type, _except: typing.Iterable[str] = None) -> dict[str, type]:
+    """
+    Wrapper around `_all_annotations` that filters away any keys in _except.
+
+    It also flattens the ChainMap to a regular dict.
+    """
+    if _except is None:
+        _except = set()
+
+    _all = _all_annotations(cls)
+    return {k: v for k, v in _all.items() if k not in _except}
 
 
 class TypeDAL(pydal.DAL):  # type: ignore
@@ -97,8 +118,15 @@ class TypeDAL(pydal.DAL):  # type: ignore
         # non-annotated variables have to be passed to define_table as kwargs
 
         tablename = self._to_snake(cls.__name__)
-        fields = [self._to_field(fname, ftype) for fname, ftype in cls.__annotations__.items()]
-        other_kwargs = {k: v for k, v in cls.__dict__.items() if k not in cls.__annotations__ and not k.startswith("_")}
+        # grab annotations of cls and it's parents:
+        annotations = all_annotations(cls)
+        # extend with `prop = TypedField()` 'annotations':
+        annotations |= {k: v for k, v in cls.__dict__.items() if isinstance(v, TypedFieldType)}
+        # remove internal stuff:
+        annotations = {k: v for k, v in annotations.items() if not k.startswith("_")}
+
+        fields = [self._to_field(fname, ftype) for fname, ftype in annotations.items()]
+        other_kwargs = {k: v for k, v in cls.__dict__.items() if k not in annotations and not k.startswith("_")}
 
         table: Table = self.define_table(tablename, *fields, **other_kwargs)
 
@@ -200,11 +228,10 @@ class TypeDAL(pydal.DAL):  # type: ignore
         """
         fname = cls._to_snake(fname)
 
-        converted_type = cls._annotation_to_pydal_fieldtype(ftype, kw)
-        if not converted_type:
+        if converted_type := cls._annotation_to_pydal_fieldtype(ftype, kw):
+            return cls._build_field(fname, converted_type, **kw)
+        else:
             raise NotImplementedError(f"Unsupported type {ftype}/{type(ftype)}")
-
-        return cls._build_field(fname, converted_type, **kw)
 
     @staticmethod
     def _to_snake(camel: str) -> str:

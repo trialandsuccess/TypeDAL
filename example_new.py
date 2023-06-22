@@ -15,13 +15,14 @@ db = TypeDAL("sqlite:memory")
 class Person(TypedTable):
     name: str
 
-    # todo: let pycharm know age is actually int
-    age: TypedField(int, default=18)
+    age = TypedField(int, default=18)
     nicknames: list[str]
 
     format = "%(name)s"
 
+
 assert db.person._format == "%(name)s"
+
 
 @db.define
 class Pet(TypedTable):
@@ -66,35 +67,12 @@ class OtherTable(TypedTable):
     ...
 
 
-# class AllFields(TypedTable):
-#     # http://www.web2py.com/books/default/chapter/29/06/the-database-abstraction-layer#Field-types
-#     string: str | TypedField(str)
-#     text: TypedField(str, type="text")
-#     blob: bytes | TypedField(bytes)
-#     boolean: bool | TypedField(bool)
-#     integer: int | TypedField(int)
-#     double: float | TypedField(float)
-#     decimal: Decimal | TypedField(Decimal, n=2, m=3)
-#     date: dt.date | TypedField(dt.date)
-#     time: dt.time | TypedField(dt.time)
-#     datetime: dt.datetime | TypedField(dt.datetime)
-#     password: TypedField(str, type="password")
-#     upload: TypedField(str, uploadfield="upload_data")
-#     upload_data: bytes | TypedField(bytes)
-#     reference: OtherTable | TypedField(OtherTable)
-#     list_string: list[str] | TypedField(list[str])
-#     list_integer: list[int] | TypedField(list[int])
-#     list_reference: list[OtherTable] | TypedField(list[OtherTable])
-#     json: object | TypedField(object)
-#     bigint: TypedField(int, type="bigint")
-
-
 @db.define
 class AllFieldsBasic(TypedTable):
     # http://www.web2py.com/books/default/chapter/29/06/the-database-abstraction-layer#Field-types
     string: typing.Optional[str]
     # string: str | None
-    text: TypedField(str, type="text")
+    text = TypedField(str, type="text")
     blob: bytes
     boolean: bool
     integer: int
@@ -103,8 +81,8 @@ class AllFieldsBasic(TypedTable):
     date: dt.date
     time: dt.time
     datetime: dt.datetime
-    password: TypedField(str, type="password")
-    upload: TypedField(str, type="upload", uploadfield="upload_data")
+    password = TypedField(str, type="password")
+    upload = TypedField(str, type="upload", uploadfield="upload_data")
     upload_data: bytes
     reference: OtherTable
     reference_two: typing.Optional[db.other_table]
@@ -112,7 +90,7 @@ class AllFieldsBasic(TypedTable):
     list_integer: list[int]
     list_reference: list[OtherTable]
     json: object
-    bigint: TypedField(int, type="bigint")
+    bigint = TypedField(int, type="bigint")
 
 
 @db.define
@@ -120,26 +98,26 @@ class AllFieldsAdvanced(TypedTable):
     # http://www.web2py.com/books/default/chapter/29/06/the-database-abstraction-layer#Field-types
 
     # typing.Optional won't work on a TypedField! todo: document caveat
-    string: TypedField(str, length=1000, notnull=False)
-    text: TextField()
-    blob: TypedField(bytes)
-    boolean: TypedField(bool)
-    integer: TypedField(int)
-    double: TypedField(float)
-    decimal: TypedField(Decimal, n=2, m=3)
-    date: TypedField(dt.date)
-    time: TypedField(dt.time)
-    datetime: TypedField(dt.datetime)
-    password: TypedField(str, type="password")
-    upload: TypedField(str, type="upload", uploadfield="upload_data")
-    upload_data: TypedField(bytes)
-    reference: TypedField(OtherTable)
-    reference_two: TypedField(db.other_table, notnull=False)
-    list_string: TypedField(list[str])
-    list_integer: TypedField(list[int])
-    list_reference: TypedField(list[OtherTable])
-    json: TypedField(object)
-    bigint: TypedField(int, type="bigint")
+    string = TypedField(str, length=1000, notnull=False)
+    text = TextField()
+    blob = TypedField(bytes)
+    boolean = TypedField(bool)
+    integer = TypedField(int)
+    double = TypedField(float)
+    decimal = TypedField(Decimal, n=2, m=3)
+    date = TypedField(dt.date)
+    time = TypedField(dt.time)
+    datetime = TypedField(dt.datetime)
+    password = TypedField(str, type="password")
+    upload = TypedField(str, type="upload", uploadfield="upload_data")
+    upload_data = TypedField(bytes)
+    reference = TypedField(OtherTable)
+    reference_two = TypedField(db.other_table, notnull=False)
+    list_string = TypedField(list[str])
+    list_integer = TypedField(list[int])
+    list_reference = TypedField(list[OtherTable])
+    json = TypedField(object)
+    bigint = TypedField(int, type="bigint")
 
 
 @db.define
@@ -147,29 +125,27 @@ class AllFieldsExplicit(TypedTable):
     # http://www.web2py.com/books/default/chapter/29/06/the-database-abstraction-layer#Field-types
 
     # typing.Optional won't work on a TypedField! todo: document caveat
-    string: fields.StringField(length=1000, notnull=False)
-    text: fields.TextField()
-    blob: fields.BlobField()
-    boolean: fields.BooleanField()
-    integer: fields.IntegerField()
-    double: fields.DoubleField()
-    decimal: fields.DecimalField(n=2, m=3)
-    date: fields.DateField()
-    time: fields.TimeField()
-    datetime: fields.DatetimeField()
-    password: fields.PasswordField()
-    upload: fields.UploadField(uploadfield="upload_data")
-    upload_data: fields.BlobField()
-    reference: fields.ReferenceField("other_table")
-    reference_two: fields.ReferenceField("other_table", notnull=False)
-    list_string: fields.ListStringField()
-    list_integer: fields.ListIntegerField()
-    list_reference: fields.ListReferenceField('other_table')
-    json: fields.JSONField()
-    bigint: fields.BigintField()
+    string = fields.StringField(length=1000, notnull=False)
+    text = fields.TextField()
+    blob = fields.BlobField()
+    boolean = fields.BooleanField()
+    integer = fields.IntegerField()
+    double = fields.DoubleField()
+    decimal = fields.DecimalField(n=2, m=3)
+    date = fields.DateField()
+    time = fields.TimeField()
+    datetime = fields.DatetimeField()
+    password = fields.PasswordField()
+    upload = fields.UploadField(uploadfield="upload_data")
+    upload_data = fields.BlobField()
+    reference = fields.ReferenceField("other_table")
+    reference_two = fields.ReferenceField("other_table", notnull=False)
+    list_string = fields.ListStringField()
+    list_integer = fields.ListIntegerField()
+    list_reference = fields.ListReferenceField('other_table')
+    json = fields.JSONField()
+    bigint = fields.BigintField()
 
-
-xyz = AllFieldsExplicit.text
 
 # todo: fix:
 # for fname, ftype in AllFieldsBasic.__annotations__.items():
