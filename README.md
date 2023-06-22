@@ -1,10 +1,10 @@
 # TypeDAL
 
-[![PyPI - Version](https://img.shields.io/pypi/v/TypeDal.svg)](https://pypi.org/project/typedal)
-[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/TypeDal.svg)](https://pypi.org/project/typedal)  
+[![PyPI - Version](https://img.shields.io/pypi/v/TypeDAL.svg)](https://pypi.org/project/TypeDAL)
+[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/TypeDAL.svg)](https://pypi.org/project/TypeDAL)  
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)  
-[![su6 checks](https://github.com/trialandsuccess/typedal/actions/workflows/su6.yml/badge.svg)](https://github.com/trialandsuccess/typedal/actions)
+[![su6 checks](https://github.com/trialandsuccess/TypeDAL/actions/workflows/su6.yml/badge.svg?branch=development)](https://github.com/trialandsuccess/TypeDAL/actions)
 ![coverage.svg](coverage.svg)
 
 Typing support for [PyDAL](http://web2py.com/books/default/chapter/29/6).
