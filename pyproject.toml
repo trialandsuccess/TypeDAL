@@ -124,6 +124,10 @@ extend-ignore = [
 
 extend-exclude = ["*.bak/", "venv*/"]
 
+ignore = [
+    "RUF013" # implicit optional
+]
+
 [tool.bandit]
 # bandit -c pyproject.toml -r .
 exclude_dirs = [".bak", "venv"]

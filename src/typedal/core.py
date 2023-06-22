@@ -78,7 +78,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
 
     dal: Table
 
-    default_kwargs = {
+    default_kwargs: typing.ClassVar[typing.Dict[str, typing.Any]] = {
         # fields are 'required' (notnull) by default:
         "notnull": True,
     }
