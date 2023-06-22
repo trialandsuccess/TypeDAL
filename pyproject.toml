@@ -29,6 +29,9 @@ dependencies = [
 [template.plugins.default]
 src-layout = true
 
+[tool.setuptools.package-data]
+"typedal" = ["py.typed"]
+
 [project.optional-dependencies]
 dev = [
     "hatch",
