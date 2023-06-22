@@ -2,6 +2,11 @@
 
 <!--next-version-placeholder-->
 
+## v1.1.1 (2023-06-22)
+### Fix
+
+* **mypy:** Made the package properly typed ([`a242895`](https://github.com/trialandsuccess/TypeDAL/commit/a242895d9d8a2d04add9c863105c2b1c756a3b6a))
+
 ## v1.1.0 (2023-06-22)
 ### Feature
 
