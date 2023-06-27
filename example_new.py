@@ -85,7 +85,7 @@ class AllFieldsBasic(TypedTable):
     upload = TypedField(str, type="upload", uploadfield="upload_data")
     upload_data: bytes
     reference: OtherTable
-    reference_two: typing.Optional[db.other_table]
+    reference_two: typing.Optional[db.other_table]  # type: ignore
     list_string: list[str]
     list_integer: list[int]
     list_reference: list[OtherTable]
@@ -112,7 +112,7 @@ class AllFieldsAdvanced(TypedTable):
     upload = TypedField(str, type="upload", uploadfield="upload_data")
     upload_data = TypedField(bytes)
     reference = TypedField(OtherTable)
-    reference_two = TypedField(db.other_table, notnull=False)
+    reference_two: int = TypedField(db.other_table, notnull=False)
     list_string = TypedField(list[str])
     list_integer = TypedField(list[int])
     list_reference = TypedField(list[OtherTable])
@@ -249,3 +249,10 @@ rowb = db.all_fields_explicit(string="hi!")
 # for field in rowa:
 #     print(field, type(rowa[field]))
 print(rowb)
+
+counted = db(AllFieldsExplicit).count()
+
+rows: TypedRows[AllFieldsExplicit] = db(AllFieldsExplicit).select()
+
+for row in rows:
+    print(row.id)

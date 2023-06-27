@@ -257,3 +257,15 @@ def test_fields():
     assert str(ListReferenceField("somenewtable")) == "TypedField.list:reference somenewtable"
     assert str(JSONField()) == "TypedField.json"
     assert str(BigintField()) == "TypedField.bigint"
+
+    # test typedset:
+    counted1 = db(SomeNewTable).count()
+    counted2 = db(OtherNewTable).count()
+    counted3 = db(db.some_new_table).count()
+
+    assert counted1 == counted2 == counted3 == 0
+
+    select2: TypedRows[SomeNewTable] = db(SomeNewTable).select()
+
+    for row in select2:
+        raise ValueError("no rows should exist")

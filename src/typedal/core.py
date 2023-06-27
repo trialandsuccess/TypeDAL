@@ -8,7 +8,7 @@ from collections import ChainMap
 from decimal import Decimal
 
 import pydal
-from pydal.objects import Field, Query, Row, Rows, Table
+from pydal.objects import Field, Row, Rows, Table
 
 # use typing.cast(type, ...) to make mypy happy with unions
 T_annotation = typing.Type[typing.Any] | types.UnionType
@@ -83,7 +83,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
         "notnull": True,
     }
 
-    def define(self, cls: T) -> Table:
+    def define(self, cls: T) -> T:
         """
         Can be used as a decorator on a class that inherits `TypedTable`, \
           or as a regular method if you need to define your classes before you have access to a 'db' instance.
@@ -140,9 +140,9 @@ class TypeDAL(pydal.DAL):  # type: ignore
 
         # the ACTUAL output is not TypedTable but rather pydal.Table
         # but telling the editor it is T helps with hinting.
-        return table
+        return cls
 
-    def __call__(self, *_args: Query | bool, **kwargs: typing.Any) -> pydal.objects.Set:
+    def __call__(self, *_args: typing.Any, **kwargs: typing.Any) -> "TypedSet":
         """
         A db instance can be called directly to perform a query.
 
@@ -162,7 +162,8 @@ class TypeDAL(pydal.DAL):  # type: ignore
                 # table defined without @db.define decorator!
                 args[0] = cls.id != None
 
-        return super().__call__(*args, **kwargs)
+        _set = super().__call__(*args, **kwargs)
+        return typing.cast(TypedSet, _set)
 
     # todo: insert etc shadowen?
 
@@ -419,3 +420,34 @@ class TypedRows(typing.Collection[S], Rows):  # type: ignore
     Example:
         people: TypedRows[Person] = db(Person).select()
     """
+
+
+T_Table = typing.TypeVar("T_Table", bound=Table)
+
+
+class TypedSet(pydal.objects.Set):  # type: ignore # pragma: no cover
+    """
+    Used to make pydal Set more typed.
+
+    This class is not actually used, only 'cast' by TypeDAL.__call__
+    """
+
+    def count(self, distinct: bool = None, cache: dict[str, typing.Any] = None) -> int:
+        """
+        Count returns an int.
+        """
+        result = super().count(distinct, cache)
+        return typing.cast(int, result)
+
+    def select(self, *fields: typing.Any, **attributes: typing.Any) -> TypedRows[T_Table]:
+        """
+        Select returns a TypedRows of a user defined table.
+
+        Example:
+            result: TypedRows[MyTable] = db(MyTable.id > 0).select()
+
+            for row in result:
+                typing.reveal_type(row)  # MyTable
+        """
+        rows = super().select(*fields, **attributes)
+        return typing.cast(TypedRows[T_Table], rows)
