@@ -2,6 +2,11 @@
 
 <!--next-version-placeholder-->
 
+## v1.1.2 (2023-06-27)
+### Fix
+
+* **query:** A class with postponed db.define could not be used to make queries ([`2e55363`](https://github.com/trialandsuccess/TypeDAL/commit/2e553632312fd759702e220ae71de9e0abb3d5a9))
+
 ## v1.1.1 (2023-06-22)
 ### Fix
 
