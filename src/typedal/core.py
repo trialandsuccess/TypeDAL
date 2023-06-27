@@ -8,10 +8,12 @@ from collections import ChainMap
 from decimal import Decimal
 
 import pydal
-from pydal.objects import Field, Row, Rows, Table
+from pydal._globals import DEFAULT
+from pydal.objects import Field, Query, Row, Rows, Table
 
 # use typing.cast(type, ...) to make mypy happy with unions
 T_annotation = typing.Type[typing.Any] | types.UnionType
+T_Query = typing.Union["Table", "Query", "bool", "None", "TypedTable", typing.Type["TypedTable"]]
 
 BASIC_MAPPINGS: dict[T_annotation, str] = {
     str: "string",
@@ -142,7 +144,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
         # but telling the editor it is T helps with hinting.
         return cls
 
-    def __call__(self, *_args: typing.Any, **kwargs: typing.Any) -> "TypedSet":
+    def __call__(self, *_args: T_Query, **kwargs: typing.Any) -> "TypedSet":
         """
         A db instance can be called directly to perform a query.
 
@@ -158,9 +160,10 @@ class TypeDAL(pydal.DAL):  # type: ignore
             if isinstance(cls, bool):
                 raise ValueError("Don't actually pass a bool to db()! Use a query instead.")
 
-            if issubclass(type(cls), type) and issubclass(cls, TypedTable):
+            if isinstance(cls, type) and issubclass(type(cls), type) and issubclass(cls, TypedTable):
                 # table defined without @db.define decorator!
-                args[0] = cls.id != None
+                _cls: typing.Type[TypedTable] = cls
+                args[0] = _cls.id != None
 
         _set = super().__call__(*args, **kwargs)
         return typing.cast(TypedSet, _set)
@@ -329,6 +332,17 @@ class TypedTable(Table, metaclass=TypedTableMeta):  # type: ignore
         result = super().insert(cls.__table, **fields)
         # it already is an int but mypy doesn't understand that
         return typing.cast(int, result)
+
+    @classmethod
+    def update_or_insert(cls, query: T_Query = DEFAULT, **values: typing.Any) -> typing.Optional[int]:
+        """
+        Add typing to pydal's update_or_insert.
+        """
+        result = super().update_or_insert(cls, _key=query, **values)
+        if result is None:
+            return None
+        else:
+            return typing.cast(int, result)
 
 
 # backwards compat:

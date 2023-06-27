@@ -269,3 +269,34 @@ def test_fields():
 
     for row in select2:
         raise ValueError("no rows should exist")
+
+    SomeNewTable.update_or_insert(
+        SomeNewTable.name == "Hendrik",
+        name="Hendrik 2",
+    )
+
+    idx = OtherNewTable.update_or_insert(
+        OtherNewTable.name == "Hendrik",
+        name="Hendrik 2",
+    )
+    assert idx
+
+    OtherNewTable.update_or_insert(
+        OtherNewTable.name == "Hendrik",
+        name="Hendrik 2",
+    )
+
+    assert db(SomeNewTable.name == "Hendrik").count() == 0
+    assert db(SomeNewTable.name == "Hendrik 2").count() == 1
+
+    assert db(OtherNewTable.name == "Hendrik").count() == 0
+    assert db(OtherNewTable.name == "Hendrik 2").count() == 2
+
+    no_idx = OtherNewTable.update_or_insert(
+        OtherNewTable.name == "Hendrik 2",
+        name="Hendrik 3",
+    )  # should only update one and return None!
+
+    assert no_idx is None
+    assert db(OtherNewTable.name == "Hendrik 2").count() == 1
+    assert db(OtherNewTable.name == "Hendrik 3").count() == 1

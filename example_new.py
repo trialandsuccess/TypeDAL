@@ -59,6 +59,12 @@ print(people.first())
 for person in people:
     print(person.nicknames)
 
+# max ran away!
+Pet.update_or_insert(Pet.name == "Max", owners=[])
+max = Pet(name="Max")
+
+assert not max.owners
+
 
 ### example with all possible field types;
 

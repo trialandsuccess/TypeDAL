@@ -32,3 +32,22 @@ def mypy_test_typedset() -> None:
 
     for row in select2:
         typing.reveal_type(row)  # R: tests.test_mypy.MyTable
+
+
+@pytest.mark.mypy_testing
+def mypy_test_query() -> None:
+    db(
+        MyTable.id > 0
+    )
+
+    db(
+        db.old_style.id > 3
+    )
+
+    db(MyTable)
+
+    db(db.old_style)
+
+    MyTable.update_or_insert(MyTable)
+    MyTable.update_or_insert(MyTable.id > 3)
+    MyTable.update_or_insert(db.my_table.id > 3)
