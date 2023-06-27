@@ -127,6 +127,16 @@ def test_mixed_defines():
     ### Select
     from pprint import pprint
 
+    assert db(FirstNewSyntax.name == "First").count()
+    assert db(FirstNewSyntax.location == "Norway").count()
+    assert not db(FirstNewSyntax.location == "Nope").count()
+    assert not db(FirstNewSyntax.location == "Nope").count()
+
+    assert db(SecondNewSyntax.name == "Second").count()
+    assert db(SecondNewSyntax.location == "Rotterdam").count()
+    assert not db(SecondNewSyntax.location == "Nope").count()
+    assert not db(SecondNewSyntax.location == "Nope").count()
+
     def _print_and_assert_len(lst, exp):
         pprint(lst)
         real = len(lst)
@@ -149,6 +159,11 @@ def test_mixed_defines():
     _print_and_assert_len(db(SecondNewSyntax.id > 0).select().as_list(), 1)
 
     assert SecondNewSyntax(1).location == "Rotterdam"
+
+
+def test_dont_allow_bool_in_query():
+    with pytest.raises(ValueError):
+        db(True)
 
 
 def test_invalid_union():

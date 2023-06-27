@@ -125,10 +125,16 @@ class TypeDAL(pydal.DAL):  # type: ignore
         # remove internal stuff:
         annotations = {k: v for k, v in annotations.items() if not k.startswith("_")}
 
-        fields = [self._to_field(fname, ftype) for fname, ftype in annotations.items()]
+        typedfields = {k: v for k, v in annotations.items() if isinstance(v, TypedFieldType)}
+
+        fields = {fname: self._to_field(fname, ftype) for fname, ftype in annotations.items()}
         other_kwargs = {k: v for k, v in cls.__dict__.items() if k not in annotations and not k.startswith("_")}
 
-        table: Table = self.define_table(tablename, *fields, **other_kwargs)
+        table: Table = self.define_table(tablename, *fields.values(), **other_kwargs)
+
+        for name, typed_field in typedfields.items():
+            field = fields[name]
+            typed_field.bind(field, table)
 
         cls.__set_internals__(db=self, table=table)
 
@@ -136,11 +142,11 @@ class TypeDAL(pydal.DAL):  # type: ignore
         # but telling the editor it is T helps with hinting.
         return table
 
-    def __call__(self, *_args: Query, **kwargs: typing.Any) -> pydal.objects.Set:
+    def __call__(self, *_args: Query | bool, **kwargs: typing.Any) -> pydal.objects.Set:
         """
         A db instance can be called directly to perform a query.
 
-        Usually, only a query is passed
+        Usually, only a query is passed.
 
         Example:
             db(query).select()
@@ -149,6 +155,9 @@ class TypeDAL(pydal.DAL):  # type: ignore
         args = list(_args)
         if args:
             cls = args[0]
+            if isinstance(cls, bool):
+                raise ValueError("Don't actually pass a bool to db()! Use a query instead.")
+
             if issubclass(type(cls), type) and issubclass(cls, TypedTable):
                 # table defined without @db.define decorator!
                 args[0] = cls.id != None
@@ -330,7 +339,14 @@ class TypedFieldType(Field):  # type: ignore
     Typed version of pydal.Field, which will be converted to a normal Field in the background.
     """
 
-    _table = "<any table>"
+    # todo: .bind
+
+    # will be set by .bind on db.define
+    name = ""
+    _db = None
+    _rname = None
+    _table = None
+
     _type: T_annotation
     kwargs: typing.Any
 
@@ -380,6 +396,17 @@ class TypedFieldType(Field):  # type: ignore
         other_kwargs = self.kwargs.copy()
         extra_kwargs.update(other_kwargs)
         return extra_kwargs.pop("type", False) or TypeDAL._annotation_to_pydal_fieldtype(self._type, extra_kwargs)
+
+    def bind(self, field: Field, table: Table) -> None:
+        """
+        Bind the right db/table/field info to this class, so queries can be made using `Class.field == ...`.
+        """
+        self.name = field.name
+        self.type = field.type
+        super().bind(table)
+
+    # def __eq__(self, value):
+    #     return Query(self.db, self._dialect.eq, self, value)
 
 
 S = typing.TypeVar("S")
