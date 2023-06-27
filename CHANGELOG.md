@@ -2,6 +2,11 @@
 
 <!--next-version-placeholder-->
 
+## v1.2.0 (2023-06-27)
+### Feature
+
+* **set:** Type hints for .count() and .select() ([`1f23581`](https://github.com/trialandsuccess/TypeDAL/commit/1f2358169c6690e36153e99983c53a6c370f5e40))
+
 ## v1.1.2 (2023-06-27)
 ### Fix
 
