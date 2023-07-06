@@ -2,6 +2,11 @@
 
 <!--next-version-placeholder-->
 
+## v1.2.2 (2023-07-06)
+### Fix
+
+* Allow using `TypedFieldType`s in .select() ([`2945d15`](https://github.com/trialandsuccess/TypeDAL/commit/2945d15b3856f4881d27bd00504b3a2b7363b7ed))
+
 ## v1.2.1 (2023-06-27)
 ### Fix
 
