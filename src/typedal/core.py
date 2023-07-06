@@ -1,19 +1,21 @@
 """
 Core functionality of TypeDAL.
 """
+import contextlib
 import datetime as dt
 import types
 import typing
 from collections import ChainMap
 from decimal import Decimal
+from typing import Any, Optional
 
 import pydal
 from pydal._globals import DEFAULT
 from pydal.objects import Field, Query, Row, Rows, Table
 
 # use typing.cast(type, ...) to make mypy happy with unions
-T_annotation = typing.Type[typing.Any] | types.UnionType
-T_Query = typing.Union["Table", "Query", "bool", "None", "TypedTable", typing.Type["TypedTable"]]
+T_annotation = typing.Type[Any] | types.UnionType
+T_Query = typing.Union[Table, Query, bool, None, "TypedTable", typing.Type["TypedTable"]]
 
 BASIC_MAPPINGS: dict[T_annotation, str] = {
     str: "string",
@@ -177,7 +179,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
     @classmethod
     def _annotation_to_pydal_fieldtype(
         cls, _ftype: T_annotation, mut_kw: typing.MutableMapping[str, typing.Any]
-    ) -> typing.Optional[str]:
+    ) -> Optional[str]:
         # ftype can be a union or type. typing.cast is sometimes used to tell mypy when it's not a union.
         ftype = typing.cast(type, _ftype)  # cast from typing.Type to type to make mypy happy)
 
@@ -203,7 +205,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
             # str | int -> UnionType
             # typing.Union[str | int] -> typing._UnionGenericAlias
 
-            # typing.Optional[type] == type | None
+            # Optional[type] == type | None
 
             match typing.get_args(ftype):
                 case (_child_type, _Types.NONETYPE):
@@ -334,7 +336,7 @@ class TypedTable(Table, metaclass=TypedTableMeta):  # type: ignore
         return typing.cast(int, result)
 
     @classmethod
-    def update_or_insert(cls, query: T_Query = DEFAULT, **values: typing.Any) -> typing.Optional[int]:
+    def update_or_insert(cls, query: T_Query = DEFAULT, **values: typing.Any) -> Optional[int]:
         """
         Add typing to pydal's update_or_insert.
         """
@@ -358,9 +360,10 @@ class TypedFieldType(Field):  # type: ignore
 
     # will be set by .bind on db.define
     name = ""
-    _db = None
-    _rname = None
-    _table = None
+    _db: Optional[pydal.DAL] = None
+    _rname: Optional[str] = None
+    _table: Optional[Table] = None
+    _field: Optional[Table] = None
 
     _type: T_annotation
     kwargs: typing.Any
@@ -404,7 +407,7 @@ class TypedFieldType(Field):  # type: ignore
         kw.pop("type", None)
         return f"<{s} with options {kw}>"
 
-    def _to_field(self, extra_kwargs: typing.MutableMapping[str, typing.Any]) -> typing.Optional[str]:
+    def _to_field(self, extra_kwargs: typing.MutableMapping[str, typing.Any]) -> Optional[str]:
         """
         Convert a Typed Field instance to a pydal.Field.
         """
@@ -416,12 +419,23 @@ class TypedFieldType(Field):  # type: ignore
         """
         Bind the right db/table/field info to this class, so queries can be made using `Class.field == ...`.
         """
+        self._field = field
         self.name = field.name
         self.type = field.type
+        # ._itype etc via getattrs
         super().bind(table)
 
     # def __eq__(self, value):
     #     return Query(self.db, self._dialect.eq, self, value)
+
+    def __getattr__(self, key: str) -> Any:
+        """
+        If the regular getattribute does not work, try to get info from the related Field.
+        """
+        with contextlib.suppress(AttributeError):
+            return super().__getattribute__(key)
+
+        return getattr(self._field, key)
 
 
 S = typing.TypeVar("S")
@@ -446,14 +460,14 @@ class TypedSet(pydal.objects.Set):  # type: ignore # pragma: no cover
     This class is not actually used, only 'cast' by TypeDAL.__call__
     """
 
-    def count(self, distinct: bool = None, cache: dict[str, typing.Any] = None) -> int:
+    def count(self, distinct: bool = None, cache: dict[str, Any] = None) -> int:
         """
         Count returns an int.
         """
         result = super().count(distinct, cache)
         return typing.cast(int, result)
 
-    def select(self, *fields: typing.Any, **attributes: typing.Any) -> TypedRows[T_Table]:
+    def select(self, *fields: Any, **attributes: Any) -> TypedRows[T_Table]:
         """
         Select returns a TypedRows of a user defined table.
 

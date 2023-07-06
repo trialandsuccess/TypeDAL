@@ -228,6 +228,7 @@ def test_fields():
     @db.define
     class SomeNewTable(TypedTable):
         name: str
+        name_alt = TypedField(str)
 
     class OtherNewTable(TypedTable):
         name: str
@@ -265,7 +266,7 @@ def test_fields():
 
     assert counted1 == counted2 == counted3 == 0
 
-    select2: TypedRows[SomeNewTable] = db(SomeNewTable).select()
+    select2: TypedRows[SomeNewTable] = db(SomeNewTable.id > 0).select(SomeNewTable.name, SomeNewTable.name_alt)
 
     for row in select2:
         raise ValueError("no rows should exist")
@@ -273,6 +274,7 @@ def test_fields():
     SomeNewTable.update_or_insert(
         SomeNewTable.name == "Hendrik",
         name="Hendrik 2",
+        name_alt="Hendrik II"
     )
 
     idx = OtherNewTable.update_or_insert(
