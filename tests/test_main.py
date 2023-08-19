@@ -1,5 +1,4 @@
 import re
-import typing
 from sqlite3 import IntegrityError
 
 import pydal

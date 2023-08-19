@@ -12,6 +12,7 @@ from typing import Any, Optional
 import pydal
 from pydal._globals import DEFAULT
 from pydal.objects import Field, Query, Row, Rows, Table
+from typing_extensions import Self
 
 # use typing.cast(type, ...) to make mypy happy with unions
 T_annotation = typing.Type[Any] | types.UnionType
@@ -87,28 +88,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
         "notnull": True,
     }
 
-    def define(self, cls: T) -> T:
-        """
-        Can be used as a decorator on a class that inherits `TypedTable`, \
-          or as a regular method if you need to define your classes before you have access to a 'db' instance.
-
-        Args:
-            cls:
-
-        Example:
-            @db.define
-            class Person(TypedTable):
-                ...
-
-            class Article(TypedTable):
-                ...
-
-            # at a later time:
-            db.define(Article)
-
-        Returns:
-            the result of pydal.define_table
-        """
+    def _define(self, cls: T) -> T:
         # when __future__.annotations is implemented, cls.__annotations__ will not work anymore as below.
         # proper way to handle this would be (but gives error right now due to Table implementing magic methods):
         # typing.get_type_hints(cls, globalns=None, localns=None)
@@ -145,6 +125,50 @@ class TypeDAL(pydal.DAL):  # type: ignore
         # the ACTUAL output is not TypedTable but rather pydal.Table
         # but telling the editor it is T helps with hinting.
         return cls
+
+    @typing.overload
+    def define(self, maybe_cls: None = None) -> typing.Callable[[T], T]:
+        """
+        Typing Overload for define without a class.
+
+        @db.define()
+        class MyTable(TypedTable): ...
+        """
+
+    @typing.overload
+    def define(self, maybe_cls: T) -> T:
+        """
+        Typing Overload for define with a class.
+
+        @db.define
+        class MyTable(TypedTable): ...
+        """
+
+    def define(self, maybe_cls: T = None) -> T | typing.Callable[[T], T]:
+        """
+        Can be used as a decorator on a class that inherits `TypedTable`, \
+          or as a regular method if you need to define your classes before you have access to a 'db' instance.
+
+
+        Example:
+            @db.define
+            class Person(TypedTable):
+                ...
+
+            class Article(TypedTable):
+                ...
+
+            # at a later time:
+            db.define(Article)
+
+        Returns:
+            the result of pydal.define_table
+        """
+
+        def wrapper(cls: T) -> T:
+            return self._define(cls)
+
+        return wrapper(maybe_cls) if maybe_cls else wrapper
 
     def __call__(self, *_args: T_Query, **kwargs: typing.Any) -> "TypedSet":
         """
@@ -316,7 +340,7 @@ class TypedTable(Table, metaclass=TypedTableMeta):  # type: ignore
         return cls.__table(*a, **kw)
 
     @classmethod
-    def insert(cls, **fields: typing.Any) -> int:
+    def insert(cls, **fields: typing.Any) -> Self:
         """
         This is only called when db.define is not used as a decorator.
 
@@ -333,7 +357,7 @@ class TypedTable(Table, metaclass=TypedTableMeta):  # type: ignore
 
         result = super().insert(cls.__table, **fields)
         # it already is an int but mypy doesn't understand that
-        return typing.cast(int, result)
+        return cls(result)
 
     @classmethod
     def update_or_insert(cls, query: T_Query = DEFAULT, **values: typing.Any) -> Optional[int]:
