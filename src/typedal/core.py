@@ -17,6 +17,8 @@ from typing_extensions import Self
 # use typing.cast(type, ...) to make mypy happy with unions
 T_annotation = typing.Type[Any] | types.UnionType
 T_Query = typing.Union[Table, Query, bool, None, "TypedTable", typing.Type["TypedTable"]]
+T_Value = typing.TypeVar("T_Value")  # actual type of the Field (via Generic)
+T_MetaInstance = typing.TypeVar("T_MetaInstance")
 
 BASIC_MAPPINGS: dict[T_annotation, str] = {
     str: "string",
@@ -105,11 +107,11 @@ class TypeDAL(pydal.DAL):  # type: ignore
         # grab annotations of cls and it's parents:
         annotations = all_annotations(cls)
         # extend with `prop = TypedField()` 'annotations':
-        annotations |= {k: v for k, v in cls.__dict__.items() if isinstance(v, TypedFieldType)}
+        annotations |= {k: v for k, v in cls.__dict__.items() if isinstance(v, TypedField)}
         # remove internal stuff:
         annotations = {k: v for k, v in annotations.items() if not k.startswith("_")}
 
-        typedfields = {k: v for k, v in annotations.items() if isinstance(v, TypedFieldType)}
+        typedfields = {k: v for k, v in annotations.items() if isinstance(v, TypedField)}
 
         fields = {fname: self._to_field(fname, ftype) for fname, ftype in annotations.items()}
         other_kwargs = {k: v for k, v in cls.__dict__.items() if k not in annotations and not k.startswith("_")}
@@ -207,6 +209,12 @@ class TypeDAL(pydal.DAL):  # type: ignore
         # ftype can be a union or type. typing.cast is sometimes used to tell mypy when it's not a union.
         ftype = typing.cast(type, _ftype)  # cast from typing.Type to type to make mypy happy)
 
+        if isinstance(ftype, str):
+            # extract type from string
+            ftype = typing.get_args(typing.Type[ftype])[0]._evaluate(
+                localns=locals(), globalns=globals(), recursive_guard=frozenset()
+            )
+
         if mapping := BASIC_MAPPINGS.get(ftype):
             # basi types
             return mapping
@@ -217,10 +225,17 @@ class TypeDAL(pydal.DAL):  # type: ignore
             # SomeTable
             snakename = cls._to_snake(ftype.__name__)
             return f"reference {snakename}"
-        elif isinstance(ftype, TypedFieldType):
+        elif isinstance(ftype, TypedField):
             # FieldType(type, ...)
             return ftype._to_field(mut_kw)
-        elif isinstance(ftype, types.GenericAlias) and typing.get_origin(ftype) is list:
+        elif (
+            typing.get_origin(ftype)
+            and isinstance(typing.get_origin(ftype), type)
+            and issubclass(typing.get_origin(ftype), TypedField)
+        ):
+            # TypedField[int]
+            return cls._annotation_to_pydal_fieldtype(typing.get_args(ftype)[0], mut_kw)
+        elif isinstance(ftype, types.GenericAlias) and typing.get_origin(ftype) in (list, TypedField):
             # list[str] -> str -> string -> list:string
             _child_type = typing.get_args(ftype)[0]
             _child_type = cls._annotation_to_pydal_fieldtype(_child_type, mut_kw)
@@ -294,27 +309,140 @@ class TypedTableMeta(type):
         return self.__get_table_column__(key)
 
 
-class TypedTable(Table, metaclass=TypedTableMeta):  # type: ignore
-    """
-    Typed version of pydal.Table, does not really do anything itself but forwards logic to pydal.
-    """
+# class TypedTable(Table, metaclass=TypedTableMeta):  # type: ignore
+#     """
+#     Typed version of pydal.Table, does not really do anything itself but forwards logic to pydal.
+#     """
+#
+#     id: int  # noqa: 'id' has to be id since that's the db column
+#
+#     # set up by db.define:
+#     __db: TypeDAL | None = None
+#     __table: Table | None = None
+#
+#     @classmethod
+#     def __set_internals__(cls, db: pydal.DAL, table: Table) -> None:
+#         """
+#         Store the related database and pydal table for later usage.
+#         """
+#         cls.__db = db
+#         cls.__table = table
+#
+#     @classmethod
+#     def __get_table_column__(cls, col: str) -> Field:
+#         """
+#         Magic method used by TypedTableMeta to get a database field with dot notation on a class.
+#
+#         Example:
+#             SomeTypedTable.col -> db.table.col (via TypedTableMeta.__getattr__)
+#
+#         """
+#         #
+#         if cls.__table:
+#             return cls.__table[col]
+#
+#     def __new__(cls, *a: typing.Any, **kw: typing.Any) -> Row:  # or none!
+#         """
+#         When e.g. Table(id=0) is called without db.define, \
+#         this catches it and forwards for proper behavior.
+#
+#         Args:
+#             *a: can be for example Table(<id>)
+#             **kw: can be for example Table(slug=<slug>)
+#         """
+#         if not cls.__table:
+#             raise EnvironmentError("@define or db.define is not called on this class yet!")
+#         return cls.__table(*a, **kw)
+#
+#     @classmethod
+#     def insert(cls, **fields: typing.Any) -> Self:
+#         """
+#         This is only called when db.define is not used as a decorator.
+#
+#         cls.__table functions as 'self'
+#
+#         Args:
+#             **fields: anything you want to insert in the database
+#
+#         Returns: the ID of the new row.
+#
+#         """
+#         if not cls.__table:
+#             raise EnvironmentError("@define or db.define is not called on this class yet!")
+#
+#         result = super().insert(cls.__table, **fields)
+#         # it already is an int but mypy doesn't understand that
+#         return cls(result)
+#
+#     @classmethod
+#     def update_or_insert(cls, query: T_Query = DEFAULT, **values: typing.Any) -> Optional[int]:
+#         """
+#         Add typing to pydal's update_or_insert.
+#         """
+#         result = super().update_or_insert(cls, _key=query, **values)
+#         if result is None:
+#             return None
+#         else:
+#             return typing.cast(int, result)
 
-    id: int  # noqa: 'id' has to be id since that's the db column
 
-    # set up by db.define:
-    __db: TypeDAL | None = None
-    __table: Table | None = None
+class QueryBuilder(typing.Generic[T_MetaInstance]):
+    # todo: document select kwargs etc.
+    model: T_MetaInstance
+    query: Query
+    select_args: list[Any]
+    select_kwargs: dict[str, Any]
 
-    @classmethod
-    def __set_internals__(cls, db: pydal.DAL, table: Table) -> None:
+    def __init__(
+        self,
+        model: "TypedTable",
+        add_query: Optional[Query] = None,
+        select_args: Optional[list[Any]] = None,
+        select_kwargs: Optional[dict[str, Any]] = None,
+    ):
+        self.model = model
+        self.query = add_query or model._table.id > 0
+        self.select_args = select_args or []
+        self.select_kwargs = select_kwargs or {}
+
+    def select(self, *fields, **options) -> "QueryBuilder[T_MetaInstance]":
+        return QueryBuilder(self.model, self.query, self.select_args + list(fields), self.select_kwargs | options)
+
+    def where(self, query_or_lambda, **filters) -> "QueryBuilder[T_MetaInstance]":
+        # todo: deal with lambda
+        # todo: deal with filters (name="Steve")
+        return QueryBuilder(
+            self.model,
+            self.query & query_or_lambda,
+            self.select_args,
+            self.select_kwargs,
+        )
+
+    def _build(self) -> Rows:
+        db = self.model._db
+        # print(db, self.query, self.select_args, self.select_kwargs)
+        # print(db(self.query)._select(*self.select_args, **self.select_kwargs))
+        return db(self.query).select(*self.select_args, **self.select_kwargs)
+
+    def __iter__(self) -> typing.Generator[T_MetaInstance, None, None]:
+        yield from self._build()
+
+    def first(self) -> T_MetaInstance:
+        # todo: limitby
+        row = self._build()[0]
+
+        return self.model.from_row(row)
+
+
+class TableMeta(type):
+    def __set_internals__(self, db: pydal.DAL, table: Table) -> None:
         """
         Store the related database and pydal table for later usage.
         """
-        cls.__db = db
-        cls.__table = table
+        self._db = db
+        self._table = table
 
-    @classmethod
-    def __get_table_column__(cls, col: str) -> Field:
+    def __get_table_column__(self, col: str) -> Field:
         """
         Magic method used by TypedTableMeta to get a database field with dot notation on a class.
 
@@ -323,24 +451,14 @@ class TypedTable(Table, metaclass=TypedTableMeta):  # type: ignore
 
         """
         #
-        if cls.__table:
-            return cls.__table[col]
+        if self._table:
+            return getattr(self._table, col, None)
+            # return self._table[col]
 
-    def __new__(cls, *a: typing.Any, **kw: typing.Any) -> Row:  # or none!
-        """
-        When e.g. Table(id=0) is called without db.define, \
-        this catches it and forwards for proper behavior.
+    def __getattr__(self, item):
+        return self.__get_table_column__(item)
 
-        Args:
-            *a: can be for example Table(<id>)
-            **kw: can be for example Table(slug=<slug>)
-        """
-        if not cls.__table:
-            raise EnvironmentError("@define or db.define is not called on this class yet!")
-        return cls.__table(*a, **kw)
-
-    @classmethod
-    def insert(cls, **fields: typing.Any) -> Self:
+    def insert(self: typing.Type[T_MetaInstance], **fields: typing.Any) -> T_MetaInstance:
         """
         This is only called when db.define is not used as a decorator.
 
@@ -352,52 +470,110 @@ class TypedTable(Table, metaclass=TypedTableMeta):  # type: ignore
         Returns: the ID of the new row.
 
         """
-        if not cls.__table:
+        if not self._table:
             raise EnvironmentError("@define or db.define is not called on this class yet!")
 
-        result = super().insert(cls.__table, **fields)
+        result = self._table.insert(**fields)
         # it already is an int but mypy doesn't understand that
-        return cls(result)
+        return self(result)
 
-    @classmethod
-    def update_or_insert(cls, query: T_Query = DEFAULT, **values: typing.Any) -> Optional[int]:
+    def select(self: typing.Type[T_MetaInstance], *a, **kw) -> QueryBuilder[T_MetaInstance]:
+        return QueryBuilder(self, select_args=list(a), select_kwargs=kw)
+
+    def where(self: typing.Type[T_MetaInstance], *a, **kw) -> QueryBuilder[T_MetaInstance]:
+        return QueryBuilder(self, select_args=list(a), select_kwargs=kw)
+
+    @property
+    def ALL(cls):
+        return cls._table.ALL
+
+    def update_or_insert(self, query: T_Query = DEFAULT, **values: typing.Any) -> Optional[int]:
         """
         Add typing to pydal's update_or_insert.
         """
-        result = super().update_or_insert(cls, _key=query, **values)
+        result = self._table.update_or_insert(_key=query, **values)
         if result is None:
             return None
         else:
             return typing.cast(int, result)
 
+    def from_row(self, row: pydal.objects.Row):
+        return self(row)
+
+
+# @typing.dataclass_transform()
+class TypedTable(metaclass=TableMeta):
+    # set up by db.define:
+    _db: TypeDAL | None = None
+    _table: Table | None = None
+
+    id: "TypedField[int]"
+
+    def __init__(self, row_or_id=None, **filters):
+        if isinstance(row_or_id, pydal.objects.Row):
+            row = row_or_id
+        else:
+            row = self._table(row_or_id, **filters)
+
+        if not row:
+            raise pydal.objects.NotFoundException(str(row_or_id))
+
+        self.__dict__.update(row)
+
+    def __int__(self):
+        return self.id
+
 
 # backwards compat:
 TypedRow = TypedTable
+T_Table = typing.TypeVar("T_Table", bound=TypedTable)
 
 
-class TypedFieldType(Field):  # type: ignore
+class TypedField(typing.Generic[T_Value]):
     """
     Typed version of pydal.Field, which will be converted to a normal Field in the background.
     """
-
-    # todo: .bind
 
     # will be set by .bind on db.define
     name = ""
     _db: Optional[pydal.DAL] = None
     _rname: Optional[str] = None
     _table: Optional[Table] = None
-    _field: Optional[Table] = None
+    _field: Optional[Field] = None
 
     _type: T_annotation
     kwargs: typing.Any
 
-    def __init__(self, _type: T_annotation, **kwargs: typing.Any) -> None:
+    def __init__(self, _type: typing.Type[T_Value] = str, /, **settings: typing.Any) -> None:  # type: ignore
         """
         A TypedFieldType should not be inited manually, but TypedField (from `fields.py`) should be used!
         """
+        # if isinstance(_type, TypedField):
+        #     if args := typing.get_args(_type):
+        #         _type = args[0]
+        #     else:
+        #         _type = str
+
         self._type = _type
-        self.kwargs = kwargs
+        self.kwargs = settings
+        super().__init__()
+
+    @typing.overload
+    def __get__(self, instance: T_Table, owner: typing.Type[T_Table]) -> T_Value:
+        ...
+
+    @typing.overload
+    def __get__(self, instance: None, owner: typing.Type[TypedTable]) -> "TypedField[T_Value]":
+        ...
+
+    def __get__(
+        self, instance: T_Table | None, owner: typing.Type[T_Table]
+    ) -> typing.Union[T_Value, "TypedField[T_Value]"]:
+        if instance:
+            # never actually reached because a value was already stored in owner!
+            return typing.cast(T_Value, instance)
+        else:
+            return self
 
     def __str__(self) -> str:
         """
@@ -439,15 +615,21 @@ class TypedFieldType(Field):  # type: ignore
         extra_kwargs.update(other_kwargs)
         return extra_kwargs.pop("type", False) or TypeDAL._annotation_to_pydal_fieldtype(self._type, extra_kwargs)
 
-    def bind(self, field: Field, table: Table) -> None:
+    def bind(self, field: pydal.objects.Field, table: pydal.objects.Table) -> None:
         """
         Bind the right db/table/field info to this class, so queries can be made using `Class.field == ...`.
         """
+        # print('binding field!!!', field, type(field), table, type(table))
+        # self._table = table
+        # self._field = field
+        # self.name = field.name
+        # self.type = field.type
+        # # ._itype etc via getattrs
+        # self._table.bind(table)
+        # print(field._table)
+        self._table = table
         self._field = field
-        self.name = field.name
-        self.type = field.type
-        # ._itype etc via getattrs
-        super().bind(table)
+        # field.bind(table)
 
     # def __eq__(self, value):
     #     return Query(self.db, self._dialect.eq, self, value)
@@ -472,9 +654,6 @@ class TypedRows(typing.Collection[S], Rows):  # type: ignore
     Example:
         people: TypedRows[Person] = db(Person).select()
     """
-
-
-T_Table = typing.TypeVar("T_Table", bound=Table)
 
 
 class TypedSet(pydal.objects.Set):  # type: ignore # pragma: no cover

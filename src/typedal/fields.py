@@ -9,7 +9,7 @@ import typing
 
 from pydal.objects import Table
 
-from .core import TypeDAL, TypedFieldType, TypedTable
+from .core import TypeDAL, TypedField, TypedTable
 
 T = typing.TypeVar("T", bound=typing.Any)
 
@@ -17,19 +17,19 @@ T = typing.TypeVar("T", bound=typing.Any)
 ## general
 
 
-def TypedField(
-    _type: typing.Type[T] | types.UnionType,
-    **kwargs: typing.Any,
-) -> T:
-    """
-    sneaky: its a function and not a class, because there's a return type.
-
-    and the return type (T) is the input type in _type
-
-    Example:
-        age: TypedField(int, default=18)
-    """
-    return typing.cast(T, TypedFieldType(_type, **kwargs))
+# def TypedField(
+#     _type: typing.Type[T] | types.UnionType,
+#     **kwargs: typing.Any,
+# ) -> T:
+#     """
+#     sneaky: its a function and not a class, because there's a return type.
+#
+#     and the return type (T) is the input type in _type
+#
+#     Example:
+#         age: TypedField(int, default=18)
+#     """
+#     return typing.cast(T, TypedFieldType(_type, **kwargs))
 
 
 ## specific
