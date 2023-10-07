@@ -35,12 +35,9 @@ def all_annotations(
     return {k: v for k, v in _all.items() if k not in _except}
 
 
-
-
 T_Table = typing.TypeVar("T_Table", bound=TypedTable)
 
 TypeTable = typing.Type[T_Table]
-
 
 # class TypeDAL:
 #     tables: list[typing.Type[TypedTable]]
@@ -73,9 +70,7 @@ TypeTable = typing.Type[T_Table]
 
 T_Value = typing.TypeVar("T_Value")  # actual type of the Field (via Generic)
 
-
 # T_Table = typing.TypeVar("T_Table")  # typevar used by __get__
-
 
 
 ###
@@ -110,7 +105,7 @@ db.define(Post)
 
 @db.define()
 class Tag(TypedTable):
-    slug: str
+    slug: TypedField[str]
     gid = TypedField(default=uuid.uuid4)
 
 
@@ -119,8 +114,9 @@ class Tagged(TypedTable):
     entity: str  # uuid
     tag: Tag
 
+
 def test_types() -> None:
-    user = User()
+    user = User.insert(name="Steve")
     typing.reveal_type(User.id)
     typing.reveal_type(user.id)
 
@@ -133,6 +129,8 @@ def test_types() -> None:
     typing.reveal_type(User.age)
     typing.reveal_type(user.age)
 
+    user.delete_record()
+
 
 def test_orm_classes():
     henkie = User.insert(name="Henkie")
@@ -140,7 +138,7 @@ def test_orm_classes():
     assert isinstance(henkie, User)
     assert henkie.name == "Henkie"
 
-    row = db(db.user.id == 1).select().first()
+    row = db(db.user.name == "Henkie").select().first()
     assert User.from_row(row).name == "Henkie"
 
     ijsjes = Post.insert(title="IJsjes")
@@ -154,10 +152,14 @@ def test_orm_classes():
     Tagged.insert(entity=ijsjes.gid, tag=melk_producten)
 
     first = Tagged.select(Tagged.ALL).where(Tagged.id).first()
-    print(first)
+    assert first
 
     multiple = list(Tagged.where(Tagged.id).select(Tagged.ALL))
-    print(multiple)
+    assert len(multiple) == 2
+
+    other_methods = list(Tag.where(Tag.slug.belongs(["post-by-henkie", "unknown"])))
+
+    assert len(other_methods) == 1
 
 
 if __name__ == "__main__":

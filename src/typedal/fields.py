@@ -4,7 +4,6 @@ This file contains available Field types.
 
 import datetime as dt
 import decimal
-import types
 import typing
 
 from pydal.objects import Table
