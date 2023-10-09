@@ -6,7 +6,7 @@ import json
 from textwrap import dedent
 
 import pytest
-from pydal.objects import csv_reader, Expression
+from pydal.objects import Expression
 
 from src.typedal import TypeDAL, TypedTable, TypedField
 from src.typedal.fields import IntegerField
@@ -15,7 +15,7 @@ import pydal
 db = TypeDAL("sqlite:memory")
 
 
-def test_both_styles():
+def test_both_styles_for_class():
     old_style = db.define_table("old_style",
                                 pydal.Field("string_field"),
                                 pydal.Field("int_field", "integer"),
@@ -48,7 +48,6 @@ def test_both_styles():
     ids = old_style.bulk_insert(bulk_data)
     assert ids == [_.id for _ in NewStyle.bulk_insert(bulk_data)]
 
-
     assert old_style.create_index("first-index-oldstyle", "int_field")
     assert NewStyle.create_index("first-index-newstyle", "int_field")
 
@@ -77,6 +76,23 @@ def test_both_styles():
     assert old_style.insert(string_field="field 6", int_field=6) == 6
     instance = NewStyle.insert(string_field="field 6", int_field=6)
     assert instance.id == 6
+
+    with pytest.raises(RuntimeError):
+        old_style.update(old_style.int_field == 6, int_field=7)
+
+    assert NewStyle.update(
+        NewStyle.int_field == 6000,
+        int_field=7
+    ) is None
+
+    same_as_before = NewStyle.update(
+        NewStyle.int_field == 6,
+        int_field=7
+    ).update_record(
+        int_field=6
+    )
+
+    assert same_as_before.int_field == 6
 
     assert isinstance(old_style.on(old_style.id == 1), Expression)
     assert isinstance(NewStyle.on(NewStyle.id == 1), Expression)
@@ -180,7 +196,6 @@ def test_both_styles():
 
     assert isinstance(old_style.with_alias("aliased_old_style"), pydal.objects.Table)
     assert isinstance(NewStyle.with_alias("aliased_old_style"), pydal.objects.Table)
-
 
     old_style.drop()
     NewStyle.drop()

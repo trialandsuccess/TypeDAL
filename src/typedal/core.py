@@ -315,7 +315,7 @@ class TableMeta(type):
         if self._table:
             return getattr(self._table, col, None)
 
-    def _ensure_defined(self) -> Table:
+    def _ensure_table_defined(self) -> Table:
         if not self._table:
             raise EnvironmentError("@define or db.define is not called on this class yet!")
         return self._table
@@ -343,7 +343,7 @@ class TableMeta(type):
         Returns: the ID of the new row.
 
         """
-        table = self._ensure_defined()
+        table = self._ensure_table_defined()
 
         result = table.insert(**fields)
         # it already is an int but mypy doesn't understand that
@@ -351,12 +351,12 @@ class TableMeta(type):
 
     def bulk_insert(self: typing.Type[T_MetaInstance], items: list[dict[str, Any]]) -> list[T_MetaInstance]:
         # todo: list of instances?
-        table = self._ensure_defined()
+        table = self._ensure_table_defined()
         result = table.bulk_insert(items)
         return [self(row_id) for row_id in result]
 
     def update_or_insert(self: typing.Type[T_MetaInstance], query: T_Query = DEFAULT, **values: Any) -> T_MetaInstance:
-        table = self._ensure_defined()
+        table = self._ensure_table_defined()
 
         if query is DEFAULT:
             record = table(**values)
@@ -374,7 +374,7 @@ class TableMeta(type):
     def validate_and_insert(
         self: typing.Type[T_MetaInstance], **fields: Any
     ) -> tuple[Optional[T_MetaInstance], Optional[dict[str, str]]]:
-        table = self._ensure_defined()
+        table = self._ensure_table_defined()
         result = table.validate_and_insert(**fields)
         if row_id := result.get("id"):
             return self(row_id), None
@@ -384,7 +384,7 @@ class TableMeta(type):
     def validate_and_update(
         self: typing.Type[T_MetaInstance], query: Query, **fields: Any
     ) -> tuple[Optional[T_MetaInstance], Optional[dict[str, str]]]:
-        table = self._ensure_defined()
+        table = self._ensure_table_defined()
 
         try:
             result = table.validate_and_update(query, **fields)
@@ -402,7 +402,7 @@ class TableMeta(type):
     def validate_and_update_or_insert(
         self: typing.Type[T_MetaInstance], query: Query, **fields: Any
     ) -> tuple[Optional[T_MetaInstance], Optional[dict[str, str]]]:
-        table = self._ensure_defined()
+        table = self._ensure_table_defined()
         result = table.validate_and_update_or_insert(query, **fields)
 
         if errors := result.get("errors"):
@@ -430,7 +430,7 @@ class TableMeta(type):
 
     @property
     def ALL(cls) -> pydal.objects.SQLALL:
-        table = cls._ensure_defined()
+        table = cls._ensure_table_defined()
 
         return table.ALL
 
@@ -439,36 +439,19 @@ class TableMeta(type):
     ##########################
     fields: list[str]
 
-    # sanitize:
-
-    def as_dict(self, flat: bool = False, sanitize: bool = True) -> dict[str, typing.Any]:
-        table = self._ensure_defined()
-        result = table.as_dict(flat, sanitize)
-        return typing.cast(dict[str, typing.Any], result)
-
-    def as_json(self, sanitize: bool = True) -> str:
-        table = self._ensure_defined()
-        return typing.cast(str, table.as_json(sanitize))
-
-    def as_xml(self, sanitize: bool = True) -> str:
-        table = self._ensure_defined()
-        return typing.cast(str, table.as_xml(sanitize))
-
-    def as_yaml(self, sanitize: bool = True) -> str:
-        table = self._ensure_defined()
-        return typing.cast(str, table.as_yaml(sanitize))
+    # other table methods:
 
     def create_index(self, name: str, *fields: Field | str, **kwargs: Any) -> bool:
-        table = self._ensure_defined()
+        table = self._ensure_table_defined()
         result = table.create_index(name, *fields, **kwargs)
         return typing.cast(bool, result)
 
     def drop(self, mode: str = "") -> None:
-        table = self._ensure_defined()
+        table = self._ensure_table_defined()
         table.drop(mode)
 
     def drop_index(self, name: str, if_exists: bool = False) -> bool:
-        table = self._ensure_defined()
+        table = self._ensure_table_defined()
         result = table.drop_index(name, if_exists)
         return typing.cast(bool, result)
 
@@ -488,7 +471,7 @@ class TableMeta(type):
         restore: bool = False,
         **kwargs: Any,
     ) -> None:
-        table = self._ensure_defined()
+        table = self._ensure_table_defined()
         table.import_from_csv_file(
             csvfile,
             id_map=id_map,
@@ -506,11 +489,11 @@ class TableMeta(type):
         )
 
     def on(self, query: Query) -> pydal.objects.Expression:
-        table = self._ensure_defined()
+        table = self._ensure_table_defined()
         return table.on(query)
 
     def with_alias(self, alias: str) -> _Table:
-        table = self._ensure_defined()
+        table = self._ensure_table_defined()
         return table.with_alias(alias)
 
     # @typing.dataclass_transform()
@@ -522,10 +505,26 @@ class TypedTable(metaclass=TableMeta):
 
     id: "TypedField[int]"  # noqa: A003
 
-    def __new__(cls, row_or_id: Row | int | str | None = None, **filters: Any) -> "TypedTable":
-        table = cls._ensure_defined()
+    def _setup_instance_methods(self) -> None:
+        self.as_dict = self._as_dict  # type: ignore
+        self.as_json = self._as_json  # type: ignore
+        # self.as_yaml = self._as_yaml  # type: ignore
+        self.as_xml = self._as_xml  # type: ignore
 
-        if isinstance(row_or_id, pydal.objects.Row):
+        self.update = self._update  # type: ignore
+
+        self.delete_record = self._delete_record  # type: ignore
+        self.update_record = self._update_record  # type: ignore
+
+    def __new__(
+        cls, row_or_id: typing.Union[Row, Query, pydal.objects.Set, int, str, None, "TypedTable"] = None, **filters: Any
+    ) -> "TypedTable":
+        table = cls._ensure_table_defined()
+
+        if isinstance(row_or_id, TypedTable):
+            # existing typed table instance!
+            return row_or_id
+        elif isinstance(row_or_id, pydal.objects.Row):
             row = row_or_id
         elif row_or_id:
             row = table(row_or_id, **filters)
@@ -538,14 +537,120 @@ class TypedTable(metaclass=TableMeta):
         inst = super().__new__(cls)
         inst._row = row
         inst.__dict__.update(row)
+        inst._setup_instance_methods()
         return inst
 
     def __int__(self) -> int:
-        return self.id
+        return getattr(self, "id", 0)
+
+    def __bool__(self) -> bool:
+        return bool(getattr(self, "_row", False))
 
     def __getattr__(self, item: str) -> Any:
         if self._row:
             return getattr(self._row, item)
+
+    def _ensure_matching_row(self) -> Row:
+        if not getattr(self, "_row", None):
+            raise EnvironmentError("Trying to access non-existant row. Maybe it was deleted or not yet initialized?")
+        return self._row
+
+    def __repr__(self) -> str:
+        if self._row:
+            return f"<{self.__class__.__name__}({self._row.as_json()})>"
+        else:
+            return f"<{self.__class__.__name__}({{}})>"
+
+    # serialization
+    # underscore variants work for class instances (set up by _setup_instance_methods)
+
+    @classmethod
+    def as_dict(cls, flat: bool = False, sanitize: bool = True) -> dict[str, typing.Any]:
+        table = cls._ensure_table_defined()
+        result = table.as_dict(flat, sanitize)
+        return typing.cast(dict[str, typing.Any], result)
+
+    @classmethod
+    def as_json(cls, sanitize: bool = True) -> str:
+        table = cls._ensure_table_defined()
+        return typing.cast(str, table.as_json(sanitize))
+
+    @classmethod
+    def as_xml(cls, sanitize: bool = True) -> str:
+        table = cls._ensure_table_defined()
+        return typing.cast(str, table.as_xml(sanitize))
+
+    @classmethod
+    def as_yaml(cls, sanitize: bool = True) -> str:
+        table = cls._ensure_table_defined()
+        return typing.cast(str, table.as_yaml(sanitize))
+
+    def _as_dict(
+        self, datetime_to_str: bool = False, custom_types: typing.Iterable[type] | type | None = None
+    ) -> dict[str, typing.Any]:
+        row = self._ensure_matching_row()
+
+        result = row.as_dict(datetime_to_str=datetime_to_str, custom_types=custom_types)
+        return typing.cast(dict[str, typing.Any], result)
+
+    def _as_json(self, sanitize: bool = True) -> str:
+        row = self._ensure_matching_row()
+        return typing.cast(str, row.as_json(sanitize))
+
+    def _as_xml(self, sanitize: bool = True) -> str:
+        row = self._ensure_matching_row()
+        return typing.cast(str, row.as_xml(sanitize))
+
+    # def _as_yaml(self, sanitize: bool = True) -> str:
+    #     row = self._ensure_matching_row()
+    #     return typing.cast(str, row.as_yaml(sanitize))
+
+    def __setattr__(self, key: str, value: Any) -> None:
+        if self._row and key in self._row.__dict__ and not callable(value):
+            # enables `row.key = value; row.update_record()`
+            self._row[key] = value
+
+        super().__setattr__(key, value)
+
+    @classmethod
+    def update(cls: typing.Type[T_MetaInstance], query: Query, **fields: Any) -> T_MetaInstance | None:
+        record: T_MetaInstance = cls(query)
+        if not record:
+            return None
+
+        return record.update_record(**fields)
+
+    def _update(self: T_MetaInstance, **fields: Any) -> T_MetaInstance:
+        row = self._ensure_matching_row()
+        row.update(**fields)
+        self.__dict__.update(**fields)
+        return self
+
+    def _update_record(self: T_MetaInstance, **fields: Any) -> T_MetaInstance:
+        row = self._ensure_matching_row()
+        new_row = row.update_record(**fields)
+        self.update(**new_row)
+        return self
+
+    def update_record(self: T_MetaInstance, **fields: Any) -> T_MetaInstance:
+        return self._update_record(**fields)
+
+    def _delete_record(self) -> int:
+        """
+        Actual logic in `pydal.helpers.classes.RecordDeleter`.
+        """
+        row = self._ensure_matching_row()
+        result = row.delete_record()
+        self.__dict__ = {}  # empty self, since row is no more.
+        return typing.cast(int, result)
+
+    def delete_record(self) -> int:
+        return self._delete_record()
+
+    # __del__ is also called on the end of a scope so don't remove records on every del!!
+    # def __del__(self) -> None:
+    #     if getattr(self, "_row", None):
+    #         self._delete_record()
 
 
 # backwards compat:
@@ -568,7 +673,7 @@ class QueryBuilder(typing.Generic[T_Table]):
         select_kwargs: Optional[dict[str, Any]] = None,
     ):
         self.model = model
-        table = model._ensure_defined()
+        table = model._ensure_table_defined()
         self.query = add_query or table.id > 0
         self.select_args = select_args or []
         self.select_kwargs = select_kwargs or {}
@@ -580,7 +685,7 @@ class QueryBuilder(typing.Generic[T_Table]):
         self, query_or_lambda: Query | typing.Callable[[typing.Type[T_Table]], Query], **filters: Any
     ) -> "QueryBuilder[T_Table]":
         new_query = self.query
-        table = self.model._ensure_defined()
+        table = self.model._ensure_table_defined()
 
         for field, value in filters.items():
             new_query &= table[field] == value

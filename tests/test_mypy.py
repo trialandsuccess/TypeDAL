@@ -1,3 +1,4 @@
+import pydal.objects
 import pytest
 import typing
 
@@ -40,6 +41,23 @@ def mypy_test_typedal_define() -> None:
     typing.reveal_type(MyTable().fancy)  # R: builtins.str
     typing.reveal_type(MyTable.options)  # R: src.typedal.core.TypedField[builtins.str]
     typing.reveal_type(MyTable().options)  # R: builtins.str
+
+
+@pytest.mark.mypy_testing
+def test_update() -> None:
+    query: pydal.objects.Query = MyTable.id == 3
+    new = MyTable.update(query)
+    typing.reveal_type(new)  # R: Union[tests.test_mypy.MyTable, None]
+
+    inst = MyTable(3)  # could also actually be None!
+    typing.reveal_type(inst)  # R: tests.test_mypy.MyTable
+
+    if inst:
+        inst2 = inst._update()  # normally you would just do .update
+        typing.reveal_type(inst2)  # R: tests.test_mypy.MyTable
+
+        inst3 = inst.update_record()
+        typing.reveal_type(inst3)  # R: tests.test_mypy.MyTable
 
 
 @pytest.mark.mypy_testing
