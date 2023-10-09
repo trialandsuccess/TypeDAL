@@ -293,11 +293,11 @@ def test_fields():
         name_alt="Hendrik II"
     )
 
-    idx = OtherNewTable.update_or_insert(
+    instance = OtherNewTable.update_or_insert(
         OtherNewTable.name == "Hendrik",
         name="Hendrik 2",
     )
-    assert idx
+    assert instance
 
     OtherNewTable.update_or_insert(
         OtherNewTable.name == "Hendrik",
@@ -310,11 +310,13 @@ def test_fields():
     assert db(OtherNewTable.name == "Hendrik").count() == 0
     assert db(OtherNewTable.name == "Hendrik 2").count() == 2
 
-    no_idx = OtherNewTable.update_or_insert(
+    instance = OtherNewTable.update_or_insert(
         OtherNewTable.name == "Hendrik 2",
         name="Hendrik 3",
-    )  # should only update one and return None!
+    )  # should update and return new version
 
-    assert no_idx is None
+    assert instance
+    assert instance.name == "Hendrik 3"
+
     assert db(OtherNewTable.name == "Hendrik 2").count() == 1
     assert db(OtherNewTable.name == "Hendrik 3").count() == 1

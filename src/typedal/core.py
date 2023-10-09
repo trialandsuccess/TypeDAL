@@ -2,11 +2,11 @@
 Core functionality of TypeDAL.
 """
 import contextlib
+import csv
 import datetime as dt
 import types
 import typing
 import warnings
-from collections import ChainMap
 from decimal import Decimal
 from typing import Any, Optional
 
@@ -15,13 +15,13 @@ from pydal._globals import DEFAULT
 from pydal.objects import Field, Query, Row, Rows
 from pydal.objects import Table as _Table
 
+from .helpers import all_annotations, instanciate, is_union, origin_is_subclass
+
 # use typing.cast(type, ...) to make mypy happy with unions
 T_annotation = typing.Type[Any] | types.UnionType
 T_Query = typing.Union["Table", Query, bool, None, "TypedTable", typing.Type["TypedTable"]]
 T_Value = typing.TypeVar("T_Value")  # actual type of the Field (via Generic)
 T_MetaInstance = typing.TypeVar("T_MetaInstance", bound="TypedTable")  # bound="TypedTable"; bound="TableMeta"
-# the input and output of TypeDAL.define
-# T = typing.TypeVar("T", typing.Type["TypedTable"], typing.Type["Table"])
 T = typing.TypeVar("T")
 
 BASIC_MAPPINGS: dict[T_annotation, str] = {
@@ -46,62 +46,11 @@ class _Types:
     NONETYPE = type(None)
 
 
-def is_union(some_type: type) -> bool:
-    """
-    Check if a type is some type of Union.
-
-    Args:
-        some_type: types.UnionType = type(int | str); typing.Union = typing.Union[int, str]
-
-    """
-    return typing.get_origin(some_type) in (types.UnionType, typing.Union)
-
-
-def _all_annotations(cls: type) -> ChainMap[str, type]:
-    """
-    Returns a dictionary-like ChainMap that includes annotations for all \
-    attributes defined in cls or inherited from superclasses.
-    """
-    return ChainMap(*(c.__annotations__ for c in getattr(cls, "__mro__", []) if "__annotations__" in c.__dict__))
-
-
-def all_annotations(cls: type, _except: typing.Iterable[str] = None) -> dict[str, type]:
-    """
-    Wrapper around `_all_annotations` that filters away any keys in _except.
-
-    It also flattens the ChainMap to a regular dict.
-    """
-    if _except is None:
-        _except = set()
-
-    _all = _all_annotations(cls)
-    return {k: v for k, v in _all.items() if k not in _except}
-
-
 def is_typed_field(cls: Any) -> typing.TypeGuard["TypedField[Any]"]:
     return (
         isinstance(cls, TypedField)
         or isinstance(typing.get_origin(cls), type)
         and issubclass(typing.get_origin(cls), TypedField)
-    )
-
-
-def instanciate(cls: typing.Type[T] | T) -> T:
-    if inner_cls := typing.get_origin(cls):
-        args = typing.get_args(cls)
-        return typing.cast(T, inner_cls(*args))
-
-    if isinstance(cls, type):
-        return typing.cast(T, cls())
-
-    return cls
-
-
-def origin_is_subclass(obj: Any, _type: type) -> bool:
-    return bool(
-        typing.get_origin(obj)
-        and isinstance(typing.get_origin(obj), type)
-        and issubclass(typing.get_origin(obj), _type)
     )
 
 
@@ -160,8 +109,6 @@ class TypeDAL(pydal.DAL):  # type: ignore
         else:
             warnings.warn("db.define used without inheriting TypedTable. " "This could lead to strange problems!")
 
-        # the ACTUAL output is not TypedTable but rather pydal.Table
-        # but telling the editor it is T helps with hinting.
         return cls
 
     @typing.overload
@@ -236,8 +183,6 @@ class TypeDAL(pydal.DAL):  # type: ignore
 
         _set = super().__call__(*args, **kwargs)
         return typing.cast(TypedSet, _set)
-
-    # todo: insert etc shadowen?
 
     @classmethod
     def _build_field(cls, name: str, _type: str, **kw: Any) -> Field:
@@ -348,6 +293,10 @@ class TableMeta(type):
     _db: TypeDAL | None = None
     _table: Table | None = None
 
+    #########################
+    # TypeDAL custom logic: #
+    #########################
+
     def __set_internals__(self, db: pydal.DAL, table: Table) -> None:
         """
         Store the related database and pydal table for later usage.
@@ -371,7 +320,18 @@ class TableMeta(type):
             raise EnvironmentError("@define or db.define is not called on this class yet!")
         return self._table
 
-    def insert(self: typing.Type[T_MetaInstance], **fields: Any) -> T_MetaInstance:  # type: ignore
+    def from_row(self: typing.Type[T_MetaInstance], row: pydal.objects.Row) -> T_MetaInstance:
+        return self(row)
+
+    def all(self: typing.Type[T_MetaInstance]) -> list[T_MetaInstance]:  # noqa: A003
+        # todo: type?
+        return list(self.select())
+
+    ##########################
+    # TypeDAL Modified Logic #
+    ##########################
+
+    def insert(self: typing.Type[T_MetaInstance], **fields: Any) -> T_MetaInstance:
         """
         This is only called when db.define is not used as a decorator.
 
@@ -389,15 +349,79 @@ class TableMeta(type):
         # it already is an int but mypy doesn't understand that
         return self(result)
 
-    def select(self: typing.Type[T_MetaInstance], *a: Any, **kw: Any) -> "QueryBuilder[T_MetaInstance]":  # type: ignore
+    def bulk_insert(self: typing.Type[T_MetaInstance], items: list[dict[str, Any]]) -> list[T_MetaInstance]:
+        # todo: list of instances?
+        table = self._ensure_defined()
+        result = table.bulk_insert(items)
+        return [self(row_id) for row_id in result]
+
+    def update_or_insert(self: typing.Type[T_MetaInstance], query: T_Query = DEFAULT, **values: Any) -> T_MetaInstance:
+        table = self._ensure_defined()
+
+        if query is DEFAULT:
+            record = table(**values)
+        elif isinstance(query, dict):
+            record = table(**query)
+        else:
+            record = table(query)
+
+        if not record:
+            return self.insert(**values)
+
+        record.update_record(**values)
+        return self(record)
+
+    def validate_and_insert(
+        self: typing.Type[T_MetaInstance], **fields: Any
+    ) -> tuple[Optional[T_MetaInstance], Optional[dict[str, str]]]:
+        table = self._ensure_defined()
+        result = table.validate_and_insert(**fields)
+        if row_id := result.get("id"):
+            return self(row_id), None
+        else:
+            return None, result.get("errors")
+
+    def validate_and_update(
+        self: typing.Type[T_MetaInstance], query: Query, **fields: Any
+    ) -> tuple[Optional[T_MetaInstance], Optional[dict[str, str]]]:
+        table = self._ensure_defined()
+
+        try:
+            result = table.validate_and_update(query, **fields)
+        except Exception as e:
+            result = {"errors": {"exception": str(e)}}
+
+        if errors := result.get("errors"):
+            return None, errors
+        elif row_id := result.get("id"):
+            return self(row_id), None
+        else:
+            # update on query without result
+            return None, None
+
+    def validate_and_update_or_insert(
+        self: typing.Type[T_MetaInstance], query: Query, **fields: Any
+    ) -> tuple[Optional[T_MetaInstance], Optional[dict[str, str]]]:
+        table = self._ensure_defined()
+        result = table.validate_and_update_or_insert(query, **fields)
+
+        if errors := result.get("errors"):
+            return None, errors
+        elif row_id := result.get("id"):
+            return self(row_id), None
+        else:
+            # update on query without result
+            return None, None
+
+    def select(self: typing.Type[T_MetaInstance], *a: Any, **kw: Any) -> "QueryBuilder[T_MetaInstance]":
         builder = QueryBuilder(self)
         return builder.select(*a, **kw)
 
-    def where(self: typing.Type[T_MetaInstance], *a: Any, **kw: Any) -> "QueryBuilder[T_MetaInstance]":  # type: ignore
+    def where(self: typing.Type[T_MetaInstance], *a: Any, **kw: Any) -> "QueryBuilder[T_MetaInstance]":
         builder = QueryBuilder(self)
         return builder.where(*a, **kw)
 
-    def count(self: typing.Type[T_MetaInstance]) -> int:  # type: ignore
+    def count(self: typing.Type[T_MetaInstance]) -> int:
         return QueryBuilder(self).count()
 
     # todo: first, ... (query builder aliases)
@@ -410,23 +434,88 @@ class TableMeta(type):
 
         return table.ALL
 
-    def update_or_insert(self, query: T_Query = DEFAULT, **values: Any) -> Optional[int]:
-        """
-        Add typing to pydal's update_or_insert.
-        """
+    ##########################
+    # TypeDAL Shadowed Logic #
+    ##########################
+    fields: list[str]
+
+    # sanitize:
+
+    def as_dict(self, flat: bool = False, sanitize: bool = True) -> dict[str, typing.Any]:
         table = self._ensure_defined()
+        result = table.as_dict(flat, sanitize)
+        return typing.cast(dict[str, typing.Any], result)
 
-        result = table.update_or_insert(_key=query, **values)
-        if result is None:
-            return None
-        else:
-            return typing.cast(int, result)
+    def as_json(self, sanitize: bool = True) -> str:
+        table = self._ensure_defined()
+        return typing.cast(str, table.as_json(sanitize))
 
-    def from_row(self: typing.Type[T_MetaInstance], row: pydal.objects.Row) -> T_MetaInstance:  # type: ignore
-        return self(row)
+    def as_xml(self, sanitize: bool = True) -> str:
+        table = self._ensure_defined()
+        return typing.cast(str, table.as_xml(sanitize))
+
+    def as_yaml(self, sanitize: bool = True) -> str:
+        table = self._ensure_defined()
+        return typing.cast(str, table.as_yaml(sanitize))
+
+    def create_index(self, name: str, *fields: Field | str, **kwargs: Any) -> bool:
+        table = self._ensure_defined()
+        result = table.create_index(name, *fields, **kwargs)
+        return typing.cast(bool, result)
+
+    def drop(self, mode: str = "") -> None:
+        table = self._ensure_defined()
+        table.drop(mode)
+
+    def drop_index(self, name: str, if_exists: bool = False) -> bool:
+        table = self._ensure_defined()
+        result = table.drop_index(name, if_exists)
+        return typing.cast(bool, result)
+
+    def import_from_csv_file(
+        self,
+        csvfile: typing.TextIO,
+        id_map: dict[str, str] = None,
+        null: str = "<NULL>",
+        unique: str = "uuid",
+        id_offset: dict[str, int] = None,  # id_offset used only when id_map is None
+        transform: typing.Callable[[dict[Any, Any]], dict[Any, Any]] = None,
+        validate: bool = False,
+        encoding: str = "utf-8",
+        delimiter: str = ",",
+        quotechar: str = '"',
+        quoting: int = csv.QUOTE_MINIMAL,
+        restore: bool = False,
+        **kwargs: Any,
+    ) -> None:
+        table = self._ensure_defined()
+        table.import_from_csv_file(
+            csvfile,
+            id_map=id_map,
+            null=null,
+            unique=unique,
+            id_offset=id_offset,
+            transform=transform,
+            validate=validate,
+            encoding=encoding,
+            delimiter=delimiter,
+            quotechar=quotechar,
+            quoting=quoting,
+            restore=restore,
+            **kwargs,
+        )
+
+    def on(self, query: Query) -> pydal.objects.Expression:
+        table = self._ensure_defined()
+        return table.on(query)
+
+    def with_alias(self, alias: str) -> _Table:
+        table = self._ensure_defined()
+        return table.with_alias(alias)
+
+    # @typing.dataclass_transform()
 
 
-# @typing.dataclass_transform()
 class TypedTable(metaclass=TableMeta):
     # set up by 'new':
     _row: Row | None = None
@@ -539,7 +628,7 @@ class QueryBuilder(typing.Generic[T_Table]):
         db = self._get_db()
         return db(self.query).count()
 
-    def first(self) -> T_Table:
+    def first(self) -> T_Table | None:
         # todo: limitby
         row = self._build()[0]
 

@@ -65,6 +65,9 @@ exclude = []
 coverage = 100
 badge = true
 
+[tool.su6.default-flags]
+mypy = "--disable-error-code misc"
+
 [tool.black]
 target-version = ["py310"]
 line-length = 120
@@ -95,6 +98,7 @@ ignore_missing_imports = true
 strict = true
 # fixes defs with clear return var (doesn't seem to work for __init__ which is the most obvious case)
 # check_untyped_defs = True
+# disable_error_code = "misc" # skip misc makes mypy tests fail!
 
 exclude = ["venv", ".bak"]
 
