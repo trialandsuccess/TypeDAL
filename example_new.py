@@ -58,7 +58,7 @@ max = Pet(name="Max")
 assert max.as_dict() == _max.as_dict()
 print(max)
 
-people = Person.select()._build()
+people = Person.select().collect()
 
 # people: TypedRows[Person] = db(Person).select()  # db(db.person.id > 0).select()
 

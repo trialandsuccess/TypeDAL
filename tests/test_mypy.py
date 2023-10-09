@@ -74,7 +74,7 @@ def mypy_test_typedset() -> None:
 
     select1 = db(MyTable).select()  # E: Need type annotation for "select1"
     select2: TypedRows[MyTable] = db(MyTable).select()
-    select3 = MyTable.select()._build()
+    select3 = MyTable.select().collect()
 
     typing.reveal_type(select1)  # R: src.typedal.core.TypedRows[Any]
     typing.reveal_type(select2)  # R: src.typedal.core.TypedRows[tests.test_mypy.MyTable]
@@ -105,6 +105,10 @@ def mypy_test_query() -> None:
 
     db(db.old_style)
 
+    my_query = MyTable.id > 3
+
+    typing.reveal_type(my_query)  # R: src.typedal.core.Query
+
     MyTable.update_or_insert(MyTable)
-    MyTable.update_or_insert(MyTable.id > 3)
+    MyTable.update_or_insert(my_query)
     MyTable.update_or_insert(db.my_table.id > 3)

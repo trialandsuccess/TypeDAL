@@ -12,10 +12,17 @@ from typing import Any, Optional
 
 import pydal
 from pydal._globals import DEFAULT
-from pydal.objects import Field, Query, Row, Rows
+from pydal.objects import Field
+from pydal.objects import Query as _Query
+from pydal.objects import Row, Rows
 from pydal.objects import Table as _Table
 
 from .helpers import all_annotations, instanciate, is_union, origin_is_subclass
+
+
+class Query(_Query):  # type: ignore
+    ...
+
 
 # use typing.cast(type, ...) to make mypy happy with unions
 T_annotation = typing.Type[Any] | types.UnionType
@@ -88,7 +95,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
         annotations = {k: v for k, v in annotations.items() if not k.startswith("_")}
 
         typedfields: dict[str, TypedField[Any]] = {
-            k: instanciate(v) for k, v in annotations.items() if is_typed_field(v)
+            k: instanciate(v, True) for k, v in annotations.items() if is_typed_field(v)
         }
 
         fields = {fname: self._to_field(fname, ftype) for fname, ftype in annotations.items()}
@@ -275,7 +282,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
         return "".join([f"_{c.lower()}" if c.isupper() else c for c in camel]).lstrip("_")
 
 
-class TableProtocol(typing.Protocol):
+class TableProtocol(typing.Protocol):  # pragma: no cover
     id: int  # noqa: A003
 
     def __getitem__(self, item: str) -> Field:
@@ -320,6 +327,14 @@ class TableMeta(type):
             raise EnvironmentError("@define or db.define is not called on this class yet!")
         return self._table
 
+    def __iter__(self) -> typing.Generator[Field, None, None]:
+        table = self._ensure_table_defined()
+        yield from iter(table)
+
+    def __getitem__(self, item: str) -> Field:
+        table = self._ensure_table_defined()
+        return table[item]
+
     def from_row(self: typing.Type[T_MetaInstance], row: pydal.objects.Row) -> T_MetaInstance:
         return self(row)
 
@@ -355,7 +370,9 @@ class TableMeta(type):
         result = table.bulk_insert(items)
         return [self(row_id) for row_id in result]
 
-    def update_or_insert(self: typing.Type[T_MetaInstance], query: T_Query = DEFAULT, **values: Any) -> T_MetaInstance:
+    def update_or_insert(
+        self: typing.Type[T_MetaInstance], query: T_Query | dict[str, Any] = DEFAULT, **values: Any
+    ) -> T_MetaInstance:
         table = self._ensure_table_defined()
 
         if query is DEFAULT:
@@ -395,8 +412,8 @@ class TableMeta(type):
             return None, errors
         elif row_id := result.get("id"):
             return self(row_id), None
-        else:
-            # update on query without result
+        else:  # pragma: no cover
+            # update on query without result (shouldnt happen)
             return None, None
 
     def validate_and_update_or_insert(
@@ -409,8 +426,8 @@ class TableMeta(type):
             return None, errors
         elif row_id := result.get("id"):
             return self(row_id), None
-        else:
-            # update on query without result
+        else:  # pragma: no cover
+            # update on query without result (shouldnt happen)
             return None, None
 
     def select(self: typing.Type[T_MetaInstance], *a: Any, **kw: Any) -> "QueryBuilder[T_MetaInstance]":
@@ -538,6 +555,14 @@ class TypedTable(metaclass=TableMeta):
         inst._setup_instance_methods()
         return inst
 
+    def __iter__(self) -> typing.Generator[Any, None, None]:
+        row = self._ensure_matching_row()
+        yield from iter(row)
+
+    def __getitem__(self, item: str) -> Any:
+        row = self._ensure_matching_row()
+        return row[item]
+
     def __int__(self) -> int:
         return getattr(self, "id", 0)
 
@@ -547,6 +572,9 @@ class TypedTable(metaclass=TableMeta):
     def __getattr__(self, item: str) -> Any:
         if self._row:
             return getattr(self._row, item)
+
+        # else: normal logic
+        raise AttributeError(item)
 
     def _ensure_matching_row(self) -> Row:
         if not getattr(self, "_row", None):
@@ -574,7 +602,7 @@ class TypedTable(metaclass=TableMeta):
         return typing.cast(str, table.as_json(sanitize))
 
     @classmethod
-    def as_xml(cls, sanitize: bool = True) -> str:
+    def as_xml(cls, sanitize: bool = True) -> str:  # pragma: no cover
         table = cls._ensure_table_defined()
         return typing.cast(str, table.as_xml(sanitize))
 
@@ -595,7 +623,7 @@ class TypedTable(metaclass=TableMeta):
         row = self._ensure_matching_row()
         return typing.cast(str, row.as_json(sanitize))
 
-    def _as_xml(self, sanitize: bool = True) -> str:
+    def _as_xml(self, sanitize: bool = True) -> str:  # pragma: no cover
         row = self._ensure_matching_row()
         return typing.cast(str, row.as_xml(sanitize))
 
@@ -630,7 +658,12 @@ class TypedTable(metaclass=TableMeta):
         self.update(**new_row)
         return self
 
-    def update_record(self: T_MetaInstance, **fields: Any) -> T_MetaInstance:
+    def update_record(self: T_MetaInstance, **fields: Any) -> T_MetaInstance:  # pragma: no cover
+        """
+        Here as a placeholder for _update_record.
+
+        Will be replaced on instance creation!
+        """
         return self._update_record(**fields)
 
     def _delete_record(self) -> int:
@@ -640,9 +673,18 @@ class TypedTable(metaclass=TableMeta):
         row = self._ensure_matching_row()
         result = row.delete_record()
         self.__dict__ = {}  # empty self, since row is no more.
+        self._row = None  # just to be sure
+        self._setup_instance_methods()
+        # ^ instance methods might've been deleted by emptying dict,
+        # but we still want .as_dict to show an error, not the table's as_dict.
         return typing.cast(int, result)
 
-    def delete_record(self) -> int:
+    def delete_record(self) -> int:  # pragma: no cover
+        """
+        Here as a placeholder for _delete_record.
+
+        Will be replaced on instance creation!
+        """
         return self._delete_record()
 
     # __del__ is also called on the end of a scope so don't remove records on every del!!
@@ -672,7 +714,8 @@ class QueryBuilder(typing.Generic[T_Table]):
     ):
         self.model = model
         table = model._ensure_table_defined()
-        self.query = add_query or table.id > 0
+        default_query = typing.cast(Query, table.id > 0)
+        self.query = add_query or default_query
         self.select_args = select_args or []
         self.select_kwargs = select_kwargs or {}
 
@@ -691,7 +734,7 @@ class QueryBuilder(typing.Generic[T_Table]):
         if not query_or_lambda:
             # okay
             pass
-        elif isinstance(query_or_lambda, Query):
+        elif isinstance(query_or_lambda, _Query):
             new_query &= query_or_lambda
         elif callable(query_or_lambda):
             if result := query_or_lambda(self.model):
@@ -714,18 +757,33 @@ class QueryBuilder(typing.Generic[T_Table]):
         else:
             raise EnvironmentError("@define or db.define is not called on this class yet!")
 
-    def _build(self) -> "TypedRows[T_Table]":
-        # todo: should maybe be renamed to .execute or something
+    def _select_arg_convert(self, arg: Any) -> str | Field:
+        if isinstance(arg, TypedField):
+            arg = arg._field
+
+        return arg
+
+    def collect(self) -> "TypedRows[T_Table]":
         db = self._get_db()
 
         # print(db, self.query, self.select_args, self.select_kwargs)
         # print(db(self.query)._select(*self.select_args, **self.select_kwargs))
-        rows: TypedRows[T_Table] = db(self.query).select(*self.select_args, **self.select_kwargs)
+
+        select_args = [self._select_arg_convert(_) for _ in self.select_args]
+
+        rows: TypedRows[T_Table] = db(self.query).select(*select_args, **self.select_kwargs)
 
         return rows
 
+    def collect_or_fail(self) -> "TypedRows[T_Table]":
+        # todo: make result type understand that .first() will never be None
+        if result := self.collect():
+            return result
+        else:
+            raise ValueError("Nothing found!")
+
     def __iter__(self) -> typing.Generator[T_Table, None, None]:
-        yield from self._build()
+        yield from self.collect()
 
     def count(self) -> int:
         db = self._get_db()
@@ -733,15 +791,22 @@ class QueryBuilder(typing.Generic[T_Table]):
 
     def first(self) -> T_Table | None:
         # todo: limitby
-        row = self._build()[0]
+        row = self.collect()[0]
 
         return self.model.from_row(row)
+
+    def first_or_fail(self) -> T_Table:
+        if inst := self.first():
+            return inst
+        else:
+            raise ValueError("Nothing found!")
 
 
 class TypedField(typing.Generic[T_Value]):
     """
     Typed version of pydal.Field, which will be converted to a normal Field in the background.
     """
+
     # todo: .belongs etc on Field, check pydal code!
 
     # will be set by .bind on db.define
@@ -754,7 +819,7 @@ class TypedField(typing.Generic[T_Value]):
     _type: T_annotation
     kwargs: Any
 
-    def __init__(self, _type: typing.Type[T_Value] = str, /, **settings: Any) -> None:  # type: ignore
+    def __init__(self, _type: typing.Type[T_Value] | types.UnionType = str, /, **settings: Any) -> None:  # type: ignore
         """
         A TypedFieldType should not be inited manually, but TypedField (from `fields.py`) should be used!
         """
@@ -774,8 +839,10 @@ class TypedField(typing.Generic[T_Value]):
         self, instance: T_Table | None, owner: typing.Type[T_Table]
     ) -> typing.Union[T_Value, "TypedField[T_Value]"]:
         if instance:
-            # never actually reached because a value was already stored in owner!
-            return typing.cast(T_Value, instance)
+            # this is only reached in a very specific case:
+            # an instance of the object was created with a specific set of fields selected (excluding the current one)
+            # in that case, no value was stored in the owner -> return None (since the field was not selected)
+            return typing.cast(T_Value, None)  # cast as T_Value so mypy understands it for selected fields
         else:
             return self
 
@@ -842,13 +909,22 @@ class TypedField(typing.Generic[T_Value]):
         return getattr(self._field, key)
 
     def __eq__(self, other: Any) -> Query:
-        return self._field == other
+        return typing.cast(Query, self._field == other)
+
+    def __ne__(self, other: Any) -> Query:
+        return typing.cast(Query, self._field != other)
 
     def __gt__(self, other: Any) -> Query:
-        return self._field > other
+        return typing.cast(Query, self._field > other)
 
     def __lt__(self, other: Any) -> Query:
-        return self._field < other
+        return typing.cast(Query, self._field < other)
+
+    def __ge__(self, other: Any) -> Query:
+        return typing.cast(Query, self._field >= other)
+
+    def __le__(self, other: Any) -> Query:
+        return typing.cast(Query, self._field <= other)
 
     def __hash__(self) -> int:
         return hash(self._field)
@@ -857,7 +933,7 @@ class TypedField(typing.Generic[T_Value]):
 S = typing.TypeVar("S")
 
 
-class TypedRows(typing.Collection[S], Rows):  # type: ignore
+class TypedRows(typing.Collection[S], Rows):  # type: ignore # pragma: no cover
     """
     Can be used as the return type of a .select().
 

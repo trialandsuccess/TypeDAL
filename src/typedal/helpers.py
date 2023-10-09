@@ -1,3 +1,7 @@
+"""
+Helpers that work independently of core.
+"""
+
 import types
 import typing
 from collections import ChainMap
@@ -6,7 +10,7 @@ from typing import Any
 T = typing.TypeVar("T")
 
 
-def is_union(some_type: type) -> bool:
+def is_union(some_type: type | types.UnionType) -> bool:
     """
     Check if a type is some type of Union.
 
@@ -38,8 +42,20 @@ def all_annotations(cls: type, _except: typing.Iterable[str] = None) -> dict[str
     return {k: v for k, v in _all.items() if k not in _except}
 
 
-def instanciate(cls: typing.Type[T] | T) -> T:
+def instanciate(cls: typing.Type[T] | T, with_args: bool = False) -> T:
+    """
+    Create an instance of T (if it is a class).
+
+    If it already is an instance, return it.
+    If it is a generic (list[int)) create an instance  of the 'origin' (-> list()).
+
+    If with_args: spread the generic args into the class creation
+    (needed for e.g. TypedField(str), but not for list[str])
+    """
     if inner_cls := typing.get_origin(cls):
+        if not with_args:
+            return typing.cast(T, inner_cls())
+
         args = typing.get_args(cls)
         return typing.cast(T, inner_cls(*args))
 
@@ -50,6 +66,12 @@ def instanciate(cls: typing.Type[T] | T) -> T:
 
 
 def origin_is_subclass(obj: Any, _type: type) -> bool:
+    """
+    Check if the origin of a generic is a subclass of _type.
+
+    Example:
+        origin_is_subclass(list[str], list) -> True
+    """
     return bool(
         typing.get_origin(obj)
         and isinstance(typing.get_origin(obj), type)

@@ -166,7 +166,9 @@ Upload = UploadField
 T_subclass = typing.TypeVar("T_subclass", TypedTable, Table)
 
 
-def ReferenceField(other_table: str | TypedTable | Table | T_subclass, **kw: typing.Any) -> TypedField[int]:
+def ReferenceField(
+    other_table: str | typing.Type[TypedTable] | TypedTable | Table | T_subclass, **kw: typing.Any
+) -> TypedField[int]:
     """
     Pydal type is reference, Python type is int (id).
     """

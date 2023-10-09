@@ -24,10 +24,12 @@ def test_both_styles_for_instance():
         int_field = IntegerField()
 
     old_style_class.insert(string_field="one", int_field=1)
+    old_style_class.insert(string_field="extra", int_field=-99)
 
     old_style = old_style_class(1)
 
     new_style = NewStyleClass.insert(string_field="one", int_field=1)
+    NewStyleClass.insert(string_field="extra", int_field=-99)
 
     assert new_style.id == old_style.id
     assert new_style.string_field == old_style.string_field
@@ -79,3 +81,18 @@ def test_both_styles_for_instance():
     assert old_style.delete_record()
     assert new_style.delete_record()
     assert not new_style
+
+    # getting a non-shadowed property:
+    old_style = db(old_style_class).select().first()
+    new_style = NewStyleClass.select().first()
+
+    assert old_style.keys()
+    assert new_style.keys()
+
+    old_style.clear()
+    new_style.clear()
+
+    with pytest.raises(AttributeError):
+        old_style.fake()
+    with pytest.raises(AttributeError):
+        new_style.fake()

@@ -129,6 +129,14 @@ def test_both_styles_for_class():
     assert instance.id == 7
     assert instance.int_field == 7
 
+    # query with dict:
+    assert old_style.update_or_insert(dict(string_field="field 8", int_field=8), string_field="field 8", int_field=8)
+    assert NewStyle.update_or_insert(dict(string_field="field 8", int_field=8), string_field="field 8", int_field=8)
+
+    # without query:
+    assert old_style.update_or_insert(string_field="field 9", int_field=9)
+    assert NewStyle.update_or_insert(string_field="field 9", int_field=9)
+
     old_style.truncate()
     NewStyle.truncate()
 
