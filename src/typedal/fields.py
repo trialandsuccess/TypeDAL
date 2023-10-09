@@ -32,7 +32,7 @@ T = typing.TypeVar("T", bound=typing.Any)
 
 
 ## specific
-def StringField(**kw: typing.Any) -> str:
+def StringField(**kw: typing.Any) -> TypedField[str]:
     """
     Pydal type is string, Python type is str.
     """
@@ -43,7 +43,7 @@ def StringField(**kw: typing.Any) -> str:
 String = StringField
 
 
-def TextField(**kw: typing.Any) -> str:
+def TextField(**kw: typing.Any) -> TypedField[str]:
     """
     Pydal type is text, Python type is str.
     """
@@ -54,7 +54,7 @@ def TextField(**kw: typing.Any) -> str:
 Text = TextField
 
 
-def BlobField(**kw: typing.Any) -> bytes:
+def BlobField(**kw: typing.Any) -> TypedField[bytes]:
     """
     Pydal type is blob, Python type is bytes.
     """
@@ -65,7 +65,7 @@ def BlobField(**kw: typing.Any) -> bytes:
 Blob = BlobField
 
 
-def BooleanField(**kw: typing.Any) -> bool:
+def BooleanField(**kw: typing.Any) -> TypedField[bool]:
     """
     Pydal type is boolean, Python type is bool.
     """
@@ -76,7 +76,7 @@ def BooleanField(**kw: typing.Any) -> bool:
 Boolean = BooleanField
 
 
-def IntegerField(**kw: typing.Any) -> int:
+def IntegerField(**kw: typing.Any) -> TypedField[int]:
     """
     Pydal type is integer, Python type is int.
     """
@@ -87,7 +87,7 @@ def IntegerField(**kw: typing.Any) -> int:
 Integer = IntegerField
 
 
-def DoubleField(**kw: typing.Any) -> float:
+def DoubleField(**kw: typing.Any) -> TypedField[float]:
     """
     Pydal type is double, Python type is float.
     """
@@ -98,7 +98,7 @@ def DoubleField(**kw: typing.Any) -> float:
 Double = DoubleField
 
 
-def DecimalField(n: int, m: int, **kw: typing.Any) -> decimal.Decimal:
+def DecimalField(n: int, m: int, **kw: typing.Any) -> TypedField[decimal.Decimal]:
     """
     Pydal type is decimal, Python type is Decimal.
     """
@@ -109,7 +109,7 @@ def DecimalField(n: int, m: int, **kw: typing.Any) -> decimal.Decimal:
 Decimal = DecimalField
 
 
-def DateField(**kw: typing.Any) -> dt.date:
+def DateField(**kw: typing.Any) -> TypedField[dt.date]:
     """
     Pydal type is date, Python type is datetime.date.
     """
@@ -120,7 +120,7 @@ def DateField(**kw: typing.Any) -> dt.date:
 Date = DateField
 
 
-def TimeField(**kw: typing.Any) -> dt.time:
+def TimeField(**kw: typing.Any) -> TypedField[dt.time]:
     """
     Pydal type is time, Python type is datetime.time.
     """
@@ -131,7 +131,7 @@ def TimeField(**kw: typing.Any) -> dt.time:
 Time = TimeField
 
 
-def DatetimeField(**kw: typing.Any) -> dt.datetime:
+def DatetimeField(**kw: typing.Any) -> TypedField[dt.datetime]:
     """
     Pydal type is datetime, Python type is datetime.datetime.
     """
@@ -142,7 +142,7 @@ def DatetimeField(**kw: typing.Any) -> dt.datetime:
 Datetime = DatetimeField
 
 
-def PasswordField(**kw: typing.Any) -> str:
+def PasswordField(**kw: typing.Any) -> TypedField[str]:
     """
     Pydal type is password, Python type is str.
     """
@@ -153,7 +153,7 @@ def PasswordField(**kw: typing.Any) -> str:
 Password = PasswordField
 
 
-def UploadField(**kw: typing.Any) -> str:
+def UploadField(**kw: typing.Any) -> TypedField[str]:
     """
     Pydal type is upload, Python type is str.
     """
@@ -166,7 +166,7 @@ Upload = UploadField
 T_subclass = typing.TypeVar("T_subclass", TypedTable, Table)
 
 
-def ReferenceField(other_table: str | TypedTable | Table | T_subclass, **kw: typing.Any) -> int:
+def ReferenceField(other_table: str | TypedTable | Table | T_subclass, **kw: typing.Any) -> TypedField[int]:
     """
     Pydal type is reference, Python type is int (id).
     """
@@ -175,7 +175,7 @@ def ReferenceField(other_table: str | TypedTable | Table | T_subclass, **kw: typ
     elif isinstance(other_table, Table):
         # db.table
         kw["type"] = f"reference {other_table._tablename}"
-    elif issubclass(type(other_table), type) and issubclass(other_table, TypedTable):
+    elif isinstance(other_table, type) and issubclass(other_table, TypedTable):
         # SomeTable
         snakename = TypeDAL._to_snake(other_table.__name__)
         kw["type"] = f"reference {snakename}"
@@ -188,7 +188,7 @@ def ReferenceField(other_table: str | TypedTable | Table | T_subclass, **kw: typ
 Reference = ReferenceField
 
 
-def ListStringField(**kw: typing.Any) -> list[str]:
+def ListStringField(**kw: typing.Any) -> TypedField[list[str]]:
     """
     Pydal type is list:string, Python type is list of str.
     """
@@ -199,7 +199,7 @@ def ListStringField(**kw: typing.Any) -> list[str]:
 ListString = ListStringField
 
 
-def ListIntegerField(**kw: typing.Any) -> list[int]:
+def ListIntegerField(**kw: typing.Any) -> TypedField[list[int]]:
     """
     Pydal type is list:integer, Python type is list of int.
     """
@@ -210,7 +210,7 @@ def ListIntegerField(**kw: typing.Any) -> list[int]:
 ListInteger = ListIntegerField
 
 
-def ListReferenceField(other_table: str, **kw: typing.Any) -> list[int]:
+def ListReferenceField(other_table: str, **kw: typing.Any) -> TypedField[list[int]]:
     """
     Pydal type is list:reference, Python type is list of int (id).
     """
@@ -221,7 +221,7 @@ def ListReferenceField(other_table: str, **kw: typing.Any) -> list[int]:
 ListReference = ListReferenceField
 
 
-def JSONField(**kw: typing.Any) -> object:
+def JSONField(**kw: typing.Any) -> TypedField[object]:
     """
     Pydal type is json, Python type is object (can be anything JSON-encodable).
     """
@@ -229,7 +229,7 @@ def JSONField(**kw: typing.Any) -> object:
     return TypedField(object, **kw)
 
 
-def BigintField(**kw: typing.Any) -> int:
+def BigintField(**kw: typing.Any) -> TypedField[int]:
     """
     Pydal type is bigint, Python type is int.
     """
