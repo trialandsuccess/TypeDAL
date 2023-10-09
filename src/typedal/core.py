@@ -324,7 +324,7 @@ class TableMeta(type):
         return self(row)
 
     def all(self: typing.Type[T_MetaInstance]) -> list[T_MetaInstance]:  # noqa: A003
-        # todo: type?
+        # todo: Rows instead of list?
         return list(self.select())
 
     ##########################
@@ -350,7 +350,7 @@ class TableMeta(type):
         return self(result)
 
     def bulk_insert(self: typing.Type[T_MetaInstance], items: list[dict[str, Any]]) -> list[T_MetaInstance]:
-        # todo: list of instances?
+        # todo: Rows of instances instead of list?
         table = self._ensure_table_defined()
         result = table.bulk_insert(items)
         return [self(row_id) for row_id in result]
@@ -425,8 +425,6 @@ class TableMeta(type):
         return QueryBuilder(self).count()
 
     # todo: first, ... (query builder aliases)
-
-    # todo: .belongs etc, check pydal code!
 
     @property
     def ALL(cls) -> pydal.objects.SQLALL:
@@ -744,6 +742,7 @@ class TypedField(typing.Generic[T_Value]):
     """
     Typed version of pydal.Field, which will be converted to a normal Field in the background.
     """
+    # todo: .belongs etc on Field, check pydal code!
 
     # will be set by .bind on db.define
     name = ""
