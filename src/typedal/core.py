@@ -338,9 +338,9 @@ class TableMeta(type):
     def from_row(self: typing.Type[T_MetaInstance], row: pydal.objects.Row) -> T_MetaInstance:
         return self(row)
 
-    def all(self: typing.Type[T_MetaInstance]) -> list[T_MetaInstance]:  # noqa: A003
+    def all(self: typing.Type[T_MetaInstance]) -> "TypedRows[T_MetaInstance]":  # noqa: A003
         # todo: Rows instead of list?
-        return list(self.select())
+        return self.select().collect()
 
     ##########################
     # TypeDAL Modified Logic #
@@ -440,6 +440,9 @@ class TableMeta(type):
 
     def count(self: typing.Type[T_MetaInstance]) -> int:
         return QueryBuilder(self).count()
+
+    def first(self: typing.Type[T_MetaInstance]) -> T_MetaInstance | None:
+        return QueryBuilder(self).first()
 
     # todo: first, ... (query builder aliases)
 
@@ -695,19 +698,20 @@ class TypedTable(metaclass=TableMeta):
 
 # backwards compat:
 TypedRow = TypedTable
-T_Table = typing.TypeVar("T_Table", bound=TypedTable)
 
 
-class QueryBuilder(typing.Generic[T_Table]):
+# T_Table = typing.TypeVar("T_Table", bound=TypedTable)
+
+class QueryBuilder(typing.Generic[T_MetaInstance]):
     # todo: document select kwargs etc.
-    model: typing.Type[T_Table]
+    model: typing.Type[T_MetaInstance]
     query: Query
     select_args: list[Any]
     select_kwargs: dict[str, Any]
 
     def __init__(
         self,
-        model: typing.Type[T_Table],
+        model: typing.Type[T_MetaInstance],
         add_query: Optional[Query] = None,
         select_args: Optional[list[Any]] = None,
         select_kwargs: Optional[dict[str, Any]] = None,
@@ -719,12 +723,12 @@ class QueryBuilder(typing.Generic[T_Table]):
         self.select_args = select_args or []
         self.select_kwargs = select_kwargs or {}
 
-    def select(self, *fields: Any, **options: Any) -> "QueryBuilder[T_Table]":
+    def select(self, *fields: Any, **options: Any) -> "QueryBuilder[T_MetaInstance]":
         return QueryBuilder(self.model, self.query, self.select_args + list(fields), self.select_kwargs | options)
 
     def where(
-        self, query_or_lambda: Query | typing.Callable[[typing.Type[T_Table]], Query], **filters: Any
-    ) -> "QueryBuilder[T_Table]":
+        self, query_or_lambda: Query | typing.Callable[[typing.Type[T_MetaInstance]], Query], **filters: Any
+    ) -> "QueryBuilder[T_MetaInstance]":
         new_query = self.query
         table = self.model._ensure_table_defined()
 
@@ -763,39 +767,60 @@ class QueryBuilder(typing.Generic[T_Table]):
 
         return arg
 
-    def collect(self) -> "TypedRows[T_Table]":
+    def delete(self) -> list[int] | None:
         db = self._get_db()
+        removed_ids = [_.id for _ in db(self.query).select("id")]
+        if db(self.query).delete():
+            # success!
+            return removed_ids
 
-        # print(db, self.query, self.select_args, self.select_kwargs)
-        # print(db(self.query)._select(*self.select_args, **self.select_kwargs))
+        return None
+
+    def update(self, **fields: Any) -> list[int] | None:
+        db = self._get_db()
+        updated_ids = [_.id for _ in db(self.query).select("id")]
+        if db(self.query).update(**fields):
+            # success!
+            return updated_ids
+
+        return None
+
+    def collect(self) -> "TypedRows[T_MetaInstance]":
+        db = self._get_db()
 
         select_args = [self._select_arg_convert(_) for _ in self.select_args]
 
-        rows: TypedRows[T_Table] = db(self.query).select(*select_args, **self.select_kwargs)
+        rows: Rows = db(self.query).select(*select_args, **self.select_kwargs)
 
-        return rows
+        return TypedRows.from_rows(rows, self.model)
 
-    def collect_or_fail(self) -> "TypedRows[T_Table]":
+    def collect_or_fail(self) -> "TypedRows[T_MetaInstance]":
         # todo: make result type understand that .first() will never be None
-        if result := self.collect():
-            return result
-        else:
+        result: TypedRows[T_MetaInstance] = self.collect()
+
+        if not result:
             raise ValueError("Nothing found!")
 
-    def __iter__(self) -> typing.Generator[T_Table, None, None]:
+        return result
+
+    def __iter__(self) -> typing.Generator[T_MetaInstance, None, None]:
         yield from self.collect()
 
     def count(self) -> int:
         db = self._get_db()
         return db(self.query).count()
 
-    def first(self) -> T_Table | None:
+    def first(self) -> T_MetaInstance | None:
         # todo: limitby
-        row = self.collect()[0]
+        if "limitby" not in self.select_kwargs:
+            self.select_kwargs["limitby"] = (0, 1)  # only select one on first
+        row = self.collect().first()
+        if not row:
+            return None
 
         return self.model.from_row(row)
 
-    def first_or_fail(self) -> T_Table:
+    def first_or_fail(self) -> T_MetaInstance:
         if inst := self.first():
             return inst
         else:
@@ -828,7 +853,7 @@ class TypedField(typing.Generic[T_Value]):
         super().__init__()
 
     @typing.overload
-    def __get__(self, instance: T_Table, owner: typing.Type[T_Table]) -> T_Value:
+    def __get__(self, instance: T_MetaInstance, owner: typing.Type[T_MetaInstance]) -> T_Value:
         ...
 
     @typing.overload
@@ -836,7 +861,7 @@ class TypedField(typing.Generic[T_Value]):
         ...
 
     def __get__(
-        self, instance: T_Table | None, owner: typing.Type[T_Table]
+        self, instance: T_MetaInstance | None, owner: typing.Type[T_MetaInstance]
     ) -> typing.Union[T_Value, "TypedField[T_Value]"]:
         if instance:
             # this is only reached in a very specific case:
@@ -933,16 +958,111 @@ class TypedField(typing.Generic[T_Value]):
 S = typing.TypeVar("S")
 
 
-class TypedRows(typing.Collection[S], Rows):  # type: ignore # pragma: no cover
-    """
-    Can be used as the return type of a .select().
+class TypedRows(typing.Collection[T_MetaInstance], Rows):
+    _data: dict[int, T_MetaInstance]
+    # _rows: Rows
+    model: typing.Type[T_MetaInstance]
 
-    Example:
-        people: TypedRows[Person] = db(Person).select()
-    """
+    # pseudo-properties: actually stored in _rows
+    db: TypeDAL
+    colnames: list[str]
+    colnames_fields: list[Field]
 
-    def first(self) -> S | None:
-        return typing.cast(S, super().first())
+    def __init__(self, rows: dict[int, T_MetaInstance], model: typing.Type[T_MetaInstance]) -> None:
+        super().__init__()
+        self._data = rows
+        # self._rows = original
+        self.model = model
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def __iter__(self) -> typing.Iterator[T_MetaInstance]:
+        yield from self._data.values()
+
+    def __contains__(self, ind: Any) -> bool:
+        return ind in self._data
+
+    def first(self) -> T_MetaInstance | None:
+        if not self._data:
+            return None
+
+        return next(iter(self))
+
+    def exclude(self, f: typing.Callable[[typing.Type[T_MetaInstance]], Query]) -> "TypedRows[T_MetaInstance]":
+        records = super().exclude(f)
+        return self.from_rows(records, self.model)
+
+    def column(self, column: str = None) -> list[Any]:
+        return typing.cast(
+            list[Any],
+            super().column(column)
+        )
+
+    def as_csv(self) -> str:
+        return typing.cast(
+            str,
+            super().as_csv()
+        )
+
+    def as_dict(
+        self,
+        key: str = None,
+        compact: bool = False,
+        storage_to_dict: bool = False,
+        datetime_to_str: bool = False,
+        custom_types: list[type] = None,
+    ) -> dict[int, T_MetaInstance]:
+        if any([key, compact, storage_to_dict, datetime_to_str, custom_types]):
+            return typing.cast(
+                dict[int, T_MetaInstance],
+                super().as_dict(
+                    key,
+                    compact,
+                    storage_to_dict,
+                    datetime_to_str,
+                    custom_types,
+                )
+            )
+
+        return self._data
+
+    def as_json(self, mode: str = "object", default: typing.Callable[[Any], Any] = None) -> str:
+        return typing.cast(
+            str,
+            super().as_json(mode=mode, default=default)
+        )
+
+    def as_list(
+        self,
+        compact: bool = False,
+        storage_to_dict: bool = False,
+        datetime_to_str: bool = False,
+        custom_types: list[type] = None,
+    ) -> list[T_MetaInstance]:
+        if any([compact, storage_to_dict, datetime_to_str, custom_types]):
+            return typing.cast(
+                list[T_MetaInstance],
+                super().as_list(compact, storage_to_dict, datetime_to_str, custom_types)
+            )
+        return list(self._data.values())
+
+    # def __getattr__(self, item: str):
+    #     if self._rows:
+    #         return getattr(self._rows, item)
+    #
+    #     raise AttributeError(item)
+
+    def get(self, item: int) -> typing.Optional[T_MetaInstance]:
+        return self._data.get(item, None)
+
+    def __getitem__(self, item: int) -> T_MetaInstance:
+        return self._data[item]
+
+    @classmethod
+    def from_rows(cls, rows: Rows, model: typing.Type[T_MetaInstance]) -> "TypedRows[T_MetaInstance]":
+        # todo: dynamic keyby, with multiple properties?
+        return cls({row.id: model(row) for row in rows}, model)
 
 
 class TypedSet(pydal.objects.Set):  # type: ignore # pragma: no cover
@@ -959,7 +1079,7 @@ class TypedSet(pydal.objects.Set):  # type: ignore # pragma: no cover
         result = super().count(distinct, cache)
         return typing.cast(int, result)
 
-    def select(self, *fields: Any, **attributes: Any) -> TypedRows[T_Table]:
+    def select(self, *fields: Any, **attributes: Any) -> TypedRows[T_MetaInstance]:
         """
         Select returns a TypedRows of a user defined table.
 
@@ -970,4 +1090,4 @@ class TypedSet(pydal.objects.Set):  # type: ignore # pragma: no cover
                 typing.reveal_type(row)  # MyTable
         """
         rows = super().select(*fields, **attributes)
-        return typing.cast(TypedRows[T_Table], rows)
+        return typing.cast(TypedRows[T_MetaInstance], rows)

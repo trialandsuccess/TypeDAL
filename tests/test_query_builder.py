@@ -38,8 +38,7 @@ def test_where_builder():
     assert instance.number == 2
     assert instance.other == "Something"
 
-    # todo:
-    # assert isinstance(instance, TestQueryTable)
+    assert isinstance(instance, TestQueryTable)
 
     results = builder.select(TestQueryTable.id, TestQueryTable.number).first()
 
