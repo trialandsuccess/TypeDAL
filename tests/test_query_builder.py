@@ -1,7 +1,7 @@
 import pytest
 from pydal.objects import Query
 
-from src.typedal import TypeDAL, TypedTable, TypedField
+from src.typedal import TypeDAL, TypedField, TypedTable
 
 db = TypeDAL("sqlite:memory")
 
@@ -28,6 +28,8 @@ def test_where_builder():
     TestQueryTable.insert(number=2)
     TestQueryTable.insert(number=3)
     TestQueryTable.insert(number=4)
+
+    assert TestQueryTable.first().id == TestQueryTable.select().first().id
 
     builder = TestQueryTable.where(lambda row: row.number < 3).where(TestQueryTable.number > 1)
     results = builder.collect()

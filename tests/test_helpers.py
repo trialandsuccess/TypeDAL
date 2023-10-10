@@ -1,6 +1,13 @@
 import typing
+from collections import OrderedDict
 
-from src.typedal.helpers import is_union, all_annotations, instanciate, origin_is_subclass
+from src.typedal.helpers import (
+    all_annotations,
+    instanciate,
+    is_union,
+    mktable,
+    origin_is_subclass,
+)
 
 
 def test_is_union():
@@ -25,12 +32,7 @@ class Child(Base):
 
 
 def test_all_annotations():
-    assert all_annotations(Child) == {
-        "a": int,
-        "b": str,
-        "c": float,
-        "d": bool
-    }
+    assert all_annotations(Child) == {"a": int, "b": str, "c": float, "d": bool}
 
 
 def test_instanciate():
@@ -52,3 +54,14 @@ def test_origin_is_subclass():
     # not subclass of dict:
     assert not origin_is_subclass(MyList[str], dict)
     assert not origin_is_subclass(MyList, dict)
+
+
+def test_mktable():
+    data = {
+        "1": {"id": 1, "name": "Alice", "Age": 25, "Occupation": "Software Engineer"},
+        "2": {"id": 2, "name": "Bob", "Age": 30, "Occupation": "Doctor"},
+        "3": {"id": 3, "name": "Carol", "Age": 35, "Occupation": "Lawyer"},
+    }
+
+    assert mktable(data, skip_first=False)
+    assert mktable(data, header=["id", "name", "age", "occupation"])

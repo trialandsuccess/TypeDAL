@@ -2,7 +2,7 @@ from timeit import timeit
 
 from pydal import DAL, Field
 
-from src.typedal import TypeDAL, TypedTable, TypedField
+from src.typedal import TypeDAL, TypedField, TypedTable
 from src.typedal.fields import TextField
 
 pydal = DAL("sqlite:memory")
@@ -23,7 +23,7 @@ def defines_pydal():
         "time_table",
         Field("string_field"),
         Field("other", "integer"),
-        Field("text_field", "text", default='Something'),
+        Field("text_field", "text", default="Something"),
     )
 
 
@@ -36,49 +36,47 @@ def defines_typedal():
 
 def inserts_pydal():
     pydal.time_table.insert(
-        string_field='This is a string field',
+        string_field="This is a string field",
         other=33,
-        text_field="This is a text field. This is a text field. This is a text field. This is a text field. "
+        text_field="This is a text field. This is a text field. This is a text field. This is a text field. ",
     )
 
 
 def inserts_typedal():
     TimeTable.insert(
-        string_field='This is a string field',
+        string_field="This is a string field",
         other=33,
-        text_field="This is a text field. This is a text field. This is a text field. This is a text field. "
+        text_field="This is a text field. This is a text field. This is a text field. This is a text field. ",
     )
 
 
 def updates_pydal():
     pydal((pydal.time_table.id > 1) & (pydal.time_table.id < 3)).update(
-        string_field='This is a string field!',
+        string_field="This is a string field!",
         other=34,
         text_field="This is a text field. This is a text field. "
-                   "This is a text field. This is a text field. This is a text field. "
+        "This is a text field. This is a text field. This is a text field. ",
     )
 
     row = pydal.time_table(1)
     row.update_record(
-        string_field='This is a string field?',
-        other=35,
-        text_field="This is a text field. This is a text field."
+        string_field="This is a string field?", other=35, text_field="This is a text field. This is a text field."
     )
 
 
 def updates_typedal():
     TimeTable.where(TimeTable.id > 1).where(TimeTable.id < 3).update(
-        string_field='This is a string field!',
+        string_field="This is a string field!",
         other=34,
         text_field="This is a text field. This is a text field. "
-                   "This is a text field. This is a text field. This is a text field. "
+        "This is a text field. This is a text field. This is a text field. ",
     )
 
     TimeTable(1).update_record(
-        string_field='This is a string field!',
+        string_field="This is a string field!",
         other=34,
         text_field="This is a text field. This is a text field. "
-                   "This is a text field. This is a text field. This is a text field. "
+        "This is a text field. This is a text field. This is a text field. ",
     )
 
 
@@ -110,6 +108,7 @@ def deletes_typedal():
 
 
 ###
+
 
 def compare(name1, name2, func1, func2, times=1000):
     result1 = timeit(func1, number=times)

@@ -169,12 +169,14 @@ def test_dont_allow_bool_in_query():
 
 def test_invalid_union():
     with pytest.raises(NotImplementedError):
+
         @db.define
         class Invalid(TypedTable):
             valid: int | None
             invalid: int | str
 
     with pytest.raises(NotImplementedError):
+
         @db.define
         class Invalid(TypedTable):
             valid: list[int]
@@ -200,26 +202,33 @@ def test_typedfield_reprs():
     class Demo(TypedTable):
         field1 = TypedField(str | None, default="yes")
         field2: TypedField[int | None]
-        field3: int
+        field3: TypedField[float]
+        field4: int
         textfield = TypedField(type="text")
 
     assert Demo.field1
     assert Demo.field2
     assert Demo.field3
+    assert Demo.field4
     assert Demo.textfield
 
     assert str(Demo.field1) == "demo.field1"
     assert str(Demo.field2) == "demo.field2"
     assert str(Demo.field3) == "demo.field3"
+    assert str(Demo.field4) == "demo.field4"
     assert str(Demo.textfield) == "demo.textfield"
+
+    assert Demo["field1"] == Demo.field1
 
     assert isinstance(Demo.field1, TypedField)
     assert isinstance(Demo.field2, TypedField)
-    assert isinstance(Demo.field3, pydal.objects.Field)
+    assert isinstance(Demo.field3, TypedField)
+    assert isinstance(Demo.field4, pydal.objects.Field)
     assert isinstance(Demo.textfield, TypedField)
 
     assert repr(Demo.field1) == "<TypedField[str].demo.field1 with options {'default': 'yes'}>"
     assert repr(Demo.field2) == "<TypedField[int].demo.field2 with options {}>"
+    assert repr(Demo.field3) == "<TypedField[float].demo.field3 with options {}>"
     assert repr(Demo.textfield) == "<TypedField[text].demo.textfield with options {}>"
 
 
@@ -237,6 +246,7 @@ def test_typedfield_to_field_type():
         optional_two = TypedField(str | None)
 
     with pytest.raises(NotImplementedError):
+
         @db.define()
         class Invalid(TypedTable):
             third = TypedField(dict[str, int])  # not supported
@@ -277,6 +287,7 @@ def test_fields():
         bigintfield = BigintField()
 
     with pytest.raises(ValueError):
+
         @db.define()
         class Wrong(TypedTable):
             stringfield = ReferenceField(object())
@@ -293,11 +304,7 @@ def test_fields():
     if list(select2):
         raise ValueError("no rows should exist")
 
-    SomeNewTable.update_or_insert(
-        SomeNewTable.name == "Hendrik",
-        name="Hendrik 2",
-        name_alt="Hendrik II"
-    )
+    SomeNewTable.update_or_insert(SomeNewTable.name == "Hendrik", name="Hendrik 2", name_alt="Hendrik II")
 
     instance = OtherNewTable.update_or_insert(
         OtherNewTable.name == "Hendrik",

@@ -5,21 +5,22 @@ import io
 import json
 from textwrap import dedent
 
+import pydal
 import pytest
 from pydal.objects import Expression
 
-from src.typedal import TypeDAL, TypedTable, TypedField
+from src.typedal import TypeDAL, TypedField, TypedTable
 from src.typedal.fields import IntegerField
-import pydal
 
 db = TypeDAL("sqlite:memory")
 
 
 def test_both_styles_for_class():
-    old_style = db.define_table("old_style",
-                                pydal.Field("string_field"),
-                                pydal.Field("int_field", "integer"),
-                                )
+    old_style = db.define_table(
+        "old_style",
+        pydal.Field("string_field"),
+        pydal.Field("int_field", "integer"),
+    )
 
     @db.define()
     class NewStyle(TypedTable):
@@ -40,10 +41,8 @@ def test_both_styles_for_class():
     assert NewStyle.as_yaml()
 
     bulk_data = [
-        {'string_field': "String 1",
-         'int_field': 1},
-        {'string_field': "String 2",
-         'int_field': 2},
+        {"string_field": "String 1", "int_field": 1},
+        {"string_field": "String 2", "int_field": 2},
     ]
     ids = old_style.bulk_insert(bulk_data)
     assert ids == [_.id for _ in NewStyle.bulk_insert(bulk_data)]
@@ -60,12 +59,14 @@ def test_both_styles_for_class():
     assert old_style.fields[1] == "string_field"
     assert NewStyle.fields[1] == "string_field"
 
-    demo_csv = dedent("""\
+    demo_csv = dedent(
+        """\
     string_field,int_field
     field 3,3
     field 4,4
     field n,-1\
-    """)
+    """
+    )
 
     old_style.import_from_csv_file(io.StringIO(demo_csv), validate=True)
     NewStyle.import_from_csv_file(io.StringIO(demo_csv), validate=True)
@@ -80,17 +81,9 @@ def test_both_styles_for_class():
     with pytest.raises(RuntimeError):
         old_style.update(old_style.int_field == 6, int_field=7)
 
-    assert NewStyle.update(
-        NewStyle.int_field == 6000,
-        int_field=7
-    ) is None
+    assert NewStyle.update(NewStyle.int_field == 6000, int_field=7) is None
 
-    same_as_before = NewStyle.update(
-        NewStyle.int_field == 6,
-        int_field=7
-    ).update_record(
-        int_field=6
-    )
+    same_as_before = NewStyle.update(NewStyle.int_field == 6, int_field=7).update_record(int_field=6)
 
     assert same_as_before.int_field == 6
 
@@ -100,31 +93,13 @@ def test_both_styles_for_class():
     assert old_style.query_name()[0] == '"old_style"' == old_style.sql_fullref
     assert NewStyle.query_name()[0] == '"new_style"' == NewStyle.sql_fullref
 
-    assert not old_style.update_or_insert(  # update yields None
-        old_style.id == 5,
-        string_field="field 5",
-        int_field=5
-
-    )
-    instance = NewStyle.update_or_insert(
-        old_style.id == 5,
-        string_field="field 5",
-        int_field=5
-    )
+    assert not old_style.update_or_insert(old_style.id == 5, string_field="field 5", int_field=5)  # update yields None
+    instance = NewStyle.update_or_insert(old_style.id == 5, string_field="field 5", int_field=5)
 
     assert instance.int_field == 5
 
-    assert old_style.update_or_insert(  # insert yields id
-        old_style.id == 7,
-        string_field="field 7",
-        int_field=7
-
-    )
-    instance = NewStyle.update_or_insert(
-        old_style.id == 7,
-        string_field="field 7",
-        int_field=7
-    )
+    assert old_style.update_or_insert(old_style.id == 7, string_field="field 7", int_field=7)  # insert yields id
+    instance = NewStyle.update_or_insert(old_style.id == 7, string_field="field 7", int_field=7)
 
     assert instance.id == 7
     assert instance.int_field == 7

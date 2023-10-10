@@ -1,8 +1,9 @@
-import pydal.objects
-import pytest
 import typing
 
-from src.typedal import TypeDAL, TypedTable, TypedRows, TypedField
+import pydal.objects
+import pytest
+
+from src.typedal import TypeDAL, TypedField, TypedRows, TypedTable
 
 db = TypeDAL("sqlite:memory")
 
@@ -93,13 +94,9 @@ def mypy_test_typedset() -> None:
 
 @pytest.mark.mypy_testing
 def mypy_test_query() -> None:
-    db(
-        MyTable.id > 0
-    )
+    db(MyTable.id > 0)
 
-    db(
-        db.old_style.id > 3
-    )
+    db(db.old_style.id > 3)
 
     db(MyTable)
 

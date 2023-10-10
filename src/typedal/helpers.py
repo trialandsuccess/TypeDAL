@@ -1,7 +1,7 @@
 """
 Helpers that work independently of core.
 """
-
+import io
 import types
 import typing
 from collections import ChainMap
@@ -77,3 +77,42 @@ def origin_is_subclass(obj: Any, _type: type) -> bool:
         and isinstance(typing.get_origin(obj), type)
         and issubclass(typing.get_origin(obj), _type)
     )
+
+
+# https://stackoverflow.com/questions/70937491/python-flexible-way-to-format-string-output-into-a-table-without-using-a-non-st
+def mktable(
+    data: dict[Any, Any], header: typing.Optional[typing.Iterable[str] | range] = None, skip_first: bool = True
+) -> str:
+    # get max col width
+    col_widths: list[int] = list(map(max, zip(*(map(lambda x: len(str(x)), (k, *v)) for k, v in data.items()))))
+
+    # default numeric header if missing
+    if not header:
+        header = range(1, len(col_widths) + 1)
+
+    header_widths = map(lambda x: len(str(x)), header)
+
+    # correct column width if headers are longer
+    col_widths = [max(c, h) for c, h in zip(col_widths, header_widths)]
+
+    # create separator line
+    line = f"+{'+'.join('-' * (w + 2) for w in col_widths)}+"
+
+    # create formating string
+    fmt_str = "| %s |" % " | ".join(f"{{:<{i}}}" for i in col_widths)
+
+    output = io.StringIO()
+    # header
+    print(line, file=output)
+    print(fmt_str.format(*header), file=output)
+    print(line, file=output)
+
+    # data
+    for k, v in data.items():
+        values = list(v.values())[1:] if skip_first else v.values()
+        print(fmt_str.format(k, *values), file=output)
+
+    # footer
+    print(line, file=output)
+
+    return output.getvalue()

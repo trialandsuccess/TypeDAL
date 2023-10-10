@@ -1,7 +1,8 @@
-from collections import ChainMap
 import typing
 import uuid
-from src.typedal.core import TypedTable, TypedField, TypeDAL
+from collections import ChainMap
+
+from src.typedal.core import TypeDAL, TypedField, TypedTable
 
 T_MetaInstance = typing.TypeVar("T_MetaInstance")
 
@@ -11,18 +12,10 @@ def _all_annotations(cls: type) -> ChainMap[str, type]:
     Returns a dictionary-like ChainMap that includes annotations for all \
     attributes defined in cls or inherited from superclasses.
     """
-    return ChainMap(
-        *(
-            c.__annotations__
-            for c in getattr(cls, "__mro__", [])
-            if "__annotations__" in c.__dict__
-        )
-    )
+    return ChainMap(*(c.__annotations__ for c in getattr(cls, "__mro__", []) if "__annotations__" in c.__dict__))
 
 
-def all_annotations(
-    cls: type, _except: typing.Optional[typing.Iterable[str]] = None
-) -> dict[str, type]:
+def all_annotations(cls: type, _except: typing.Optional[typing.Iterable[str]] = None) -> dict[str, type]:
     """
     Wrapper around `_all_annotations` that filters away any keys in _except.
 

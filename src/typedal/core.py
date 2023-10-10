@@ -17,7 +17,7 @@ from pydal.objects import Query as _Query
 from pydal.objects import Row, Rows
 from pydal.objects import Table as _Table
 
-from .helpers import all_annotations, instanciate, is_union, origin_is_subclass
+from .helpers import all_annotations, instanciate, is_union, mktable, origin_is_subclass
 
 
 class Query(_Query):  # type: ignore
@@ -518,6 +518,8 @@ class TableMeta(type):
 
 
 class TypedTable(metaclass=TableMeta):
+    # todo: shadow magic methods
+
     # set up by 'new':
     _row: Row | None = None
 
@@ -565,6 +567,9 @@ class TypedTable(metaclass=TableMeta):
     def __getitem__(self, item: str) -> Any:
         row = self._ensure_matching_row()
         return row[item]
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        setattr(self, key, value)
 
     def __int__(self) -> int:
         return getattr(self, "id", 0)
@@ -622,9 +627,16 @@ class TypedTable(metaclass=TableMeta):
         result = row.as_dict(datetime_to_str=datetime_to_str, custom_types=custom_types)
         return typing.cast(dict[str, typing.Any], result)
 
-    def _as_json(self, sanitize: bool = True) -> str:
+    def _as_json(
+        self,
+        mode: str = "object",
+        default: typing.Callable[[Any], Any] = None,
+        colnames: list[str] = None,
+        serialize: bool = True,
+        **kwargs: Any,
+    ) -> str:
         row = self._ensure_matching_row()
-        return typing.cast(str, row.as_json(sanitize))
+        return typing.cast(str, row.as_json(mode, default, colnames, serialize, *kwargs))
 
     def _as_xml(self, sanitize: bool = True) -> str:  # pragma: no cover
         row = self._ensure_matching_row()
@@ -691,9 +703,6 @@ class TypedTable(metaclass=TableMeta):
         return self._delete_record()
 
     # __del__ is also called on the end of a scope so don't remove records on every del!!
-    # def __del__(self) -> None:
-    #     if getattr(self, "_row", None):
-    #         self._delete_record()
 
 
 # backwards compat:
@@ -701,6 +710,7 @@ TypedRow = TypedTable
 
 
 # T_Table = typing.TypeVar("T_Table", bound=TypedTable)
+
 
 class QueryBuilder(typing.Generic[T_MetaInstance]):
     # todo: document select kwargs etc.
@@ -832,7 +842,7 @@ class TypedField(typing.Generic[T_Value]):
     Typed version of pydal.Field, which will be converted to a normal Field in the background.
     """
 
-    # todo: .belongs etc on Field, check pydal code!
+    # todo: Field shadowing (.belongs, other public + magic)
 
     # will be set by .bind on db.define
     name = ""
@@ -853,11 +863,11 @@ class TypedField(typing.Generic[T_Value]):
         super().__init__()
 
     @typing.overload
-    def __get__(self, instance: T_MetaInstance, owner: typing.Type[T_MetaInstance]) -> T_Value:
+    def __get__(self, instance: T_MetaInstance, owner: typing.Type[T_MetaInstance]) -> T_Value:  # pragma: no cover
         ...
 
     @typing.overload
-    def __get__(self, instance: None, owner: typing.Type[TypedTable]) -> "TypedField[T_Value]":
+    def __get__(self, instance: None, owner: typing.Type[TypedTable]) -> "TypedField[T_Value]":  # pragma: no cover
         ...
 
     def __get__(
@@ -959,51 +969,123 @@ S = typing.TypeVar("S")
 
 
 class TypedRows(typing.Collection[T_MetaInstance], Rows):
-    _data: dict[int, T_MetaInstance]
+    # todo: magic methods
+
+    records: dict[int, T_MetaInstance]
     # _rows: Rows
     model: typing.Type[T_MetaInstance]
 
     # pseudo-properties: actually stored in _rows
     db: TypeDAL
     colnames: list[str]
+    fields: list[Field]
     colnames_fields: list[Field]
+    response: list[tuple[Any, ...]]
 
-    def __init__(self, rows: dict[int, T_MetaInstance], model: typing.Type[T_MetaInstance]) -> None:
-        super().__init__()
-        self._data = rows
-        # self._rows = original
+    def __init__(
+        self, rows: Rows, model: typing.Type[T_MetaInstance], records: dict[int, T_MetaInstance] = None
+    ) -> None:
+        records = records or {row.id: model(row) for row in rows}
+        super().__init__(rows.db, records, rows.colnames, rows.compact, rows.response, rows.fields)
         self.model = model
 
     def __len__(self) -> int:
-        return len(self._data)
+        return len(self.records)
 
     def __iter__(self) -> typing.Iterator[T_MetaInstance]:
-        yield from self._data.values()
+        yield from self.records.values()
 
     def __contains__(self, ind: Any) -> bool:
-        return ind in self._data
+        return ind in self.records
 
     def first(self) -> T_MetaInstance | None:
-        if not self._data:
+        if not self.records:
             return None
 
         return next(iter(self))
 
-    def exclude(self, f: typing.Callable[[typing.Type[T_MetaInstance]], Query]) -> "TypedRows[T_MetaInstance]":
-        records = super().exclude(f)
-        return self.from_rows(records, self.model)
+    def last(self) -> T_MetaInstance | None:
+        if not self.records:
+            return None
+
+        max_id = max(self.records.keys())
+        return self[max_id]
+
+    def find(
+        self, f: typing.Callable[[T_MetaInstance], Query], limitby: tuple[int, int] = None
+    ) -> "TypedRows[T_MetaInstance]":
+        """
+        Returns a new Rows object, a subset of the original object,
+        filtered by the function `f`
+        """
+        if not self.records:
+            return self.__class__(self, self.model, {})
+
+        records = {}
+        if limitby:
+            _min, _max = limitby
+        else:
+            _min, _max = 0, len(self)
+        count = 0
+        for i, row in self.records.items():
+            if f(row):
+                if _min <= count:
+                    records[i] = row
+                count += 1
+                if count == _max:
+                    break
+
+        return self.__class__(self, self.model, records)
+
+    def exclude(self, f: typing.Callable[[T_MetaInstance], Query]) -> "TypedRows[T_MetaInstance]":
+        """
+        Removes elements from the calling Rows object, filtered by the function
+        `f`, and returns a new Rows object containing the removed elements
+        """
+        if not self.records:
+            return self.__class__(self, self.model, {})
+        removed = {}
+        to_remove = []
+        for i in self.records:
+            row = self[i]
+            if f(row):
+                removed[i] = self.records[i]
+                to_remove.append(i)
+
+        [self.records.pop(i) for i in to_remove]
+
+        return self.__class__(
+            self,
+            self.model,
+            removed,
+        )
+
+    def sort(self, f: typing.Callable[[T_MetaInstance], Any], reverse: bool = False) -> list[T_MetaInstance]:
+        """
+        Returns a list of sorted elements (not sorted in place)
+        """
+        return [r for (r, s) in sorted(zip(self.records.values(), self), key=lambda r: f(r[1]), reverse=reverse)]
+
+    def __str__(self) -> str:
+        return f"<TypedRows with {len(self)} records>"
+
+    def __repr__(self) -> str:
+        data = {_.id: _.as_dict() for _ in self.as_dict().values()}
+        headers = list(next(iter(data.values())).keys())
+        return mktable(data, headers)
+
+    def group_by_value(
+        self, *fields: str | Field | TypedField[T], one_result: bool = False, **kwargs: Any
+    ) -> dict[T, list[T_MetaInstance]]:
+        kwargs["one_result"] = one_result
+        result = super().group_by_value(*fields, **kwargs)
+        return typing.cast(dict[T, list[T_MetaInstance]], result)
 
     def column(self, column: str = None) -> list[Any]:
-        return typing.cast(
-            list[Any],
-            super().column(column)
-        )
+        return typing.cast(list[Any], super().column(column))
 
     def as_csv(self) -> str:
-        return typing.cast(
-            str,
-            super().as_csv()
-        )
+        return typing.cast(str, super().as_csv())
 
     def as_dict(
         self,
@@ -1014,24 +1096,25 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
         custom_types: list[type] = None,
     ) -> dict[int, T_MetaInstance]:
         if any([key, compact, storage_to_dict, datetime_to_str, custom_types]):
+            # functionality not guaranteed
             return typing.cast(
                 dict[int, T_MetaInstance],
                 super().as_dict(
-                    key,
+                    key or "id",
                     compact,
                     storage_to_dict,
                     datetime_to_str,
                     custom_types,
-                )
+                ),
             )
 
-        return self._data
+        return self.records
 
     def as_json(self, mode: str = "object", default: typing.Callable[[Any], Any] = None) -> str:
-        return typing.cast(
-            str,
-            super().as_json(mode=mode, default=default)
-        )
+        return typing.cast(str, super().as_json(mode=mode, default=default))
+
+    def json(self, mode: str = "object", default: typing.Callable[[Any], Any] = None) -> str:
+        return typing.cast(str, super().as_json(mode=mode, default=default))
 
     def as_list(
         self,
@@ -1042,27 +1125,64 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
     ) -> list[T_MetaInstance]:
         if any([compact, storage_to_dict, datetime_to_str, custom_types]):
             return typing.cast(
-                list[T_MetaInstance],
-                super().as_list(compact, storage_to_dict, datetime_to_str, custom_types)
+                list[T_MetaInstance], super().as_list(compact, storage_to_dict, datetime_to_str, custom_types)
             )
-        return list(self._data.values())
-
-    # def __getattr__(self, item: str):
-    #     if self._rows:
-    #         return getattr(self._rows, item)
-    #
-    #     raise AttributeError(item)
+        return list(self.records.values())
 
     def get(self, item: int) -> typing.Optional[T_MetaInstance]:
-        return self._data.get(item, None)
+        return self.records.get(item)
 
     def __getitem__(self, item: int) -> T_MetaInstance:
-        return self._data[item]
+        try:
+            return self.records[item]
+        except KeyError as e:
+            if item == 0 and (row := self.first()):
+                # special case: pydal internals think Rows.records is a list, not a dict
+                return row
+
+            raise e
+
+    def join(
+        self,
+        field: Field | TypedField[Any],
+        name: str = None,
+        constraint: Query = None,
+        fields: list[str | Field] = None,
+        orderby: str | Field = None,
+    ) -> T_MetaInstance:
+        result = super().join(field, name, constraint, fields or [], orderby)
+        return typing.cast(T_MetaInstance, result)
+
+    def export_to_csv_file(
+        self,
+        ofile: typing.TextIO,
+        null: str = "<NULL>",
+        delimiter: str = ",",
+        quotechar: str = '"',
+        quoting: int = csv.QUOTE_MINIMAL,
+        represent: bool = False,
+        colnames: list[str] = None,
+        write_colnames: bool = True,
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
+        super().export_to_csv_file(
+            ofile,
+            null,
+            *args,
+            delimiter=delimiter,
+            quotechar=quotechar,
+            quoting=quoting,
+            represent=represent,
+            colnames=colnames or self.colnames,
+            write_colnames=write_colnames,
+            **kwargs,
+        )
 
     @classmethod
     def from_rows(cls, rows: Rows, model: typing.Type[T_MetaInstance]) -> "TypedRows[T_MetaInstance]":
         # todo: dynamic keyby, with multiple properties?
-        return cls({row.id: model(row) for row in rows}, model)
+        return cls(rows, model)
 
 
 class TypedSet(pydal.objects.Set):  # type: ignore # pragma: no cover
