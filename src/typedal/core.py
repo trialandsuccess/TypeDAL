@@ -4,6 +4,7 @@ Core functionality of TypeDAL.
 import contextlib
 import csv
 import datetime as dt
+import inspect
 import types
 import typing
 import warnings
@@ -17,7 +18,16 @@ from pydal.objects import Query as _Query
 from pydal.objects import Row, Rows
 from pydal.objects import Table as _Table
 
-from .helpers import all_annotations, instanciate, is_union, mktable, origin_is_subclass
+from .helpers import (
+    all_annotations,
+    all_dict,
+    filter_out,
+    instanciate,
+    is_union,
+    looks_like,
+    mktable,
+    origin_is_subclass,
+)
 
 
 class Query(_Query):  # type: ignore
@@ -53,6 +63,10 @@ class _Types:
     NONETYPE = type(None)
 
 
+class Expression(pydal.objects.Expression):  # type: ignore
+    ...
+
+
 def is_typed_field(cls: Any) -> typing.TypeGuard["TypedField[Any]"]:
     return (
         isinstance(cls, TypedField)
@@ -61,17 +75,179 @@ def is_typed_field(cls: Any) -> typing.TypeGuard["TypedField[Any]"]:
     )
 
 
+def unwrap(_type: type) -> type:
+    while args := typing.get_args(_type):
+        _type = args[0]
+    return _type
+
+
+class Relationship(typing.Generic[T]):
+    _type: T
+    table: typing.Type["TypedTable"] | str
+    condition: typing.Optional[typing.Callable[["TypedTable"], Query]]
+    multiple: bool
+
+    def __init__(self, _type: T, condition: typing.Callable[["TypedTable"], Query] = None):
+        self._type = _type
+        self.condition = condition
+
+        if args := typing.get_args(_type):
+            self.table = unwrap(args[0])
+            self.multiple = True
+        else:
+            self.table = _type
+            self.multiple = False
+
+        if isinstance(self.table, str):
+            self.table = TypeDAL.to_snake(self.table)
+
+    def __repr__(self):
+        if self.condition:
+            src_code = inspect.getsource(self.condition).strip()
+        else:
+            src_code = f"to {self._type.__name__} (missing condition)"
+        return f"<Relationship {src_code}>"
+
+    def get_table(self, db: "TypeDAL") -> typing.Type["TypedTable"]:
+        table = self.table  # can be a string because db wasn't available yet
+        if isinstance(table, str):
+            if mapped := db._class_map.get(table):
+                # yay
+                return mapped
+
+            # boo, fall back to untyped table but pretend it is typed:
+            return typing.cast(typing.Type["TypedTable"], db[table])  # eh close enough!
+
+        return table
+
+    def get_table_name(self) -> str:
+        if isinstance(self.table, str):
+            return self.table
+
+        table = self.table._ensure_table_defined()
+        return str(table)
+
+
+def relationship(_type: typing.Type[T], condition: typing.Callable[["TypedTable"], Query] = None) -> T:
+    return Relationship(_type, condition)
+
+
+def _generate_relationship_condition(
+    cls: typing.Type["TypedTable"], key: str, field: typing.Union["TypedField", "Table", typing.Type["TypedTable"]]
+):
+    if not (origin := typing.get_origin(field)):
+        # normal reference
+        return lambda _: cls[key] == field.id
+
+    # else: generic
+    field = typing.get_args(field)[0]  # actual field
+
+    if origin == list:
+        return lambda _: cls[key].contains(field)
+    elif origin == Relationship:
+        # defined via typing like `property: Relationship()` instead of `property = relationship(...)`
+        print(cls, key, field, unwrap(field))
+
+        raise NotImplementedError()
+
+        # Relationship[Article] -> look up 'reference cls' in unwrap(field)
+        return lambda _: _.id == -1
+
+        # return _generate_relationship_condition(cls, key, field)  # try again unwrapped
+    else:
+        # invalid
+        return None
+
+
+def to_relationship(
+    cls: typing.Type["TypedTable"], key: str, field: typing.Union["TypedField", "Table", typing.Type["TypedTable"]]
+):
+    if looks_like(field, TypedField):
+        if args := typing.get_args(field):
+            field = args[0]
+        else:
+            # weird
+            return None
+
+    try:
+        condition = _generate_relationship_condition(cls, key, field)
+    except Exception as e:
+        warnings.warn("Could not generate Relationship condition", source=e)
+        condition = None
+
+    if not condition:
+        # something went wrong, not a valid relationship
+        warnings.warn(f"Invalid relationship for {cls.__name__}.{key}: {field}")
+        return None
+
+    return Relationship(field, condition)
+
+
 class TypeDAL(pydal.DAL):  # type: ignore
     """
     Drop-in replacement for pyDAL with layer to convert class-based table definitions to classical pydal define_tables.
     """
 
     # dal: Table
+    # def __init__(self,
+    #              uri="sqlite://dummy.db",
+    #              pool_size=0,
+    #              folder=None,
+    #              db_codec="UTF-8",
+    #              check_reserved=None,
+    #              migrate=True,
+    #              fake_migrate=False,
+    #              migrate_enabled=True,
+    #              fake_migrate_all=False,
+    #              decode_credentials=False,
+    #              driver_args=None,
+    #              adapter_args=None,
+    #              attempts=5,
+    #              auto_import=False,
+    #              bigint_id=False,
+    #              debug=False,
+    #              lazy_tables=False,
+    #              db_uid=None,
+    #              after_connection=None,
+    #              tables=None,
+    #              ignore_field_case=True,
+    #              entity_quoting=True,
+    #              table_hash=None,
+    #              ):
+    #     super().__init__(
+    #         uri,
+    #         pool_size,
+    #         folder,
+    #         db_codec,
+    #         check_reserved,
+    #         migrate,
+    #         fake_migrate,
+    #         migrate_enabled,
+    #         fake_migrate_all,
+    #         decode_credentials,
+    #         driver_args,
+    #         adapter_args,
+    #         attempts,
+    #         auto_import,
+    #         bigint_id,
+    #         debug,
+    #         lazy_tables,
+    #         db_uid,
+    #         after_connection,
+    #         tables,
+    #         ignore_field_case,
+    #         entity_quoting,
+    #         table_hash,
+    #     )
+    #     self.representers[TypedField] = lambda x: x
 
     default_kwargs: typing.ClassVar[typing.Dict[str, Any]] = {
         # fields are 'required' (notnull) by default:
         "notnull": True,
     }
+
+    # maps table name to typedal class, for resolving future references
+    _class_map: typing.ClassVar[dict[str, typing.Type["TypedTable"]]] = {}
 
     def _define(self, cls: typing.Type[T]) -> typing.Type[T]:
         # when __future__.annotations is implemented, cls.__annotations__ will not work anymore as below.
@@ -85,12 +261,13 @@ class TypeDAL(pydal.DAL):  # type: ignore
         # and might break in the future, when this annotations behavior is enabled by default.
 
         # non-annotated variables have to be passed to define_table as kwargs
+        full_dict = all_dict(cls)  # includes properties from parents (e.g. useful for mixins)
 
-        tablename = self._to_snake(cls.__name__)
+        tablename = self.to_snake(cls.__name__)
         # grab annotations of cls and it's parents:
         annotations = all_annotations(cls)
         # extend with `prop = TypedField()` 'annotations':
-        annotations |= {k: typing.cast(type, v) for k, v in cls.__dict__.items() if is_typed_field(v)}
+        annotations |= {k: typing.cast(type, v) for k, v in full_dict.items() if is_typed_field(v)}
         # remove internal stuff:
         annotations = {k: v for k, v in annotations.items() if not k.startswith("_")}
 
@@ -98,12 +275,34 @@ class TypeDAL(pydal.DAL):  # type: ignore
             k: instanciate(v, True) for k, v in annotations.items() if is_typed_field(v)
         }
 
+        relationships = filter_out(annotations, Relationship)
+
         fields = {fname: self._to_field(fname, ftype) for fname, ftype in annotations.items()}
+
+        # ! dont' use full_dict here:
         other_kwargs = {k: v for k, v in cls.__dict__.items() if k not in annotations and not k.startswith("_")}
 
-        for key in typedfields.keys() - cls.__dict__.keys():
+        for key in typedfields.keys() - full_dict.keys():
             # typed fields that don't haven't been added to the object yet
             setattr(cls, key, typedfields[key])
+
+        # start with base classes and overwrite with current class:
+        relationships = filter_out(full_dict, Relationship) | relationships | filter_out(other_kwargs, Relationship)
+
+        # ensure they are all instances and
+        # not mix of instances (`= relationship()`) and classes (`: Relationship[...]`):
+        relationships = {
+            k: v if isinstance(v, Relationship) else to_relationship(cls, k, v) for k, v in relationships.items()
+        }
+
+        # keys of implicit references (also relationships):
+        reference_field_keys = [k for k, v in fields.items() if v.type.split(" ")[0] in ("list:reference", "reference")]
+
+        # add implicit relationships:
+        # User; list[User]; TypedField[User]; TypedField[list[User]]
+        relationships |= {
+            k: to_relationship(cls, k, annotations[k]) for k in reference_field_keys if k not in relationships
+        }
 
         table: Table = self.define_table(tablename, *fields.values(), **other_kwargs)
 
@@ -112,9 +311,10 @@ class TypeDAL(pydal.DAL):  # type: ignore
             typed_field.bind(field, table)
 
         if issubclass(cls, TypedTable):
-            cls.__set_internals__(db=self, table=table)
+            cls.__set_internals__(db=self, table=table, relationships=relationships)
+            self._class_map[str(table)] = cls
         else:
-            warnings.warn("db.define used without inheriting TypedTable. " "This could lead to strange problems!")
+            warnings.warn("db.define used without inheriting TypedTable. This could lead to strange problems!")
 
         return cls
 
@@ -216,7 +416,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
             return f"reference {ftype._tablename}"
         elif issubclass(type(ftype), type) and issubclass(ftype, TypedTable):
             # SomeTable
-            snakename = cls._to_snake(ftype.__name__)
+            snakename = cls.to_snake(ftype.__name__)
             return f"reference {snakename}"
         elif isinstance(ftype, TypedField):
             # FieldType(type, ...)
@@ -269,7 +469,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
                 reference: Table
                 other: TypedField(str, default="John Doe")  # default will be in kwargs
         """
-        fname = cls._to_snake(fname)
+        fname = cls.to_snake(fname)
 
         if converted_type := cls._annotation_to_pydal_fieldtype(ftype, kw):
             return cls._build_field(fname, converted_type, **kw)
@@ -277,7 +477,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
             raise NotImplementedError(f"Unsupported type {ftype}/{type(ftype)}")
 
     @staticmethod
-    def _to_snake(camel: str) -> str:
+    def to_snake(camel: str) -> str:
         # https://stackoverflow.com/a/44969381
         return "".join([f"_{c.lower()}" if c.isupper() else c for c in camel]).lstrip("_")
 
@@ -299,17 +499,19 @@ class TableMeta(type):
     # _table: Table | None = None
     _db: TypeDAL | None = None
     _table: Table | None = None
+    _relationships: dict[str, Relationship] | None = None
 
     #########################
     # TypeDAL custom logic: #
     #########################
 
-    def __set_internals__(self, db: pydal.DAL, table: Table) -> None:
+    def __set_internals__(self, db: pydal.DAL, table: Table, relationships: dict[str, Relationship]) -> None:
         """
         Store the related database and pydal table for later usage.
         """
         self._db = db
         self._table = table
+        self._relationships = relationships
 
     def __getattr__(self, col: str) -> Field:
         """
@@ -341,6 +543,9 @@ class TableMeta(type):
     def all(self: typing.Type[T_MetaInstance]) -> "TypedRows[T_MetaInstance]":  # noqa: A003
         # todo: Rows instead of list?
         return self.select().collect()
+
+    def get_relationships(self):
+        return self._relationships
 
     ##########################
     # TypeDAL Modified Logic #
@@ -506,7 +711,7 @@ class TableMeta(type):
             **kwargs,
         )
 
-    def on(self, query: Query) -> pydal.objects.Expression:
+    def on(self, query: Query) -> Expression:
         table = self._ensure_table_defined()
         return table.on(query)
 
@@ -522,6 +727,8 @@ class TypedTable(metaclass=TableMeta):
 
     # set up by 'new':
     _row: Row | None = None
+
+    _with: list[str]
 
     id: "TypedField[int]"  # noqa: A003
 
@@ -565,11 +772,30 @@ class TypedTable(metaclass=TableMeta):
         yield from iter(row)
 
     def __getitem__(self, item: str) -> Any:
-        row = self._ensure_matching_row()
-        return row[item]
+        if item in self.__dict__:
+            return self.__dict__.get(item)
+
+        # fallback to lookup in row
+        if self._row:
+            return self._row[item]
+
+        # nothing found!
+        raise KeyError(item)
+
+    def __getattr__(self, item: str) -> Any:
+        if value := self.get(item):
+            return value
+
+        raise AttributeError(item)
+
+    def get(self, item, default=None):
+        try:
+            return self.__getitem__(item)
+        except KeyError:
+            return default
 
     def __setitem__(self, key: str, value: Any) -> None:
-        setattr(self, key, value)
+        return setattr(self, key, value)
 
     def __int__(self) -> int:
         return getattr(self, "id", 0)
@@ -577,23 +803,25 @@ class TypedTable(metaclass=TableMeta):
     def __bool__(self) -> bool:
         return bool(getattr(self, "_row", False))
 
-    def __getattr__(self, item: str) -> Any:
-        if self._row:
-            return getattr(self._row, item)
-
-        # else: normal logic
-        raise AttributeError(item)
-
     def _ensure_matching_row(self) -> Row:
         if not getattr(self, "_row", None):
             raise EnvironmentError("Trying to access non-existant row. Maybe it was deleted or not yet initialized?")
         return self._row
 
     def __repr__(self) -> str:
+        model_name = self.__class__.__name__
+        model_data = {}
+
         if self._row:
-            return f"<{self.__class__.__name__}({self._row.as_json()})>"
-        else:
-            return f"<{self.__class__.__name__}({{}})>"
+            model_data = self._row.as_json()
+
+        details = model_name
+        details += f"({model_data})"
+
+        if relationships := getattr(self, "_with", []):
+            details += f" + {relationships}"
+
+        return f"<{details}>"
 
     # serialization
     # underscore variants work for class instances (set up by _setup_instance_methods)
@@ -718,6 +946,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
     query: Query
     select_args: list[Any]
     select_kwargs: dict[str, Any]
+    relationships: dict[str, Relationship]
 
     def __init__(
         self,
@@ -725,6 +954,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         add_query: Optional[Query] = None,
         select_args: Optional[list[Any]] = None,
         select_kwargs: Optional[dict[str, Any]] = None,
+        relationships: dict[str, Relationship] = None,
     ):
         self.model = model
         table = model._ensure_table_defined()
@@ -732,12 +962,29 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         self.query = add_query or default_query
         self.select_args = select_args or []
         self.select_kwargs = select_kwargs or {}
+        self.relationships = relationships or {}
+
+    def _extend(
+        self,
+        add_query: Optional[Query] = None,
+        overwrite_query: Optional[Query] = None,
+        select_args: Optional[list[Any]] = None,
+        select_kwargs: Optional[dict[str, Any]] = None,
+        relationships: dict[str, Relationship] = None,
+    ):
+        return QueryBuilder(
+            self.model,
+            (add_query & self.query) if add_query else overwrite_query or self.query,
+            (select_args + self.select_args) if select_args else select_args,
+            (select_kwargs | self.select_kwargs) if select_kwargs else self.select_kwargs,
+            (relationships | self.relationships) if relationships else self.relationships,
+        )
 
     def select(self, *fields: Any, **options: Any) -> "QueryBuilder[T_MetaInstance]":
         return QueryBuilder(self.model, self.query, self.select_args + list(fields), self.select_kwargs | options)
 
     def where(
-        self, query_or_lambda: Query | typing.Callable[[typing.Type[T_MetaInstance]], Query], **filters: Any
+        self, query_or_lambda: Query | typing.Callable[[typing.Type[T_MetaInstance]], Query] = None, **filters: Any
     ) -> "QueryBuilder[T_MetaInstance]":
         new_query = self.query
         table = self.model._ensure_table_defined()
@@ -758,12 +1005,16 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         else:
             raise ValueError(f"Unexpected query type ({type(query_or_lambda)}).")
 
-        return QueryBuilder(
-            self.model,
-            new_query,
-            self.select_args,
-            self.select_kwargs,
-        )
+        return self._extend(overwrite_query=new_query)
+
+    def join(self, *fields: str) -> "QueryBuilder[T_MetaInstance]":
+        relationships = self.model.get_relationships()
+
+        if fields:
+            # join on every relationship
+            relationships = {k: relationships[k] for k in fields}
+
+        return self._extend(relationships=relationships)
 
     def _get_db(self) -> TypeDAL:
         if db := self.model._db:
@@ -798,20 +1049,99 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
     def collect(self) -> "TypedRows[T_MetaInstance]":
         db = self._get_db()
 
-        select_args = [self._select_arg_convert(_) for _ in self.select_args]
+        # todo: paginate by ids = db(self.query)._select('id', limitby=...)
+        #   then db(model.id.belongs(ids)).select(*select_args, **self.select_kwargs)
 
-        rows: Rows = db(self.query).select(*select_args, **self.select_kwargs)
+        select_args = [self._select_arg_convert(_) for _ in self.select_args] or [self.model.ALL]
+        select_kwargs = self.select_kwargs
 
-        return TypedRows.from_rows(rows, self.model)
+        if self.relationships:
+            if select_kwargs["limitby"]:
+                # fixme: limitby with relations!
+                del select_kwargs["limitby"]
+
+            left = []
+
+            for key, relation in self.relationships.items():
+                other = relation.get_table(db)
+
+                left.append(other.on(relation.condition(self.model)))
+                select_args += [other.ALL]  # todo: allow limiting (-> check if something from 'other' already in args)
+                #                            fixme: ensure current table also has something selected
+                #                            fixme: require at least ID for each table
+
+            select_kwargs["left"] = left
+
+        rows: Rows = db(self.query).select(*select_args, **select_kwargs)
+
+        # print(db(self.query)._select(*select_args, **select_kwargs))
+
+        if not self.relationships:
+            # easy
+            return TypedRows.from_rows(rows, self.model)
+
+        # harder: try to match rows to the belonging objects
+        # assume structure of {'table': <data>} per row.
+        # if that's not the case, return default behavior again
+
+        return self._collect_with_relationships(rows)
+
+    def _collect_with_relationships(self, rows: Rows):
+        db = self._get_db()
+        main_table = self.model._ensure_table_defined()
+
+        records = {}
+        seen_relations = set()
+        for row in rows:
+            main = row[main_table]
+            if main.id not in records:
+                records[main.id] = self.model(main)
+                records[main.id]._with = list(self.relationships.keys())
+
+            # now add other relationship data
+            for column, relation in self.relationships.items():
+                relation_data = row[relation.get_table_name()]
+
+                if f"{column}-{relation_data.id}" in seen_relations:
+                    # speed up duplicates
+                    continue
+                else:
+                    seen_relations.add(f"{column}-{relation_data.id}")
+
+                if relation_data.id is None:
+                    if not records[main.id].get(column):
+                        # left join yielded no results, still update depending on one or multiple:
+                        if relation.multiple:
+                            records[main.id][column] = []
+                        else:
+                            records[main.id][column] = None
+
+                    # always skip None
+                    continue
+
+                relation_table = relation.get_table(db)
+                # hopefully an instance of a typed table and a regular row otherwise:
+                instance = relation_table(relation_data) if looks_like(relation_table, TypedTable) else relation_data
+
+                if relation.multiple:
+                    # create list of T
+                    if not isinstance(records[main.id].get(column), list):
+                        # todo: other data type than list?
+                        # not yet iterable
+                        setattr(records[main.id], column, [])
+
+                    records[main.id][column].append(instance)
+                else:
+                    # create single T
+                    records[main.id][column] = instance
+
+        return TypedRows(rows, self.model, records)
 
     def collect_or_fail(self) -> "TypedRows[T_MetaInstance]":
-        # todo: make result type understand that .first() will never be None
-        result: TypedRows[T_MetaInstance] = self.collect()
-
-        if not result:
+        if result := self.collect():
+            return result
+        else:
             raise ValueError("Nothing found!")
-
-        return result
 
     def __iter__(self) -> typing.Generator[T_MetaInstance, None, None]:
         yield from self.collect()
@@ -821,14 +1151,13 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         return db(self.query).count()
 
     def first(self) -> T_MetaInstance | None:
-        # todo: limitby
         if "limitby" not in self.select_kwargs:
             self.select_kwargs["limitby"] = (0, 1)  # only select one on first
-        row = self.collect().first()
-        if not row:
-            return None
 
-        return self.model.from_row(row)
+        if row := self.collect().first():
+            return self.model.from_row(row)
+        else:
+            return None
 
     def first_or_fail(self) -> T_MetaInstance:
         if inst := self.first():
@@ -879,7 +1208,8 @@ class TypedField(typing.Generic[T_Value]):
             # in that case, no value was stored in the owner -> return None (since the field was not selected)
             return typing.cast(T_Value, None)  # cast as T_Value so mypy understands it for selected fields
         else:
-            return self
+            # getting as class -> return actual field so pydal understands it when using in query etc.
+            return self._field
 
     def __str__(self) -> str:
         """

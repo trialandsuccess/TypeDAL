@@ -29,6 +29,10 @@ def _all_annotations(cls: type) -> ChainMap[str, type]:
     return ChainMap(*(c.__annotations__ for c in getattr(cls, "__mro__", []) if "__annotations__" in c.__dict__))
 
 
+def all_dict(cls):
+    return dict(ChainMap(*(c.__dict__ for c in getattr(cls, "__mro__", []))))
+
+
 def all_annotations(cls: type, _except: typing.Iterable[str] = None) -> dict[str, type]:
     """
     Wrapper around `_all_annotations` that filters away any keys in _except.
@@ -116,3 +120,15 @@ def mktable(
     print(line, file=output)
 
     return output.getvalue()
+
+
+K = typing.TypeVar("K")
+V = typing.TypeVar("V")
+
+
+def looks_like(v: Any, _type: type) -> bool:
+    return isinstance(v, _type) or (isinstance(v, type) and issubclass(v, _type)) or origin_is_subclass(v, _type)
+
+
+def filter_out(mut_dict: dict[K, V], _type: type) -> dict[K, V]:
+    return {k: mut_dict.pop(k) for k, v in list(mut_dict.items()) if looks_like(v, _type)}

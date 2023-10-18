@@ -7,3 +7,5 @@ dist/
 build/
 .coverage
 coverage.json
+*.table
+*.db

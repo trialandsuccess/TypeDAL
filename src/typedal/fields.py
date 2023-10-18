@@ -179,7 +179,7 @@ def ReferenceField(
         kw["type"] = f"reference {other_table._tablename}"
     elif isinstance(other_table, type) and issubclass(other_table, TypedTable):
         # SomeTable
-        snakename = TypeDAL._to_snake(other_table.__name__)
+        snakename = TypeDAL.to_snake(other_table.__name__)
         kw["type"] = f"reference {snakename}"
     else:
         raise ValueError(f"Don't know what to do with {type(other_table)}")
