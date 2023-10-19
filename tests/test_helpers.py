@@ -1,5 +1,4 @@
 import typing
-from collections import OrderedDict
 
 from src.typedal.helpers import (
     all_annotations,
@@ -7,6 +6,7 @@ from src.typedal.helpers import (
     is_union,
     mktable,
     origin_is_subclass,
+    unwrap_type,
 )
 
 
@@ -65,3 +65,9 @@ def test_mktable():
 
     assert mktable(data, skip_first=False)
     assert mktable(data, header=["id", "name", "age", "occupation"])
+
+
+def test_unwrap():
+    my_type = typing.Optional[list[list[str]]]
+
+    assert unwrap_type(my_type) == str

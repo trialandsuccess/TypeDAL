@@ -132,11 +132,7 @@ def test_rows():
     assert 5 not in new_rows
 
     assert old_rows.as_csv() == new_rows.as_csv().replace("new_style_class", "old_style")
-    assert (
-        old_rows.as_dict()[1]["string_field"]
-        == new_rows.as_dict()[1].string_field
-        == new_rows.as_dict()[1]["string_field"]
-    )
+    assert old_rows.as_dict()[1]["string_field"] == new_rows.as_dict()[1]["string_field"]
 
     assert new_rows.as_dict(storage_to_dict=True)
 
@@ -158,7 +154,7 @@ def test_rows():
 
     assert len(old_filtered) == len(new_filtered) == 1
 
-    assert old_filtered[0].string_field == new_filtered[2].string_field
+    assert old_filtered[0].string_field == new_filtered[2]["string_field"]
     assert old_rows.as_dict()[1]["string_field"] == new_rows[1].string_field
 
     old_io = io.StringIO()

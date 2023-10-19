@@ -1,21 +1,33 @@
+import types
 import typing
 from uuid import uuid4
 
+import pytest
+
 from src.typedal import Relationship, TypeDAL, TypedField, TypedTable, relationship
 
-db = TypeDAL("sqlite:memory")
-# db = TypeDAL("sqlite://debug.db")
+# db = TypeDAL("sqlite:memory")
+db = TypeDAL("sqlite://debug.db")
 
 
 class TaggableMixin:
-    tags = relationship(list["Tag"], lambda cls: (Tagged.entity == cls.gid) & (Tagged.tag == Tag.id))
+    tags = relationship(
+        list["Tag"],
+        # lambda self, _: (Tagged.entity == self.gid) & (Tagged.tag == Tag.id)
+        # doing an .on with and & inside can lead to a cross join,
+        # for relationships with pivot tables a manual on query is prefered:
+        on=lambda entity, _tag: [
+            Tagged.on(Tagged.entity == entity.gid),
+            Tag.on((Tagged.tag == Tag.id)),
+        ],
+    )
     # tags = relationship(list["Tag"], tagged)
 
 
 @db.define()
 class Role(TypedTable, TaggableMixin):
     name: str
-    users = relationship(list["User"], lambda table: User.roles.belongs(table.id))
+    users = relationship(list["User"], lambda self, other: other.roles.belongs(self.id))
 
 
 @db.define()
@@ -25,14 +37,23 @@ class User(TypedTable, TaggableMixin):
     roles: TypedField[list[Role]]
 
     # relationships:
-    articles: Relationship[list["Article"]]  # defaults to looking up 'reference User'
+    articles = relationship(list["Article"], lambda self, other: other.author == self.id)
+
+    # bestie = relationship("Bestie", lambda _user, _bestie: _user.bestie == _bestie.id)
+
+
+@db.define()
+class Bestie(TypedTable):
+    friend: User
 
 
 @db.define()
 class Article(TypedTable, TaggableMixin):
     gid = TypedField(str, default=uuid4)
     title: str
-    author: User  # == relationship(User, 'User.gid') # stores User.gid in `_author` field
+    author: User  # auto relationship
+    secondary_author: typing.Optional[User]  # auto relationship but optional
+    final_editor: User | None  # auto relationship but optional
 
 
 @db.define()
@@ -40,9 +61,8 @@ class Tag(TypedTable):
     gid = TypedField(str, default=uuid4)
     name: str
 
-    articles = relationship(list[Article], lambda cls: (Tagged.tag == cls.id) & (Article.gid == Tagged.entity))
-
-    users = relationship(list[User], lambda cls: (Tagged.tag == cls.id) & (User.gid == Tagged.entity))
+    articles = relationship(list[Article], lambda self, other: (Tagged.tag == self.id) & (other.gid == Tagged.entity))
+    users = relationship(list[User], lambda self, other: (Tagged.tag == self.id) & (other.gid == Tagged.entity))
 
 
 @db.define()
@@ -78,8 +98,8 @@ def _setup_data():
 
     article1, article2 = Article.bulk_insert(
         [
-            {"title": "Article 1", "author": writer},
-            {"title": "Article 2", "author": editor},
+            {"title": "Article 1", "author": writer, "final_editor": editor},
+            {"title": "Article 2", "author": editor, "secondary_author": editor},
         ]
     )
 
@@ -138,37 +158,110 @@ def test_pydal_way():
 
 def test_typedal_way():
     _setup_data()
+    all_articles = Article.join().collect().as_dict()
 
-    article = Article.where(title="Article 1").first_or_fail()
+    assert all_articles[1]["final_editor"]["name"] == "Editor 1"
+    assert all_articles[2]["secondary_author"]["name"] == "Editor 1"
 
-    # ???
-    print(article.author)  # int object (id)
-    print(article.tags)  # Relationship object
+    assert all_articles[1]["secondary_author"] is None
+    assert all_articles[2]["final_editor"] is None
 
-    # hasOne
-    article = Article.where(title="Article 1").join("author", "tags").first_or_fail()
+    article1 = Article.where(title="Article 1").first_or_fail()
+    article2 = Article.where(title="Article 2").first_or_fail()
 
-    assert isinstance(article, Article)
+    assert isinstance(article1.author, int)
+    assert isinstance(article2.author, int)
+    assert isinstance(article1.final_editor, int)
+    assert isinstance(article2.final_editor, types.NoneType)
 
-    assert article.title == "Article 1"
-    assert article.author.name == "Writer 1"
+    with pytest.warns(RuntimeWarning):
+        assert article1.tags == []
 
-    assert isinstance(article.author, User)
+    with pytest.warns(RuntimeWarning):
+        assert article2.tags == []
 
-    assert len(article.tags) == 2  # draft, offtopic
+    # hasOne (article has writer)
+    articles1 = Article.where(title="Article 1").join().first_or_fail()
 
-    tag = article.tags[0]
-    assert tag.name
-    assert isinstance(tag, Tag)
+    assert articles1.final_editor.name == "Editor 1"
 
-    # belongsTo
+    articles2 = (
+        Article.where(title="Article 1").join("author", method="inner").join("tags", method="left").first_or_fail()
+    )
+    articles3 = Article.where(title="Article 1").join("author", "tags").first_or_fail()
 
-    # ...
+    for article in [articles1, articles2, articles3]:
+        assert isinstance(article, Article)
 
-    # todo: author without articles etc
-    #
-    # reader = User.where(name="Reader 1").join().first()
-    #
-    # assert reader
-    # assert not reader.articles
-    # assert not reader.tags
+        assert article.title == "Article 1"
+        assert article.author.name == "Writer 1"
+
+        assert isinstance(article.author, User)
+
+        assert len(article.tags) == 2  # draft, offtopic
+
+        tag = article.tags[0]
+        assert tag.name
+        assert isinstance(tag, Tag)
+
+    # belongsTo (writer belongs to article(s))
+
+    users = User.join().collect()
+
+    assert len(users) == 3  # reader, writer, editor
+
+    # get by id:
+    reader = users[1]
+    writer = users[2]
+    editor = users[3]
+
+    assert len(reader.roles) == 1
+    assert len(writer.roles) == 2
+    assert len(editor.roles) == 3
+
+    assert len(reader.tags) == 0
+    assert len(writer.tags) == 1
+    assert len(editor.tags) == 0
+
+    # articles are main writer only:
+    assert len(reader.articles) == 0
+    assert len(writer.articles) == 1
+    assert len(editor.articles) == 1
+
+    # tag to articles and users:
+    tags = Tag.join().collect()
+
+    assert len(tags) == 5
+
+    for tag in tags:
+        # every tag is used exactly once in this dataset
+        assert (len(tag.users) + len(tag.articles)) == 1
+
+    # todo role -> users
+
+
+def test_reprs():
+    assert "Relationship:left on=" in repr(Article.tags)
+
+    article = Article.first()
+
+    with pytest.warns(RuntimeWarning):
+        assert repr(article.tags) == "[]"
+
+    empty = Relationship(Article)
+
+    assert "missing condition" in repr(empty)
+
+    empty = Relationship("article")
+
+    assert empty.get_table(db) == Article
+
+    db.define_table("new")
+    empty = Relationship("new")
+    assert empty.get_table(db) == db.new
+
+
+def test_illegal():
+    with pytest.raises(ValueError):
+        class HasRelationship:
+            something = relationship("...", condition=lambda: 1, on=lambda: 2)

@@ -29,7 +29,7 @@ def _all_annotations(cls: type) -> ChainMap[str, type]:
     return ChainMap(*(c.__annotations__ for c in getattr(cls, "__mro__", []) if "__annotations__" in c.__dict__))
 
 
-def all_dict(cls):
+def all_dict(cls: type) -> dict[str, Any]:
     return dict(ChainMap(*(c.__dict__ for c in getattr(cls, "__mro__", []))))
 
 
@@ -107,6 +107,7 @@ def mktable(
 
     output = io.StringIO()
     # header
+    print()
     print(line, file=output)
     print(fmt_str.format(*header), file=output)
     print(line, file=output)
@@ -126,9 +127,15 @@ K = typing.TypeVar("K")
 V = typing.TypeVar("V")
 
 
-def looks_like(v: Any, _type: type) -> bool:
+def looks_like(v: Any, _type: type[Any]) -> bool:
     return isinstance(v, _type) or (isinstance(v, type) and issubclass(v, _type)) or origin_is_subclass(v, _type)
 
 
-def filter_out(mut_dict: dict[K, V], _type: type) -> dict[K, V]:
+def filter_out(mut_dict: dict[K, V], _type: type[T]) -> dict[K, type[T]]:
     return {k: mut_dict.pop(k) for k, v in list(mut_dict.items()) if looks_like(v, _type)}
+
+
+def unwrap_type(_type: type) -> type:
+    while args := typing.get_args(_type):
+        _type = args[0]
+    return _type
