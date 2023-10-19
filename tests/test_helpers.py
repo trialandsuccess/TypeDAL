@@ -6,7 +6,7 @@ from src.typedal.helpers import (
     is_union,
     mktable,
     origin_is_subclass,
-    unwrap_type, extract_type_optional,
+    unwrap_type, extract_type_optional, to_snake,
 )
 
 
@@ -79,3 +79,11 @@ def test_extract():
     assert extract_type_optional(None | bool) == (bool, True)
     assert extract_type_optional(bool) == (bool, False)
     assert extract_type_optional(None) == (None, False)
+
+
+def test_to_snake():
+    assert to_snake("MyClass") == "my_class"
+    assert to_snake("myClass") == "my_class"
+    assert to_snake("myclass") == "myclass"
+    assert to_snake("my_class") == "my_class"
+    assert to_snake("my_Class") == "my__class"

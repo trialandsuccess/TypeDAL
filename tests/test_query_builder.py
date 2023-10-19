@@ -13,6 +13,10 @@ class TestQueryTable(TypedTable):
     yet_another = TypedField(list[str], default=["something", "and", "other", "things"])
 
 
+class Undefined(TypedTable):
+    value: int
+
+
 def test_query_type():
     assert isinstance(TestQueryTable.number > 3, Query)
     assert isinstance(TestQueryTable.number >= 3, Query)
@@ -58,3 +62,37 @@ def test_where_builder():
         assert not results["other"]
 
     assert not results.yet_another
+
+    # delete all numbers above 2
+    result = TestQueryTable.where(lambda row: row.number > 2).delete()
+    assert len(result) == 2  # -> 3 and 4
+
+    assert TestQueryTable.where(lambda row: row.number > 99).delete() is None  # nothing deleted
+
+    assert TestQueryTable.count() == 3  # 0 - 2
+
+    result = TestQueryTable.where(lambda row: row.number == 0).update(number=5)
+    assert TestQueryTable.where(lambda row: row.number == -1).update(number=5) is None  # nothing updated
+    assert result == [1]  # id 1 updated
+
+    assert TestQueryTable(1).number == 5
+
+    success = TestQueryTable.select().collect_or_fail()
+    assert len(success) == 3
+
+    assert TestQueryTable.where(id=-1).first() is None
+    with pytest.raises(ValueError):
+       TestQueryTable.where(id=-1).collect_or_fail()
+
+    with pytest.raises(ValueError):
+        assert not TestQueryTable.where(id=-1).first_or_fail()
+
+    # try to break stuff:
+
+    with pytest.raises(ValueError):
+        # illegal query:
+        builder.where(Exception())
+
+    with pytest.raises(EnvironmentError):
+        # can't collect before defining on db!
+        Undefined.collect()

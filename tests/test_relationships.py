@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 
 from src.typedal import Relationship, TypeDAL, TypedField, TypedTable, relationship
+from src.typedal.core import to_relationship
 
 # db = TypeDAL("sqlite:memory")
 db = TypeDAL("sqlite://debug.db")
@@ -210,7 +211,7 @@ def test_typedal_way():
 
     # belongsTo (writer belongs to article(s))
 
-    non_joined_user = User(1)
+    non_joined_user = User.collect().first()
 
     with pytest.warns(RuntimeWarning):
         assert non_joined_user.bestie is None
@@ -224,7 +225,13 @@ def test_typedal_way():
     writer = users[2]
     editor = users[3]
 
-    assert reader.bestie.name == "Reader's Bestie"
+    bestie = BestFriend.where(id=reader.bestie.id).join("friend").first()
+    assert reader.bestie.name == "Reader's Bestie" == bestie.name
+    assert bestie.friend.name == reader.name
+
+    assert "+ ['friend']" in repr(bestie)
+
+
     assert not writer.bestie
     assert not editor.bestie
 
@@ -249,6 +256,7 @@ def test_typedal_way():
     for tag in tags:
         # every tag is used exactly once in this dataset
         assert (len(tag.users) + len(tag.articles)) == 1
+
 
     # todo role -> users
 

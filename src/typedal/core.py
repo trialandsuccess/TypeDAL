@@ -220,11 +220,11 @@ def to_relationship(
 
     try:
         condition = _generate_relationship_condition(cls, key, field)
-    except Exception as e:
+    except Exception as e:  # pragma: no cover
         warnings.warn("Could not generate Relationship condition", source=e)
         condition = None
 
-    if not condition:
+    if not condition:  # pragma: no cover
         # something went wrong, not a valid relationship
         warnings.warn(f"Invalid relationship for {cls.__name__}.{key}: {field}")
         return None
@@ -1102,11 +1102,12 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
     def _get_db(self) -> TypeDAL:
         if db := self.model._db:
             return db
-        else:
+        else:  # pragma: no cover
             raise EnvironmentError("@define or db.define is not called on this class yet!")
 
     def _select_arg_convert(self, arg: Any) -> str | Field:
-        if isinstance(arg, TypedField):
+        # typedfield are not really used at runtime anymore, but leave it in for safety:
+        if isinstance(arg, TypedField):  # pragma: no cover
             arg = arg._field
 
         return arg
@@ -1153,7 +1154,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
                     # if it has a .on, it's always a left join!
                     if relation.on:
                         on = relation.on(self.model, other)
-                        if not isinstance(on, list):
+                        if not isinstance(on, list):  # pragma: no cover
                             on = [on]
 
                         left.extend(on)
@@ -1172,7 +1173,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
         rows: Rows = db(self.query).select(*select_args, **select_kwargs)
 
-        if verbose:
+        if verbose:  # pragma: no cover
             print(db(self.query)._select(*select_args, **select_kwargs))
             print(rows)
 
@@ -1231,9 +1232,8 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
                 if relation.multiple:
                     # create list of T
-                    if not isinstance(records[main_id].get(column), list):
-                        # todo: other data type than list?
-                        # not yet iterable
+                    if not isinstance(records[main_id].get(column), list): # pragma: no cover
+                        # should already be set up before!
                         setattr(records[main_id], column, [])
 
                     records[main_id][column].append(instance)
@@ -1272,7 +1272,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
             raise ValueError("Nothing found!")
 
 
-class TypedField(typing.Generic[T_Value]):
+class TypedField(typing.Generic[T_Value]): # pragma: no cover
     """
     Typed version of pydal.Field, which will be converted to a normal Field in the background.
     """
