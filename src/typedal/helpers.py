@@ -139,3 +139,31 @@ def unwrap_type(_type: type) -> type:
     while args := typing.get_args(_type):
         _type = args[0]
     return _type
+
+
+@typing.overload
+def extract_type_optional(annotation: T) -> tuple[T, bool]:
+    """
+    T -> T is not exactly right because you'll get the inner type, but mypy seems happy with this.
+    """
+
+
+@typing.overload
+def extract_type_optional(annotation: None) -> tuple[None, bool]:
+    """
+    None leads to None, False.
+    """
+
+
+def extract_type_optional(annotation: T | None) -> tuple[T | None, bool]:
+    if annotation is None:
+        return None, False
+
+    if origin := typing.get_origin(annotation):
+        args = typing.get_args(annotation)
+
+        if origin in (typing.Union, types.UnionType, typing.Optional) and args:
+            # remove None:
+            return next(_ for _ in args if _ and _ != types.NoneType and not isinstance(_, types.NoneType)), True
+
+    return annotation, False

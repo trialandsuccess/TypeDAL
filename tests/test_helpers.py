@@ -6,7 +6,7 @@ from src.typedal.helpers import (
     is_union,
     mktable,
     origin_is_subclass,
-    unwrap_type,
+    unwrap_type, extract_type_optional,
 )
 
 
@@ -71,3 +71,11 @@ def test_unwrap():
     my_type = typing.Optional[list[list[str]]]
 
     assert unwrap_type(my_type) == str
+
+
+def test_extract():
+    assert extract_type_optional(typing.Optional[bool]) == (bool, True)
+    assert extract_type_optional(bool | None) == (bool, True)
+    assert extract_type_optional(None | bool) == (bool, True)
+    assert extract_type_optional(bool) == (bool, False)
+    assert extract_type_optional(None) == (None, False)

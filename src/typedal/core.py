@@ -22,6 +22,7 @@ from pydal.objects import Table as _Table
 from .helpers import (
     all_annotations,
     all_dict,
+    extract_type_optional,
     filter_out,
     instanciate,
     is_union,
@@ -176,7 +177,7 @@ class Relationship(typing.Generic[To_Type]):
         # else: typed table
         try:
             table = self.table._ensure_table_defined() if issubclass(self.table, TypedTable) else self.table
-        except Exception:
+        except Exception:  # pragma: no cover
             table = self.table
 
         return str(table)
@@ -216,29 +217,6 @@ def _generate_relationship_condition(
         # normal reference
         # return lambda _self, _other: cls[key] == field.id
         return lambda _self, _other: _self[key] == _other.id
-
-
-@typing.overload
-def extract_type_optional(annotation: T) -> tuple[T, bool]:
-    ...
-
-
-@typing.overload
-def extract_type_optional(annotation: None) -> tuple[None, bool]:
-    ...
-
-
-def extract_type_optional(annotation: T | None) -> tuple[T | None, bool]:
-    if annotation is None:
-        return None, False
-
-    if origin := typing.get_origin(annotation):
-        args = typing.get_args(annotation)
-        if origin in (typing.Union, types.UnionType, typing.Optional) and args:
-            # remove None:
-            return next(_ for _ in args if _), True
-
-    return annotation, False
 
 
 def to_relationship(

@@ -40,11 +40,11 @@ class User(TypedTable, TaggableMixin):
     articles = relationship(list["Article"], lambda self, other: other.author == self.id)
 
     # one-to-one
-    bestie = relationship("Bestie", lambda _user, _bestie: _user.id == _bestie.friend)
+    bestie = relationship("BestFriend", lambda _user, _bestie: _user.id == _bestie.friend)
 
 
 @db.define()
-class Bestie(TypedTable):
+class BestFriend(TypedTable):
     name: str
     friend: User
 
@@ -133,7 +133,7 @@ def _setup_data():
         ]
     )
 
-    Bestie.insert(friend=reader, name="Reader's Bestie")
+    BestFriend.insert(friend=reader, name="Reader's Bestie")
 
     db.commit()
 
@@ -210,6 +210,11 @@ def test_typedal_way():
 
     # belongsTo (writer belongs to article(s))
 
+    non_joined_user = User(1)
+
+    with pytest.warns(RuntimeWarning):
+        assert non_joined_user.bestie is None
+
     users = User.join().collect()
 
     assert len(users) == 3  # reader, writer, editor
@@ -267,6 +272,13 @@ def test_reprs():
     db.define_table("new")
     empty = Relationship("new")
     assert empty.get_table(db) == db.new
+
+    assert empty.get_table_name() == "new"
+
+    empty = Relationship(db.new)
+    assert empty.get_table(db) == db.new
+
+    assert empty.get_table_name() == "new"
 
 
 def test_illegal():
