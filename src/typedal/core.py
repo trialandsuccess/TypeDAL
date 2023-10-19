@@ -31,11 +31,7 @@ from .helpers import (
     origin_is_subclass,
     unwrap_type,
 )
-
-
-class Query(_Query):  # type: ignore
-    ...
-
+from .types import Expression, Query, _Types
 
 # use typing.cast(type, ...) to make mypy happy with unions
 T_annotation = typing.Type[Any] | types.UnionType
@@ -56,18 +52,6 @@ BASIC_MAPPINGS: dict[T_annotation, str] = {
     dt.time: "time",
     dt.datetime: "datetime",
 }
-
-
-class _Types:
-    """
-    Internal type storage for stuff that mypy otherwise won't understand.
-    """
-
-    NONETYPE = type(None)
-
-
-class Expression(pydal.objects.Expression):  # type: ignore
-    ...
 
 
 def is_typed_field(cls: Any) -> typing.TypeGuard["TypedField[Any]"]:

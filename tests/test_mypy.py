@@ -104,7 +104,7 @@ def mypy_test_query() -> None:
 
     my_query = MyTable.id > 3
 
-    typing.reveal_type(my_query)  # R: src.typedal.core.Query
+    typing.reveal_type(my_query)  # R: src.typedal.types.Query
 
     MyTable.update_or_insert(MyTable)
     MyTable.update_or_insert(my_query)

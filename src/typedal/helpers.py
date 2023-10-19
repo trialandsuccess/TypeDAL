@@ -167,3 +167,8 @@ def extract_type_optional(annotation: T | None) -> tuple[T | None, bool]:
             return next(_ for _ in args if _ and _ != types.NoneType and not isinstance(_, types.NoneType)), True
 
     return annotation, False
+
+
+def to_snake(camel: str) -> str:
+    # https://stackoverflow.com/a/44969381
+    return "".join([f"_{c.lower()}" if c.isupper() else c for c in camel]).lstrip("_")
