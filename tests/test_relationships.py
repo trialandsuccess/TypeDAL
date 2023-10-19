@@ -39,11 +39,13 @@ class User(TypedTable, TaggableMixin):
     # relationships:
     articles = relationship(list["Article"], lambda self, other: other.author == self.id)
 
-    # bestie = relationship("Bestie", lambda _user, _bestie: _user.bestie == _bestie.id)
+    # one-to-one
+    bestie = relationship("Bestie", lambda _user, _bestie: _user.id == _bestie.friend)
 
 
 @db.define()
 class Bestie(TypedTable):
+    name: str
     friend: User
 
 
@@ -131,6 +133,8 @@ def _setup_data():
         ]
     )
 
+    Bestie.insert(friend=reader, name="Reader's Bestie")
+
     db.commit()
 
 
@@ -215,6 +219,10 @@ def test_typedal_way():
     writer = users[2]
     editor = users[3]
 
+    assert reader.bestie.name == "Reader's Bestie"
+    assert not writer.bestie
+    assert not editor.bestie
+
     assert len(reader.roles) == 1
     assert len(writer.roles) == 2
     assert len(editor.roles) == 3
@@ -262,6 +270,6 @@ def test_reprs():
 
 
 def test_illegal():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError), pytest.warns(UserWarning):
         class HasRelationship:
             something = relationship("...", condition=lambda: 1, on=lambda: 2)

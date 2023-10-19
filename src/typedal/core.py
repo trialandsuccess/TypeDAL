@@ -27,7 +27,8 @@ from .helpers import (
     is_union,
     looks_like,
     mktable,
-    origin_is_subclass, unwrap_type,
+    origin_is_subclass,
+    unwrap_type,
 )
 
 
@@ -98,7 +99,7 @@ OnQuery: typing.TypeAlias = typing.Optional[
     ]
 ]
 
-To_Type = typing.TypeVar("To_Type", bound=type)
+To_Type = typing.TypeVar("To_Type", type[Any], typing.Type[Any], str)
 
 
 class Relationship(typing.Generic[To_Type]):
@@ -129,7 +130,7 @@ class Relationship(typing.Generic[To_Type]):
             self.table = unwrap_type(args[0])
             self.multiple = True
         else:
-            self.table = typing.cast(type, _type)
+            self.table = _type
             self.multiple = False
 
         if isinstance(self.table, str):
@@ -147,7 +148,8 @@ class Relationship(typing.Generic[To_Type]):
         if callback := self.condition or self.on:
             src_code = inspect.getsource(callback).strip()
         else:
-            src_code = f"to {self._type.__name__} (missing condition)"
+            cls_name = self._type if isinstance(self._type, str) else self._type.__name__  # type: ignore
+            src_code = f"to {cls_name} (missing condition)"
 
         join = f":{self.join}" if self.join else ""
         return f"<Relationship{join} {src_code}>"
@@ -179,7 +181,7 @@ class Relationship(typing.Generic[To_Type]):
 
         return str(table)
 
-    def __get__(self, instance: Any, owner: Any) -> typing.Optional[list[Any]]:
+    def __get__(self, instance: Any, owner: Any) -> typing.Optional[list[Any]] | "Relationship[To_Type]":
         if instance:
             warnings.warn(
                 "Trying to get data from a relationship object! Did you forget to join it?", category=RuntimeWarning
@@ -194,8 +196,8 @@ class Relationship(typing.Generic[To_Type]):
 
 
 def relationship(
-    _type: typing.Type[T], condition: Condition = None, join: JOIN_OPTIONS = None, on: OnQuery = None
-) -> Relationship[typing.Type[T]]:
+    _type: To_Type, condition: Condition = None, join: JOIN_OPTIONS = None, on: OnQuery = None
+) -> Relationship[To_Type]:
     return Relationship(_type, condition, join, on)
 
 
@@ -243,7 +245,7 @@ def to_relationship(
     cls: typing.Type["TypedTable"] | type[Any],
     key: str,
     field: typing.Union["TypedField[Any]", "Table", typing.Type["TypedTable"]],
-) -> typing.Optional[Relationship[typing.Type["TypedTable"]]]:
+) -> typing.Optional[Relationship[Any]]:
     # used to automatically create relationship instance for reference fields
     if looks_like(field, TypedField):
         if args := typing.get_args(field):
