@@ -15,20 +15,23 @@ class TestQueryTable(TypedTable):
     other = TypedField(str, default="Something")
     yet_another = TypedField(list[str], default=["something", "and", "other", "things"])
 
-    relations = relationship(
-        list["TestRelationship"], condition=lambda self, other: self.id == other.querytable
-    )
+    relations = relationship(list["TestRelationship"], condition=lambda self, other: self.id == other.querytable)
 
 
 @db.define()
 class TestRelationship(TypedTable):
-    name: str
+    name: TypedField[str]
+    value: TypedField[int]
 
     querytable: TestQueryTable
 
 
 class Undefined(TypedTable):
     value: int
+
+
+def test_repr_unbound():
+    assert "unbound table Undefined" in str(Undefined)
 
 
 def test_query_type():
@@ -40,12 +43,27 @@ def test_query_type():
     assert isinstance(TestQueryTable.number != 3, Query)
 
 
-def test_where_builder():
-    TestQueryTable.insert(number=0)
-    TestQueryTable.insert(number=1)
+def _setup_data():
+    TestQueryTable.truncate()
+    first = TestQueryTable.insert(number=0)
+    second = TestQueryTable.insert(number=1)
     TestQueryTable.insert(number=2)
     TestQueryTable.insert(number=3)
     TestQueryTable.insert(number=4)
+
+    TestRelationship.insert(name="First Relation", querytable=first, value=3)
+    TestRelationship.insert(name="Second Relation", querytable=first, value=3)
+    TestRelationship.insert(name="Third Relation", querytable=first, value=3)
+    TestRelationship.insert(name="Fourth Relation", querytable=first, value=3)
+
+    TestRelationship.insert(name="First Relation", querytable=second, value=33)
+    TestRelationship.insert(name="Second Relation", querytable=second, value=33)
+    TestRelationship.insert(name="Third Relation", querytable=second, value=33)
+    TestRelationship.insert(name="Fourth Relation", querytable=second, value=33)
+
+
+def test_where_builder():
+    _setup_data()
 
     assert TestQueryTable.first().id == TestQueryTable.select().first().id
 
@@ -112,18 +130,37 @@ def test_where_builder():
         Undefined.collect()
 
 
-def test_paginate():
-    TestQueryTable.truncate()
-    first = TestQueryTable.insert(number=0)
-    TestQueryTable.insert(number=1)
-    TestQueryTable.insert(number=2)
-    TestQueryTable.insert(number=3)
-    TestQueryTable.insert(number=4)
+def test_select():
+    _setup_data()
 
-    TestRelationship.insert(name="First Relation", querytable=first)
-    TestRelationship.insert(name="Second Relation", querytable=first)
-    TestRelationship.insert(name="Third Relation", querytable=first)
-    TestRelationship.insert(name="Fourth Relation", querytable=first)
+    # all:
+    full = TestQueryTable.where(lambda row: row.number > 0).join().select().first_or_fail()
+
+    assert full.number
+    assert full.other
+    assert full.yet_another
+
+    assert full.relations[0].name
+    assert full.relations[0].value
+
+    # specific fields:
+    partial = (
+        TestQueryTable.where(lambda row: row.number > 0)
+        .join()
+        .select(TestQueryTable.other, TestRelationship.value)
+        .first_or_fail()
+    )
+
+    assert partial.other
+    assert not partial.number
+    assert not partial.yet_another
+
+    assert not partial.relations[0].name
+    assert partial.relations[0].value
+
+
+def test_paginate():
+    _setup_data()
 
     result = TestQueryTable.paginate(limit=1).join().collect()
 

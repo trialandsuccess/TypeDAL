@@ -167,17 +167,17 @@ class Relationship(typing.Generic[To_Type]):
         return str(table)
 
     def __get__(self, instance: Any, owner: Any) -> typing.Optional[list[Any]] | "Relationship[To_Type]":
-        if instance:
-            warnings.warn(
-                "Trying to get data from a relationship object! Did you forget to join it?", category=RuntimeWarning
-            )
-            if self.multiple:
-                return []
-            else:
-                return None
-        else:
+        if not instance:
             # relationship queried on class, that's allowed
             return self
+
+        warnings.warn(
+            "Trying to get data from a relationship object! Did you forget to join it?", category=RuntimeWarning
+        )
+        if self.multiple:
+            return []
+        else:
+            return None
 
 
 def relationship(
@@ -596,6 +596,12 @@ class TableMeta(type):
     def __getitem__(self, item: str) -> Field:
         table = self._ensure_table_defined()
         return table[item]
+
+    def __str__(self) -> str:
+        if self._table:
+            return str(self._table)
+        else:
+            return f"<unbound table {self.__name__}>"
 
     def from_row(self: typing.Type[T_MetaInstance], row: pydal.objects.Row) -> T_MetaInstance:
         return self(row)
@@ -1142,9 +1148,6 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
     def collect(self, verbose: bool = False) -> "TypedRows[T_MetaInstance]":
         db = self._get_db()
 
-        # todo: paginate by ids = db(self.query)._select('id', limitby=...)
-        #   then db(model.id.belongs(ids)).select(*select_args, **self.select_kwargs)
-
         select_args = [self._select_arg_convert(_) for _ in self.select_args] or [self.model.ALL]
         select_kwargs = self.select_kwargs.copy()
         metadata = self.metadata.copy()
@@ -1152,6 +1155,15 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         model = self.model
 
         metadata["query"] = query
+
+        # require at least id of main table:
+        select_fields = ", ".join([str(_) for _ in select_args])
+        tablename = str(model)
+
+        if f"{tablename}.id" not in select_fields:
+            # fields of other selected, but required ID is missing.
+            select_args.append(model.id)
+
         if self.relationships:
             metadata["relationships"] = set(self.relationships.keys())
             if limitby := select_kwargs.pop("limitby", None):
@@ -1170,6 +1182,16 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
                 other = relation.get_table(db)
                 method: JOIN_OPTIONS = relation.join or DEFAULT_JOIN_OPTION
 
+                select_fields = ", ".join([str(_) for _ in select_args])
+                pre_alias = str(other)
+
+                if f"{other}." not in select_fields:
+                    # no fields of other selected. add .ALL:
+                    select_args.append(other.ALL)
+                elif f"{other}.id" not in select_fields:
+                    # fields of other selected, but required ID is missing.
+                    select_args.append(other.id)
+
                 if relation.on:
                     # if it has a .on, it's always a left join!
                     on = relation.on(model, other)
@@ -1184,11 +1206,22 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
                     left.append(other.on(condition))
                 else:
                     # else: inner join
+                    other = other.with_alias(f"{key}_{hash(relation)}")
                     query &= relation.condition(model, other)
 
-                select_args += [other.ALL]  # todo: allow limiting (-> check if something from 'other' already in args)
-                #                            fixme: ensure current table also has something selected
-                #                            fixme: require at least ID for each table
+                # if no fields of 'other' are included, add other.ALL
+                # else: only add other.id if missing
+                select_fields = ", ".join([str(_) for _ in select_args])
+
+                post_alias = str(other).split(" AS ")[-1]
+                if pre_alias != post_alias:
+                    # replace .select's with aliased:
+                    select_fields = select_fields.replace(
+                        f"{pre_alias}.",
+                        f"{post_alias}.",
+                    )
+
+                    select_args = select_fields.split(", ")
 
             select_kwargs["left"] = left
 
@@ -1239,6 +1272,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
                 # relationship_column works for aliases with the same target column.
                 # if col + relationship not in the row, just use the regular name.
+
                 relation_data = (
                     row[relationship_column] if relationship_column in row else row[relation.get_table_name()]
                 )

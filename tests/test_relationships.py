@@ -28,7 +28,7 @@ class TaggableMixin:
 @db.define()
 class Role(TypedTable, TaggableMixin):
     name: str
-    users = relationship(list["User"], lambda self, other: other.roles.belongs(self.id))
+    users = relationship(list["User"], lambda self, other: other.roles.contains(self.id))
 
 
 @db.define()
@@ -72,10 +72,6 @@ class Tag(TypedTable):
 class Tagged(TypedTable):  # pivot table
     entity: str  # any gid
     tag: Tag
-
-
-# todo: relationships (has one, ...) with other key than ID
-# todo: hasOneThrough?
 
 
 def _setup_data():
@@ -163,6 +159,9 @@ def test_pydal_way():
 
 def test_typedal_way():
     _setup_data()
+
+    # user through article: 1 - many
+
     all_articles = Article.join().collect().as_dict()
 
     assert all_articles[1]["final_editor"]["name"] == "Editor 1"
@@ -185,7 +184,6 @@ def test_typedal_way():
     with pytest.warns(RuntimeWarning):
         assert article2.tags == []
 
-    # hasOne (article has writer)
     articles1 = Article.where(title="Article 1").join().first_or_fail()
 
     assert articles1.final_editor.name == "Editor 1"
@@ -209,7 +207,13 @@ def test_typedal_way():
         assert tag.name
         assert isinstance(tag, Tag)
 
-    # belongsTo (writer belongs to article(s))
+    # reverse: user to articles
+    user = User.where(name="Writer 1").join("articles").first_or_fail()
+
+    assert user
+    assert len(user.articles) == 1
+
+    # 1 - 1 (user <-> friend and reverse)
 
     non_joined_user = User.collect().first()
 
@@ -247,7 +251,7 @@ def test_typedal_way():
     assert len(writer.articles) == 1
     assert len(editor.articles) == 1
 
-    # tag to articles and users:
+    # tag to articles and users (many-to-many, through 'tagged'):
     tags = Tag.join().collect()
 
     assert len(tags) == 5
@@ -256,7 +260,11 @@ def test_typedal_way():
         # every tag is used exactly once in this dataset
         assert (len(tag.users) + len(tag.articles)) == 1
 
-    # todo role -> users
+    # from role to users: BelongsToMany via list:reference
+
+    role_writer = Role.where(Role.name == "writer").join().first_or_fail()
+
+    assert len(role_writer.users) == 2
 
 
 def test_reprs():
@@ -268,6 +276,8 @@ def test_reprs():
         assert repr(article.tags) == "[]"
 
     empty = Relationship(Article)
+
+    assert empty.get_table_name() == "article"
 
     assert "missing condition" in repr(empty)
 
