@@ -33,6 +33,10 @@ src-layout = true
 "typedal" = ["py.typed"]
 
 [project.optional-dependencies]
+py4web = [
+    "py4web"
+]
+
 dev = [
     "hatch",
     "su6[all]",
