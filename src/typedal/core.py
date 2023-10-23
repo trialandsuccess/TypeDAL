@@ -1029,6 +1029,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
     select_args: list[Any]
     select_kwargs: dict[str, Any]
     relationships: dict[str, Relationship[Any]]
+    metadata: dict[str, Any]
 
     def __init__(
         self,
@@ -1037,6 +1038,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         select_args: Optional[list[Any]] = None,
         select_kwargs: Optional[dict[str, Any]] = None,
         relationships: dict[str, Relationship[Any]] = None,
+        metadata: dict[str, Any] = None,
     ):
         self.model = model
         table = model._ensure_table_defined()
@@ -1045,6 +1047,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         self.select_args = select_args or []
         self.select_kwargs = select_kwargs or {}
         self.relationships = relationships or {}
+        self.metadata = metadata or {}
 
     def _extend(
         self,
@@ -1053,6 +1056,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         select_args: Optional[list[Any]] = None,
         select_kwargs: Optional[dict[str, Any]] = None,
         relationships: dict[str, Relationship[Any]] = None,
+        metadata: dict[str, Any] = None,
     ) -> "QueryBuilder[T_MetaInstance]":
         return QueryBuilder(
             self.model,
@@ -1060,6 +1064,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
             (select_args + self.select_args) if select_args else self.select_args,
             (select_kwargs | self.select_kwargs) if select_kwargs else self.select_kwargs,
             (relationships | self.relationships) if relationships else self.relationships,
+            (metadata | self.metadata) if metadata else self.metadata,
         )
 
     def select(self, *fields: Any, **options: Any) -> "QueryBuilder[T_MetaInstance]":
@@ -1141,11 +1146,14 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         #   then db(model.id.belongs(ids)).select(*select_args, **self.select_kwargs)
 
         select_args = [self._select_arg_convert(_) for _ in self.select_args] or [self.model.ALL]
-        select_kwargs = self.select_kwargs
+        select_kwargs = self.select_kwargs.copy()
+        metadata = self.metadata.copy()
         query = self.query
         model = self.model
 
+        metadata["query"] = query
         if self.relationships:
+            metadata["relationships"] = set(self.relationships.keys())
             if limitby := select_kwargs.pop("limitby", None):
                 # if limitby + relationships:
                 # 1. get IDs of main table entries that match 'query'
@@ -1153,8 +1161,8 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
                 # 3. add joins etc
 
                 ids = set(db(query).select(model.id, limitby=limitby).column("id"))
-
                 query = model.id.belongs(ids)
+                metadata["ids"] = ids
 
             left = []
 
@@ -1162,19 +1170,20 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
                 other = relation.get_table(db)
                 method: JOIN_OPTIONS = relation.join or DEFAULT_JOIN_OPTION
 
-                if method == "left" or relation.on:
+                if relation.on:
                     # if it has a .on, it's always a left join!
-                    if relation.on:
-                        on = relation.on(model, other)
-                        if not isinstance(on, list):  # pragma: no cover
-                            on = [on]
+                    on = relation.on(model, other)
+                    if not isinstance(on, list):  # pragma: no cover
+                        on = [on]
 
-                        left.extend(on)
-                    else:
-                        other = other.with_alias(f"{key}_{hash(relation)}")
-                        condition = typing.cast(Query, relation.condition(model, other))
-                        left.append(other.on(condition))
+                    left.extend(on)
+                elif method == "left":
+                    # .on not given, generate it:
+                    other = other.with_alias(f"{key}_{hash(relation)}")
+                    condition = typing.cast(Query, relation.condition(model, other))
+                    left.append(other.on(condition))
                 else:
+                    # else: inner join
                     query &= relation.condition(model, other)
 
                 select_args += [other.ALL]  # todo: allow limiting (-> check if something from 'other' already in args)
@@ -1185,21 +1194,27 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
         rows: Rows = db(query).select(*select_args, **select_kwargs)
 
+        metadata["final_query"] = str(query)
+        metadata["final_args"] = [str(_) for _ in select_args]
+        metadata["final_kwargs"] = select_kwargs
+
+        metadata["sql"] = db(query)._select(*select_args, **select_kwargs)
+
         if verbose:  # pragma: no cover
-            print(db(query)._select(*select_args, **select_kwargs))
+            print(metadata["sql"])
             print(rows)
 
         if not self.relationships:
             # easy
-            return TypedRows.from_rows(rows, self.model)
+            return TypedRows.from_rows(rows, self.model, metadata=metadata)
 
         # harder: try to match rows to the belonging objects
         # assume structure of {'table': <data>} per row.
         # if that's not the case, return default behavior again
 
-        return self._collect_with_relationships(rows)
+        return self._collect_with_relationships(rows, metadata=metadata)
 
-    def _collect_with_relationships(self, rows: Rows) -> "TypedRows[T_MetaInstance]":
+    def _collect_with_relationships(self, rows: Rows, metadata: dict[str, Any]) -> "TypedRows[T_MetaInstance]":
         db = self._get_db()
         main_table = self.model._ensure_table_defined()
 
@@ -1253,7 +1268,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
                     # create single T
                     records[main_id][column] = instance
 
-        return TypedRows(rows, self.model, records)
+        return TypedRows(rows, self.model, records, metadata=metadata)
 
     def collect_or_fail(self) -> "TypedRows[T_MetaInstance]":
         if result := self.collect():
@@ -1271,7 +1286,16 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
     def paginate(self, limit: int, page: int = 1) -> "QueryBuilder[T_MetaInstance]":
         offset = limit * (page - 1)
 
-        return self._extend(select_kwargs={"limitby": (offset, limit)})
+        return self._extend(
+            select_kwargs={"limitby": (offset, limit)},
+            metadata={
+                "pagination": {
+                    "limit": limit,
+                    "page": page,
+                    "offset": offset,
+                }
+            },
+        )
 
     def first(self, verbose: bool = False) -> T_MetaInstance | None:
         builder = self.paginate(page=1, limit=1)
@@ -1426,6 +1450,7 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
     records: dict[int, T_MetaInstance]
     # _rows: Rows
     model: typing.Type[T_MetaInstance]
+    metadata: dict[str, Any]
 
     # pseudo-properties: actually stored in _rows
     db: TypeDAL
@@ -1435,11 +1460,16 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
     response: list[tuple[Any, ...]]
 
     def __init__(
-        self, rows: Rows, model: typing.Type[T_MetaInstance], records: dict[int, T_MetaInstance] = None
+        self,
+        rows: Rows,
+        model: typing.Type[T_MetaInstance],
+        records: dict[int, T_MetaInstance] = None,
+        metadata: dict[str, Any] = None,
     ) -> None:
         records = records or {row.id: model(row) for row in rows}
         super().__init__(rows.db, records, rows.colnames, rows.compact, rows.response, rows.fields)
         self.model = model
+        self.metadata = metadata or {}
 
     def __len__(self) -> int:
         return len(self.records)
@@ -1632,9 +1662,11 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
         )
 
     @classmethod
-    def from_rows(cls, rows: Rows, model: typing.Type[T_MetaInstance]) -> "TypedRows[T_MetaInstance]":
+    def from_rows(
+        cls, rows: Rows, model: typing.Type[T_MetaInstance], metadata: dict[str, Any] = None
+    ) -> "TypedRows[T_MetaInstance]":
         # todo: dynamic keyby, with multiple properties?
-        return cls(rows, model)
+        return cls(rows, model, metadata=metadata)
 
 
 class TypedSet(pydal.objects.Set):  # type: ignore # pragma: no cover

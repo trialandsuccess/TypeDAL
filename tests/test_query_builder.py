@@ -129,3 +129,9 @@ def test_paginate():
 
     assert len(result) == 1
     assert len(result.first().relations) == 4
+
+    meta = result.metadata["pagination"]
+
+    assert meta["page"] == 1
+    assert meta["limit"] == 1
+    assert meta["offset"] == 0
