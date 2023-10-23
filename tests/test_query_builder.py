@@ -1,7 +1,10 @@
+import typing
+from typing import Optional
+
 import pytest
 from pydal.objects import Query
 
-from src.typedal import TypeDAL, TypedField, TypedTable
+from src.typedal import Relationship, TypeDAL, TypedField, TypedTable, relationship
 
 db = TypeDAL("sqlite:memory")
 
@@ -11,6 +14,17 @@ class TestQueryTable(TypedTable):
     number: TypedField[int]
     other = TypedField(str, default="Something")
     yet_another = TypedField(list[str], default=["something", "and", "other", "things"])
+
+    relations = relationship(
+        list["TestRelationship"], condition=lambda self, other: self.id == other.querytable
+    )
+
+
+@db.define()
+class TestRelationship(TypedTable):
+    name: str
+
+    querytable: TestQueryTable
 
 
 class Undefined(TypedTable):
@@ -82,7 +96,7 @@ def test_where_builder():
 
     assert TestQueryTable.where(id=-1).first() is None
     with pytest.raises(ValueError):
-       TestQueryTable.where(id=-1).collect_or_fail()
+        TestQueryTable.where(id=-1).collect_or_fail()
 
     with pytest.raises(ValueError):
         assert not TestQueryTable.where(id=-1).first_or_fail()
@@ -96,3 +110,22 @@ def test_where_builder():
     with pytest.raises(EnvironmentError):
         # can't collect before defining on db!
         Undefined.collect()
+
+
+def test_paginate():
+    TestQueryTable.truncate()
+    first = TestQueryTable.insert(number=0)
+    TestQueryTable.insert(number=1)
+    TestQueryTable.insert(number=2)
+    TestQueryTable.insert(number=3)
+    TestQueryTable.insert(number=4)
+
+    TestRelationship.insert(name="First Relation", querytable=first)
+    TestRelationship.insert(name="Second Relation", querytable=first)
+    TestRelationship.insert(name="Third Relation", querytable=first)
+    TestRelationship.insert(name="Fourth Relation", querytable=first)
+
+    result = TestQueryTable.paginate(limit=1).join().collect()
+
+    assert len(result) == 1
+    assert len(result.first().relations) == 4

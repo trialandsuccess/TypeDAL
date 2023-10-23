@@ -59,7 +59,7 @@ build_command = "hatch build"
 ### required in every su6 pyproject: ###
 [tool.su6]
 directory = "src"
-stop-after-first-failure = true
+stop-after-first-failure = false
 include = []
 exclude = []
 coverage = 100

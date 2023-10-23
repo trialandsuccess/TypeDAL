@@ -699,6 +699,10 @@ class TableMeta(type):
         builder = QueryBuilder(self)
         return builder.select(*a, **kw)
 
+    def paginate(self: typing.Type[T_MetaInstance], limit: int, page: int = 1) -> "QueryBuilder[T_MetaInstance]":
+        builder = QueryBuilder(self)
+        return builder.paginate(limit=limit, page=page)
+
     def where(self: typing.Type[T_MetaInstance], *a: Any, **kw: Any) -> "QueryBuilder[T_MetaInstance]":
         builder = QueryBuilder(self)
         return builder.where(*a, **kw)
@@ -1053,13 +1057,13 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         return QueryBuilder(
             self.model,
             (add_query & self.query) if add_query else overwrite_query or self.query,
-            (select_args + self.select_args) if select_args else select_args,
+            (select_args + self.select_args) if select_args else self.select_args,
             (select_kwargs | self.select_kwargs) if select_kwargs else self.select_kwargs,
             (relationships | self.relationships) if relationships else self.relationships,
         )
 
     def select(self, *fields: Any, **options: Any) -> "QueryBuilder[T_MetaInstance]":
-        return QueryBuilder(self.model, self.query, self.select_args + list(fields), self.select_kwargs | options)
+        return self._extend(select_args=list(fields), select_kwargs=options)
 
     def where(
         self,
@@ -1138,11 +1142,19 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
         select_args = [self._select_arg_convert(_) for _ in self.select_args] or [self.model.ALL]
         select_kwargs = self.select_kwargs
+        query = self.query
+        model = self.model
 
         if self.relationships:
-            if select_kwargs.get("limitby"):
-                # fixme: limitby with relations!
-                del select_kwargs["limitby"]
+            if limitby := select_kwargs.pop("limitby", None):
+                # if limitby + relationships:
+                # 1. get IDs of main table entries that match 'query'
+                # 2. change query to .belongs(id)
+                # 3. add joins etc
+
+                ids = set(db(query).select(model.id, limitby=limitby).column("id"))
+
+                query = model.id.belongs(ids)
 
             left = []
 
@@ -1153,17 +1165,17 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
                 if method == "left" or relation.on:
                     # if it has a .on, it's always a left join!
                     if relation.on:
-                        on = relation.on(self.model, other)
+                        on = relation.on(model, other)
                         if not isinstance(on, list):  # pragma: no cover
                             on = [on]
 
                         left.extend(on)
                     else:
                         other = other.with_alias(f"{key}_{hash(relation)}")
-                        condition = typing.cast(Query, relation.condition(self.model, other))
+                        condition = typing.cast(Query, relation.condition(model, other))
                         left.append(other.on(condition))
                 else:
-                    self.query &= relation.condition(self.model, other)
+                    query &= relation.condition(model, other)
 
                 select_args += [other.ALL]  # todo: allow limiting (-> check if something from 'other' already in args)
                 #                            fixme: ensure current table also has something selected
@@ -1171,10 +1183,10 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
             select_kwargs["left"] = left
 
-        rows: Rows = db(self.query).select(*select_args, **select_kwargs)
+        rows: Rows = db(query).select(*select_args, **select_kwargs)
 
         if verbose:  # pragma: no cover
-            print(db(self.query)._select(*select_args, **select_kwargs))
+            print(db(query)._select(*select_args, **select_kwargs))
             print(rows)
 
         if not self.relationships:
@@ -1232,7 +1244,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
                 if relation.multiple:
                     # create list of T
-                    if not isinstance(records[main_id].get(column), list): # pragma: no cover
+                    if not isinstance(records[main_id].get(column), list):  # pragma: no cover
                         # should already be set up before!
                         setattr(records[main_id], column, [])
 
@@ -1256,12 +1268,16 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         db = self._get_db()
         return db(self.query).count()
 
-    def first(self, verbose: bool = False) -> T_MetaInstance | None:
-        if "limitby" not in self.select_kwargs:
-            self.select_kwargs["limitby"] = (0, 1)  # only select one on first
+    def paginate(self, limit: int, page: int = 1) -> "QueryBuilder[T_MetaInstance]":
+        offset = limit * (page - 1)
 
-        if row := self.collect(verbose=verbose).first():
-            return self.model.from_row(row)
+        return self._extend(select_kwargs={"limitby": (offset, limit)})
+
+    def first(self, verbose: bool = False) -> T_MetaInstance | None:
+        builder = self.paginate(page=1, limit=1)
+
+        if row := builder.collect(verbose=verbose).first():
+            return builder.model.from_row(row)
         else:
             return None
 
@@ -1272,7 +1288,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
             raise ValueError("Nothing found!")
 
 
-class TypedField(typing.Generic[T_Value]): # pragma: no cover
+class TypedField(typing.Generic[T_Value]):  # pragma: no cover
     """
     Typed version of pydal.Field, which will be converted to a normal Field in the background.
     """

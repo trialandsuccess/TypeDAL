@@ -231,7 +231,6 @@ def test_typedal_way():
 
     assert "+ ['friend']" in repr(bestie)
 
-
     assert not writer.bestie
     assert not editor.bestie
 
@@ -256,7 +255,6 @@ def test_typedal_way():
     for tag in tags:
         # every tag is used exactly once in this dataset
         assert (len(tag.users) + len(tag.articles)) == 1
-
 
     # todo role -> users
 
@@ -291,5 +289,6 @@ def test_reprs():
 
 def test_illegal():
     with pytest.raises(ValueError), pytest.warns(UserWarning):
+
         class HasRelationship:
             something = relationship("...", condition=lambda: 1, on=lambda: 2)

@@ -2,11 +2,13 @@ import typing
 
 from src.typedal.helpers import (
     all_annotations,
+    extract_type_optional,
     instanciate,
     is_union,
     mktable,
     origin_is_subclass,
-    unwrap_type, extract_type_optional, to_snake,
+    to_snake,
+    unwrap_type,
 )
 
 
