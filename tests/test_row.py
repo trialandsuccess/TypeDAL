@@ -138,7 +138,7 @@ def test_rows():
 
     assert old_rows.as_json() == new_rows.as_json() == new_rows.json() == old_rows.json()
 
-    assert old_rows.as_list()[0]["string_field"] == new_rows.as_list()[0].string_field
+    assert old_rows.as_list()[0]["string_field"] == new_rows.as_list()[0]["string_field"]
 
     assert new_rows.as_list(storage_to_dict=True)
 

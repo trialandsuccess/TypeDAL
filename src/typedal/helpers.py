@@ -30,6 +30,9 @@ def _all_annotations(cls: type) -> ChainMap[str, type]:
 
 
 def all_dict(cls: type) -> dict[str, Any]:
+    """
+    Get the internal data of a class and all it's parents.
+    """
     return dict(ChainMap(*(c.__dict__ for c in getattr(cls, "__mro__", []))))
 
 
@@ -83,10 +86,15 @@ def origin_is_subclass(obj: Any, _type: type) -> bool:
     )
 
 
-# https://stackoverflow.com/questions/70937491/python-flexible-way-to-format-string-output-into-a-table-without-using-a-non-st
 def mktable(
     data: dict[Any, Any], header: typing.Optional[typing.Iterable[str] | range] = None, skip_first: bool = True
 ) -> str:
+    """
+    Display a table for 'data'.
+
+    See Also:
+         https://stackoverflow.com/questions/70937491/python-flexible-way-to-format-string-output-into-a-table-without-using-a-non-st
+    """
     # get max col width
     col_widths: list[int] = list(map(max, zip(*(map(lambda x: len(str(x)), (k, *v)) for k, v in data.items()))))
 
@@ -128,14 +136,33 @@ V = typing.TypeVar("V")
 
 
 def looks_like(v: Any, _type: type[Any]) -> bool:
+    """
+    Returns true if v or v's class is of type _type, including if it is a generic.
+
+    Examples:
+        assert looks_like([], list)
+        assert looks_like(list, list)
+        assert looks_like(list[str], list)
+    """
     return isinstance(v, _type) or (isinstance(v, type) and issubclass(v, _type)) or origin_is_subclass(v, _type)
 
 
 def filter_out(mut_dict: dict[K, V], _type: type[T]) -> dict[K, type[T]]:
+    """
+    Split a dictionary into things matching _type and the rest.
+
+    Modifies mut_dict and returns everything of type _type.
+    """
     return {k: mut_dict.pop(k) for k, v in list(mut_dict.items()) if looks_like(v, _type)}
 
 
 def unwrap_type(_type: type) -> type:
+    """
+    Get the inner type of a generic.
+
+    Example:
+        list[list[str]] -> str
+    """
     while args := typing.get_args(_type):
         _type = args[0]
     return _type
@@ -156,6 +183,9 @@ def extract_type_optional(annotation: None) -> tuple[None, bool]:
 
 
 def extract_type_optional(annotation: T | None) -> tuple[T | None, bool]:
+    """
+    Given an annotation, extract the actual type and whether it is optional.
+    """
     if annotation is None:
         return None, False
 
@@ -170,5 +200,10 @@ def extract_type_optional(annotation: T | None) -> tuple[T | None, bool]:
 
 
 def to_snake(camel: str) -> str:
-    # https://stackoverflow.com/a/44969381
+    """
+    Convert CamelCase to snake_case.
+
+    See Also:
+        https://stackoverflow.com/a/44969381
+    """
     return "".join([f"_{c.lower()}" if c.isupper() else c for c in camel]).lstrip("_")

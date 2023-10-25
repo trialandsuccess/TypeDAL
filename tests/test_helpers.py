@@ -5,6 +5,7 @@ from src.typedal.helpers import (
     extract_type_optional,
     instanciate,
     is_union,
+    looks_like,
     mktable,
     origin_is_subclass,
     to_snake,
@@ -73,6 +74,16 @@ def test_unwrap():
     my_type = typing.Optional[list[list[str]]]
 
     assert unwrap_type(my_type) == str
+
+
+def test_looks_like():
+    assert looks_like([], list)
+    assert looks_like(list, list)
+    assert looks_like(list[str], list)
+
+    assert not looks_like([], str)
+    assert not looks_like(list, str)
+    assert not looks_like(list[str], str)
 
 
 def test_extract():

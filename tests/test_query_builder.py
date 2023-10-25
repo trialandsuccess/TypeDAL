@@ -112,6 +112,11 @@ def test_where_builder():
     success = TestQueryTable.select().collect_or_fail()
     assert len(success) == 3
 
+    # test OR
+
+    assert TestQueryTable.where(lambda row: row.id == 1, lambda row: row.id == 2).count() == 2
+    assert TestQueryTable.where(lambda row: row.id == 1, lambda row: row.id == 99).count() == 1
+
     assert TestQueryTable.where(id=-1).first() is None
     with pytest.raises(ValueError):
         TestQueryTable.where(id=-1).collect_or_fail()
