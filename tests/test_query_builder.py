@@ -167,7 +167,7 @@ def test_select():
 def test_paginate():
     _setup_data()
 
-    result = TestQueryTable.paginate(limit=1).join().collect()
+    result = TestQueryTable.paginate(limit=1, page=1).join(method='left').collect()
 
     assert len(result) == 1
     assert len(result.first().relations) == 4
@@ -176,4 +176,26 @@ def test_paginate():
 
     assert meta["page"] == 1
     assert meta["limit"] == 1
-    assert meta["offset"] == 0
+    assert meta["min_max"] == (0, 1)
+
+    result = TestQueryTable.paginate(limit=1, page=2).join(method='left').collect()
+
+    assert len(result) == 1
+    assert len(result.first().relations) == 4
+
+    meta = result.metadata["pagination"]
+
+    assert meta["page"] == 2
+    assert meta["limit"] == 1
+    assert meta["min_max"] == (1, 2)
+
+    result = TestQueryTable.paginate(limit=1, page=3).join(method='left').collect()
+
+    assert len(result) == 1
+    assert len(result.first().relations) == 0
+
+    meta = result.metadata["pagination"]
+
+    assert meta["page"] == 3
+    assert meta["limit"] == 1
+    assert meta["min_max"] == (2, 3)

@@ -1527,7 +1527,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
             # 2. change query to .belongs(id)
             # 3. add joins etc
 
-            ids = set(db(query).select(model.id, limitby=limitby).column("id"))
+            ids = db(query)._select(model.id, limitby=limitby)
             query = model.id.belongs(ids)
             metadata["ids"] = ids
 
@@ -1672,15 +1672,16 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         Note: when using relationships, this limit is only applied to the 'main' table and any number of extra rows \
             can be loaded with relationship data!
         """
-        offset = limit * (page - 1)
+        _from = limit * (page - 1)
+        _to = limit * (page)
 
         return self._extend(
-            select_kwargs={"limitby": (offset, limit)},
+            select_kwargs={"limitby": (_from, _to)},
             metadata={
                 "pagination": {
                     "limit": limit,
                     "page": page,
-                    "offset": offset,
+                    "min_max": (_from, _to),
                 }
             },
         )
