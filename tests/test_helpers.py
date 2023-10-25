@@ -9,7 +9,7 @@ from src.typedal.helpers import (
     mktable,
     origin_is_subclass,
     to_snake,
-    unwrap_type,
+    unwrap_type, DummyQuery,
 )
 
 
@@ -100,3 +100,14 @@ def test_to_snake():
     assert to_snake("myclass") == "myclass"
     assert to_snake("my_class") == "my_class"
     assert to_snake("my_Class") == "my__class"
+
+
+def test_dummy_query():
+    dummy = DummyQuery()
+
+    assert dummy & "nothing" == "nothing"
+    assert dummy & 123 == 123
+    assert dummy | "nothing" == "nothing"
+    assert dummy | 123 == 123
+
+    assert not dummy

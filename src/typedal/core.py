@@ -20,6 +20,7 @@ from pydal.objects import Row, Rows
 from pydal.objects import Table as _Table
 
 from .helpers import (
+    DummyQuery,
     all_annotations,
     all_dict,
     extract_type_optional,
@@ -1280,33 +1281,6 @@ class TypedTable(metaclass=TableMeta):
 
 # backwards compat:
 TypedRow = TypedTable
-
-
-# T_Table = typing.TypeVar("T_Table", bound=TypedTable)
-
-
-class DummyQuery:
-    """
-    Placeholder to &= and |= actual query parts.
-    """
-
-    def __or__(self, other: T) -> T:
-        """
-        For 'or': DummyQuery | Other == Other.
-        """
-        return other
-
-    def __and__(self, other: T) -> T:
-        """
-        For 'and': DummyQuery & Other == Other.
-        """
-        return other
-
-    def __bool__(self) -> bool:
-        """
-        A dummy query is falsey, since it can't actually be used!
-        """
-        return False
 
 
 class QueryBuilder(typing.Generic[T_MetaInstance]):

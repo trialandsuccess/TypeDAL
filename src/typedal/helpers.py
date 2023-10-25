@@ -207,3 +207,27 @@ def to_snake(camel: str) -> str:
         https://stackoverflow.com/a/44969381
     """
     return "".join([f"_{c.lower()}" if c.isupper() else c for c in camel]).lstrip("_")
+
+
+class DummyQuery:
+    """
+    Placeholder to &= and |= actual query parts.
+    """
+
+    def __or__(self, other: T) -> T:
+        """
+        For 'or': DummyQuery | Other == Other.
+        """
+        return other
+
+    def __and__(self, other: T) -> T:
+        """
+        For 'and': DummyQuery & Other == Other.
+        """
+        return other
+
+    def __bool__(self) -> bool:
+        """
+        A dummy query is falsey, since it can't actually be used!
+        """
+        return False
