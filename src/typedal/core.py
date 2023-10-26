@@ -1472,6 +1472,8 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         By default, the `method` defined in the relationship is used.
             This can be overwritten with the `method` keyword argument (left or inner)
         """
+        # todo: allow limiting amount of related rows returned for join?
+
         relationships = self.model.get_relationships()
 
         if condition and on:
