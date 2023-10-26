@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v2.0.0-beta.5 (2023-10-26)
+
+### Fix
+
+* **json:** Auto add json-fix if including for py4web ([`4d51511`](https://github.com/trialandsuccess/TypeDAL/commit/4d515111dc66071f69848207880cd4c609947747))
+
 ## v2.0.0-beta.4 (2023-10-26)
 
 ### Feature
