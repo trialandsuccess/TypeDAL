@@ -2,6 +2,41 @@
 
 <!--next-version-placeholder-->
 
+## v2.0.0-beta.1 (2023-10-26)
+
+### Feature
+
+* **paginate:** Paginate doesn't return a querybuilder anymore but can replace collect, returns a PaginatedRows ([`ccda5d4`](https://github.com/trialandsuccess/TypeDAL/commit/ccda5d4d9d6e94272472ede0e749fc7b84f46e01))
+* **p4w:** Add py4web specific DAL Fixture ([`2d87327`](https://github.com/trialandsuccess/TypeDAL/commit/2d8732746042b14d02c96c5c3c8e22393bb7697c))
+* **typedrows:** Added metadata for debugging etc ([`658ecfe`](https://github.com/trialandsuccess/TypeDAL/commit/658ecfe4cb1272605a5e2b395e2cd354d802b965))
+* **querybuilder:** Add pagination ([`6adf622`](https://github.com/trialandsuccess/TypeDAL/commit/6adf622bfe7af2bcf197c2a8ea4f962276cc96a1))
+* **orm:** WIP creating relationships between tables ([`5902ac6`](https://github.com/trialandsuccess/TypeDAL/commit/5902ac685daeb73c7fd8dd653407763dec18407d))
+* **rows:** Added typedrow functionality + tests ([`22ee99b`](https://github.com/trialandsuccess/TypeDAL/commit/22ee99b493d378075a4a253bad31a92ae8751c99))
+* WIP extending Rows (result) functionality ([`8a20c0c`](https://github.com/trialandsuccess/TypeDAL/commit/8a20c0cb4fe8ebc871ff45106c2089b932ad6a03))
+* Improvements on row instances ([`218a45e`](https://github.com/trialandsuccess/TypeDAL/commit/218a45eeff5a90dbaeda0a9d82d0873463685516))
+* **table:** Shadowed and/or modified pydal.Table methods in TypedTable (Meta) ([`397bf67`](https://github.com/trialandsuccess/TypeDAL/commit/397bf675710fc938402151599b0d7887f1ba9d62))
+* More progress on Typed ORM logic. BREAKS A LOT OF PYTESTS!!! ([`582cb56`](https://github.com/trialandsuccess/TypeDAL/commit/582cb56fa122c0cb8ba5df79402af1fab281b535))
+* WIP to add more ORM features (dynamic querying. some better typing etc) ([`64c9b67`](https://github.com/trialandsuccess/TypeDAL/commit/64c9b67085dc821bfc7c90a5e75d5c9489edc4d9))
+
+### Fix
+
+* **paginate:** Offset went wrong ([`28d620e`](https://github.com/trialandsuccess/TypeDAL/commit/28d620e33fe1b319df6de4c20d23c45f0c675e51))
+* **select:** Auto add missing id in select ([`eacce47`](https://github.com/trialandsuccess/TypeDAL/commit/eacce474f1950e776700899274ffad34e251d6bf))
+* **tests:** Minor fixes and more coverage ([`a5560b2`](https://github.com/trialandsuccess/TypeDAL/commit/a5560b224c632e4f1dcc0ef0813ffaaec2adfc6c))
+* **relations:** One-to-one improvements ([`65984ce`](https://github.com/trialandsuccess/TypeDAL/commit/65984cec839351f9800a7a58c06cf95f65b3cf5a))
+* **relationships:** Better collection ([`3db63ab`](https://github.com/trialandsuccess/TypeDAL/commit/3db63ab7c6eaa5da5b3639313b5afaa0f62d8ca0))
+* Started testing query builder and resolved issues ([`361dc79`](https://github.com/trialandsuccess/TypeDAL/commit/361dc797c90ea2bf8ae3c68c51ebad07300f1d0c))
+* **mypy:** Fix return types in fields.py ([`51322f7`](https://github.com/trialandsuccess/TypeDAL/commit/51322f7405cba73fd721c590914a3acde4c6716e))
+* **orm:** Pytests should work again; fixed a lot of mypy issues (not all) ([`bbcaddd`](https://github.com/trialandsuccess/TypeDAL/commit/bbcaddd000344ed9bda784f21bde2908b0b7db8a))
+
+### Documentation
+
+* **relationships:** Added examples of one-to-many, many-to-one, many-to-many ([`2ff8555`](https://github.com/trialandsuccess/TypeDAL/commit/2ff8555a605b4978c5bfa146bf04d7c3a305b0c0))
+* **queries:** Explain select, where, join + new paginated rows ([`6d2b9b8`](https://github.com/trialandsuccess/TypeDAL/commit/6d2b9b8bde26bbbd0e72fc250c0f515b93b2fa89))
+* Started with more documentation about the ORM features ([`ca86f7c`](https://github.com/trialandsuccess/TypeDAL/commit/ca86f7c271c4e5ee0091ff2818643586f3fe7ce3))
+* Added docstrings for pydocstyle ([`2bb455b`](https://github.com/trialandsuccess/TypeDAL/commit/2bb455b8e99ac035854420b39e2c084573839dda))
+* Updated TODOs ([`2073c02`](https://github.com/trialandsuccess/TypeDAL/commit/2073c025971db3d0ac94e31ebf8a5b04d3abdec5))
+
 ## v1.2.2 (2023-07-06)
 ### Fix
 
