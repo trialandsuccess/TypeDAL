@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v2.0.0-beta.7 (2023-10-26)
+
+### Documentation
+
+* Added TODO for joins ([`aeb121d`](https://github.com/trialandsuccess/TypeDAL/commit/aeb121da6e91eb55184a756e0e59a548906215c2))
+
 ## v2.0.0-beta.6 (2023-10-26)
 
 ### Feature
