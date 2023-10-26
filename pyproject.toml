@@ -40,7 +40,7 @@ py4web = [
 dev = [
     "hatch",
     "su6[all]",
-    "python-semantic-release",
+    "python-semantic-release < 8",
     "pytest-mypy-testing",
 ]
 
