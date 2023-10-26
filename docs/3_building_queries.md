@@ -22,12 +22,21 @@ A Query Builder can be initialized by calling one of these methods on a TypedTab
 - where
 - select
 - join
-- paginate
 
 e.g. `Person.where(...)` -> `QueryBuilder[Person]`
 
-The query builder uses the builder pattern, so you can keep adding to it until you're ready to get the data:
-`Person.where(Person.id > 0).where(Person.id < 99, Person.id == 101).select(Reference.id, Reference.title).join('reference').select(Person.ALL).paginate(limit=5, page=2)`
+The query builder uses the builder pattern, so you can keep adding to it (in any order) until you're ready to get the
+data:
+
+```python
+Person
+.where(Person.id > 0)
+.where(Person.id < 99, Person.id == 101)
+.select(Reference.id, Reference.title)
+.join('reference')
+.select(Person.ALL)
+.paginate(limit=5, page=2)  # final step: actually runs the query
+```
 
 ```sql
 SELECT "person".*,
@@ -45,26 +54,43 @@ WHERE (("person"."id" IN (SELECT "person"."id"
 
 ### where
 
-...
+In pydal, this is the part that would be in `db(...)`.
+Can be used in multiple ways:
+
+- `.where(Query)` -> with a direct query such as `Table.id == 5`
+- `.where(lambda table: table.id == 5)` -> with a query via a lambda
+- `.where(id=5)` -> via keyword arguments
+
+When using multiple where's, they will be ANDed:  
+`.where(lambda table: table.id == 5).where(lambda table: table.id == 6) == (table.id == 5) & (table.id=6)`  
+When passing multiple queries to a single .where, they will be ORed:  
+`.where(lambda table: table.id == 5, lambda table: table.id == 6) == (table.id == 5) | (table.id=6)`
 
 ### select
 
-...
+Here you can enter any number of fields as arguments: database columns by name ('id'), by field reference (table.id) or
+other (e.g. table.ALL).
+
+```python
+Person.select('id', Person.name, Person.ALL)  # defaults to Person.ALL if select is omitted.
+```
+
+You can also specify extra options such as `orderby` here. For supported keyword arguments, see
+the [web2py docs](http://www.web2py.com/books/default/chapter/29/06/the-database-abstraction-layer#orderby-groupby-limitby-distinct-having-orderby_on_limitby-join-left-cache).
 
 ### join
 
-...
+Include relationship fields in the result.
 
-### paginate
+`fields` can be names of Relationships on the current model.
+If no fields are passed, all will be used.
+
+By default, the `method` defined in the relationship is used.
+This can be overwritten with the `method` keyword argument (left or inner)
 
 ```python
-.paginate(page=1, limit=5) # todo: alternative to collect?
+Person.join('articles', method='inner')  # will only yield persons that have related articles
 ```
-
-Paginate transforms the more readable `page` and `limit` to pydals internal min and max.
-
-Note: when using relationships, this limit is only applied to the 'main' table and any number of extra rows can be
-loaded with relationship data!
 
 ### Collecting
 
@@ -72,7 +98,11 @@ The Query Builder has a few operations that don't return a new builder instance:
 
 - count: get the number of rows this query matches
 - collect: get a TypedRows result set of items matching your query, possibly with relationships loaded (if .join was
-  used)
+  used). TypedRows is almost the same as
+  pydal [Rows](http://www.web2py.com/books/default/chapter/29/06/the-database-abstraction-layer#select), except they can
+  be indexed by ID instead of a list index (e.g. `rows[15]` to get the row with ID 15)
+- paginate: this works similarly to `collect`, but returns a PaginatedRows instead, which has a `.next()`
+  and `.previous()` method to easily load more pages.
 - collect_or_fail: where `collect` may return an empty result, this variant will raise an error if there are no results.
 - first: get the first entity matching your query, possibly with relationships loaded (if .join was used)
 - first_or_fail: where `first` may return an empty result, this variant will raise an error if there are no results.
