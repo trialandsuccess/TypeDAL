@@ -1055,7 +1055,7 @@ class TypedTable(metaclass=TableMeta):
             return row_or_id
         elif isinstance(row_or_id, pydal.objects.Row):
             row = row_or_id
-        elif row_or_id:
+        elif row_or_id is not None:
             row = table(row_or_id, **filters)
         else:
             row = table(**filters)
