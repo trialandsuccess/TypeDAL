@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v2.0.0-beta.4 (2023-10-26)
+
+### Feature
+
+* **json:** Compatibility with json-fix ([`d9ca1af`](https://github.com/trialandsuccess/TypeDAL/commit/d9ca1afb09ce58c11b79f71a4c4049049d8f81c4))
+
 ## v2.0.0-beta.3 (2023-10-26)
 
 ### Feature
