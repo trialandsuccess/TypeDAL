@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v2.0.0-beta.6 (2023-10-26)
+
+### Feature
+
+* **query:** Improved INNER JOIN handling and allow _method to generate SQL ([`ab5794b`](https://github.com/trialandsuccess/TypeDAL/commit/ab5794b4af863f79dcaa2662c060e8b36c50219f))
+
 ## v2.0.0-beta.5 (2023-10-26)
 
 ### Fix
