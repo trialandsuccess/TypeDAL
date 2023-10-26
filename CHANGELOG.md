@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v2.0.0-beta.3 (2023-10-26)
+
+### Feature
+
+* **paginate:** As_dict for PaginatedRows now also returns pagination info in addition to data ([`3b17937`](https://github.com/trialandsuccess/TypeDAL/commit/3b17937b51e68c8bce9c031969702581fd4bcc3b))
+
 ## v2.0.0-beta.2 (2023-10-26)
 
 ### Fix
