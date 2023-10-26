@@ -34,7 +34,8 @@ src-layout = true
 
 [project.optional-dependencies]
 py4web = [
-    "py4web"
+    "py4web",
+    "json-fix",
 ]
 
 dev = [

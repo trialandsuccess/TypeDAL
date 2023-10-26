@@ -5,6 +5,7 @@ import contextlib
 import csv
 import datetime as dt
 import inspect
+import json
 import math
 import types
 import typing
@@ -752,6 +753,20 @@ class TableMeta(type):
         """
         return self.collect()
 
+    def __json__(self: typing.Type[T_MetaInstance], instance: T_MetaInstance | None = None) -> dict[str, Any]:
+        """
+        Convert to a json-dumpable dict.
+
+        as_dict is not fully json-dumpable, so use as_json and json.loads to ensure it is dumpable (and loadable).
+        todo: can this be optimized?
+
+        See Also:
+            https://github.com/jeff-hykin/json_fix
+        """
+        string = instance.as_json() if instance else self.as_json()
+
+        return typing.cast(dict[str, Any], json.loads(string))
+
     def get_relationships(self) -> dict[str, Relationship[Any]]:
         """
         Return the registered relationships of the current model.
@@ -1028,7 +1043,7 @@ class TypedTable(metaclass=TableMeta):
 
     def _setup_instance_methods(self) -> None:
         self.as_dict = self._as_dict  # type: ignore
-        self.as_json = self._as_json  # type: ignore
+        self.__json__ = self.as_json = self._as_json  # type: ignore
         # self.as_yaml = self._as_yaml  # type: ignore
         self.as_xml = self._as_xml  # type: ignore
 
@@ -2208,6 +2223,12 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
         """
         return cls(rows, model, metadata=metadata)
 
+    def __json__(self) -> dict[str, Any]:
+        """
+        For json-fix.
+        """
+        return typing.cast(dict[str, Any], self.as_dict())
+
 
 class Pagination(typing.TypedDict):
     """
@@ -2266,22 +2287,22 @@ class PaginatedRows(TypedRows[T_MetaInstance]):
 
         All arguments are ignored!
         """
-        data = self.metadata["pagination"]
+        pagination_data = self.metadata["pagination"]
 
-        has_next_page = data["current_page"] < data["max_page"]
-        has_prev_page = data["current_page"] > 1
+        has_next_page = pagination_data["current_page"] < pagination_data["max_page"]
+        has_prev_page = pagination_data["current_page"] > 1
 
         return {
             "data": super().as_dict(),
             "pagination": {
-                "total_items": data["rows"],
-                "current_page": data["current_page"],
-                "per_page": data["limit"],
-                "total_pages": data["max_page"],
+                "total_items": pagination_data["rows"],
+                "current_page": pagination_data["current_page"],
+                "per_page": pagination_data["limit"],
+                "total_pages": pagination_data["max_page"],
                 "has_next_page": has_next_page,
                 "has_prev_page": has_prev_page,
-                "next_page": data["current_page"] + 1 if has_next_page else None,
-                "prev_page": data["current_page"] - 1 if has_prev_page else None,
+                "next_page": pagination_data["current_page"] + 1 if has_next_page else None,
+                "prev_page": pagination_data["current_page"] - 1 if has_prev_page else None,
             },
         }
 
