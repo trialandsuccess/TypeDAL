@@ -1374,18 +1374,29 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         self.metadata = metadata or {}
 
     def __str__(self) -> str:
+        """
+        Simple string representation for the query builder.
+        """
         return f"QueryBuilder for {self.model}"
 
     def __repr__(self) -> str:
-        return (f"<QueryBuilder for {self.model} with "
-                f"{len(self.select_args)} select args; "
-                f"{len(self.select_kwargs)} select kwargs; "
-                f"{len(self.relationships)} relationships; "
-                f"query:    {bool(self.query)}; "
-                f"metadata: {self.metadata}; "
-                f">")
+        """
+        Advanced string representation for the query builder.
+        """
+        return (
+            f"<QueryBuilder for {self.model} with "
+            f"{len(self.select_args)} select args; "
+            f"{len(self.select_kwargs)} select kwargs; "
+            f"{len(self.relationships)} relationships; "
+            f"query:    {bool(self.query)}; "
+            f"metadata: {self.metadata}; "
+            f">"
+        )
 
     def __bool__(self) -> bool:
+        """
+        Querybuilder is truthy if it has rows.
+        """
         return self.count() > 0
 
     def _extend(
@@ -2408,10 +2419,16 @@ class PaginatedRows(TypedRows[T_MetaInstance]):
 
     @property
     def data(self) -> list[T_MetaInstance]:
+        """
+        Get the underlying data.
+        """
         return list(self.records.values())
 
     @property
     def pagination(self) -> Pagination:
+        """
+        Get all page info.
+        """
         pagination_data = self.metadata["pagination"]
 
         has_next_page = pagination_data["current_page"] < pagination_data["max_page"]
@@ -2453,10 +2470,7 @@ class PaginatedRows(TypedRows[T_MetaInstance]):
 
         All arguments are ignored!
         """
-        return {
-            "data": super().as_dict(),
-            "pagination": self.pagination
-        }
+        return {"data": super().as_dict(), "pagination": self.pagination}
 
 
 class TypedSet(pydal.objects.Set):  # type: ignore # pragma: no cover
