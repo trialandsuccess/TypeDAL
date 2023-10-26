@@ -1800,11 +1800,6 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         model = self.model
         query = self.query
 
-        query = self._update_query_for_inner(db, model, query)
-
-        return db(query).count()
-
-    def _update_query_for_inner(self, db: TypeDAL, model: "typing.Type[T_MetaInstance]", query: Query) -> Query:
         for key, relation in self.relationships.items():
             if not relation.condition or relation.join != "inner":
                 continue
@@ -1812,7 +1807,8 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
             other = relation.get_table(db)
             other = other.with_alias(f"{key}_{hash(relation)}")
             query &= relation.condition(model, other)
-        return query
+
+        return db(query).count()
 
     def __paginate(
         self,

@@ -111,7 +111,7 @@ def test_where_builder():
 
     assert TestQueryTable.where(lambda row: row.number > 99).delete() is None  # nothing deleted
 
-    assert TestQueryTable.count() == 3  # 0 - 2
+    assert TestQueryTable.count() == 3 == len(TestQueryTable.collect())  # 0 - 2
 
     builder = TestQueryTable.where(lambda row: row.number == 0)
     sql = builder._update(number=5)
@@ -257,7 +257,7 @@ def test_complex_join():
         condition=(TestRelationship.querytable == TestQueryTable.id) & (TestQueryTable.number == 1),
     )
 
-    assert builder.count() == 4
+    assert builder.count() == 4 == len(builder.collect())
 
     assert builder.collect()
 
@@ -269,7 +269,7 @@ def test_complex_join():
         condition=lambda relation, query: (relation.querytable == query.id) & (query.number == 1),
     )
 
-    assert builder.count() == 4
+    assert builder.count() == 4 == len(builder.collect())
 
     sql = builder._collect()
     assert "JOIN" in sql
@@ -311,7 +311,7 @@ def test_complex_join():
     assert "INNER" not in sql
     assert "CROSS" not in sql
 
-    assert builder.count() == 8  # all but with less extra's
+    assert builder.count() == 8 == len(builder.collect())  # all but with less extra's
 
     # notation 2:
 
@@ -320,7 +320,7 @@ def test_complex_join():
         on=TestQueryTable.on((TestRelationship.querytable == TestQueryTable.id) & (TestQueryTable.number == 1)),
     )
 
-    assert builder.count() == 8  # all but with less extra's
+    assert builder.count() == 8 == len(builder.collect())  # all but with less extra's
 
     for row in builder.collect():
         if row.test_query_table:
