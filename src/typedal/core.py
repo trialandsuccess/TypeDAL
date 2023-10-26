@@ -16,7 +16,7 @@ from typing import Any, Optional
 
 import pydal
 from pydal._globals import DEFAULT
-from pydal.objects import Field
+from pydal.objects import Field as _Field
 from pydal.objects import Query as _Query
 from pydal.objects import Row, Rows
 from pydal.objects import Table as _Table
@@ -37,7 +37,7 @@ from .helpers import (
     to_snake,
     unwrap_type,
 )
-from .types import Expression, Query, _Types
+from .types import Expression, Field, Query, _Types
 
 # use typing.cast(type, ...) to make mypy happy with unions
 T_annotation = typing.Type[Any] | types.UnionType
@@ -703,7 +703,7 @@ class TableMeta(type):
         self._table = table
         self._relationships = relationships
 
-    def __getattr__(self, col: str) -> Field:
+    def __getattr__(self, col: str) -> Optional[Field]:
         """
         Magic method used by TypedTableMeta to get a database field with dot notation on a class.
 
@@ -713,6 +713,8 @@ class TableMeta(type):
         """
         if self._table:
             return getattr(self._table, col, None)
+
+        return None
 
     def _ensure_table_defined(self) -> Table:
         if not self._table:
@@ -1439,15 +1441,15 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         for field, value in filters.items():
             new_query &= table[field] == value
 
-        subquery = DummyQuery()
+        subquery: DummyQuery | Query = DummyQuery()
         for query_or_lambda in queries_or_lambdas:
             if isinstance(query_or_lambda, _Query):
-                subquery |= query_or_lambda
+                subquery |= typing.cast(Query, query_or_lambda)
             elif callable(query_or_lambda):
                 if result := query_or_lambda(self.model):
                     subquery |= result
-            elif isinstance(query_or_lambda, Field) or is_typed_field(query_or_lambda):
-                subquery |= query_or_lambda != None
+            elif isinstance(query_or_lambda, (Field, _Field)) or is_typed_field(query_or_lambda):
+                subquery |= typing.cast(Query, query_or_lambda != None)
             else:
                 raise ValueError(f"Unexpected query type ({type(query_or_lambda)}).")
 
@@ -1513,7 +1515,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         else:  # pragma: no cover
             raise EnvironmentError("@define or db.define is not called on this class yet!")
 
-    def _select_arg_convert(self, arg: Any) -> str | Field:
+    def _select_arg_convert(self, arg: Any) -> Any:
         # typedfield are not really used at runtime anymore, but leave it in for safety:
         if isinstance(arg, TypedField):  # pragma: no cover
             arg = arg._field
@@ -1918,7 +1920,7 @@ class TypedField(typing.Generic[T_Value]):  # pragma: no cover
 
     def __get__(
         self, instance: T_MetaInstance | None, owner: typing.Type[T_MetaInstance]
-    ) -> typing.Union[T_Value, Field]:
+    ) -> typing.Union[T_Value, "TypedField[T_Value]"]:
         """
         Since this class is a Descriptor field, \
             it returns something else depending on if it's called on a class or instance.
@@ -2036,6 +2038,15 @@ class TypedField(typing.Generic[T_Value]):  # pragma: no cover
         Shadow Field.__hash__.
         """
         return hash(self._field)
+
+    def __invert__(self) -> Expression:
+        """
+        Performing ~ on a Field will result in an Expression.
+        """
+        if not self._field:  # pragma: no cover
+            raise ValueError("Unbound Field can not be inverted!")
+
+        return typing.cast(Expression, ~self._field)
 
 
 S = typing.TypeVar("S")
@@ -2290,7 +2301,7 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
         name: str = None,
         constraint: Query = None,
         fields: list[str | Field] = None,
-        orderby: str | Field = None,
+        orderby: Optional[str | Field] = None,
     ) -> T_MetaInstance:
         """
         This can be used to JOIN with some relationships after the initial select.

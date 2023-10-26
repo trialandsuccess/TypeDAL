@@ -3,6 +3,7 @@ Stuff to make mypy happy.
 """
 
 from pydal.objects import Expression as _Expression
+from pydal.objects import Field as _Field
 from pydal.objects import Query as _Query
 
 
@@ -17,6 +18,14 @@ class Query(_Query):  # type: ignore
 class Expression(_Expression):  # type: ignore
     """
     Pydal Expression object.
+
+    Make mypy happy.
+    """
+
+
+class Field(_Field):
+    """
+    Pydal Field object.
 
     Make mypy happy.
     """
