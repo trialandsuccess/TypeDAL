@@ -167,35 +167,51 @@ def test_select():
 def test_paginate():
     _setup_data()
 
-    result = TestQueryTable.paginate(limit=1, page=1).join(method='left').collect()
+    result = TestQueryTable.join(method="left").paginate(limit=1, page=1)
 
-    assert len(result) == 1
-    assert len(result.first().relations) == 4
+    result_two = result.next().previous()
+
+    assert len(result) == 1 == len(result_two)
+    assert len(result.first().relations) == 4 == len(result_two.first().relations)
 
     meta = result.metadata["pagination"]
+    assert meta == result_two.metadata["pagination"]
 
-    assert meta["page"] == 1
+    assert meta["current_page"] == 1
     assert meta["limit"] == 1
     assert meta["min_max"] == (0, 1)
 
-    result = TestQueryTable.paginate(limit=1, page=2).join(method='left').collect()
+    next_page = result.next()
+    result = TestQueryTable.join(method="left").paginate(limit=1, page=2)
 
-    assert len(result) == 1
-    assert len(result.first().relations) == 4
+    assert len(result) == 1 == len(next_page)
+    assert len(result.first().relations) == 4 == len(next_page.first().relations)
 
     meta = result.metadata["pagination"]
+    assert meta == next_page.metadata["pagination"]
 
-    assert meta["page"] == 2
+    assert meta["current_page"] == 2
     assert meta["limit"] == 1
     assert meta["min_max"] == (1, 2)
 
-    result = TestQueryTable.paginate(limit=1, page=3).join(method='left').collect()
+    next_page = result.next()
+    result = TestQueryTable.join(method="left").paginate(limit=1, page=3)
 
-    assert len(result) == 1
-    assert len(result.first().relations) == 0
+    assert len(result) == 1 == len(next_page)
+    assert len(result.first().relations) == 0 == len(next_page.first().relations)
 
     meta = result.metadata["pagination"]
+    assert meta == next_page.metadata["pagination"]
 
-    assert meta["page"] == 3
+    assert meta["current_page"] == 3
     assert meta["limit"] == 1
     assert meta["min_max"] == (2, 3)
+
+    # final page (all items on 1 page is no prev or next):
+    result = TestQueryTable.paginate(limit=10, page=1)
+
+    with pytest.raises(StopIteration):
+        result.previous()
+
+    with pytest.raises(StopIteration):
+        result.next()

@@ -1,6 +1,7 @@
 import typing
 
 from src.typedal.helpers import (
+    DummyQuery,
     all_annotations,
     extract_type_optional,
     instanciate,
@@ -9,7 +10,7 @@ from src.typedal.helpers import (
     mktable,
     origin_is_subclass,
     to_snake,
-    unwrap_type, DummyQuery,
+    unwrap_type,
 )
 
 

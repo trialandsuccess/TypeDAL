@@ -7,8 +7,8 @@ import pytest
 from src.typedal import Relationship, TypeDAL, TypedField, TypedTable, relationship
 from src.typedal.core import to_relationship
 
-# db = TypeDAL("sqlite:memory")
-db = TypeDAL("sqlite://debug.db")
+db = TypeDAL("sqlite:memory")
+# db = TypeDAL("sqlite://debug.db")
 
 
 class TaggableMixin:

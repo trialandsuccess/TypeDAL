@@ -5,6 +5,7 @@ import contextlib
 import csv
 import datetime as dt
 import inspect
+import math
 import types
 import typing
 import warnings
@@ -18,6 +19,7 @@ from pydal.objects import Field
 from pydal.objects import Query as _Query
 from pydal.objects import Row, Rows
 from pydal.objects import Table as _Table
+from typing_extensions import Self
 
 from .helpers import (
     DummyQuery,
@@ -500,6 +502,30 @@ class TypeDAL(pydal.DAL):  # type: ignore
 
         return wrapper
 
+    # def drop(self, table_name: str) -> None:
+    #     """
+    #     Remove a table by name (both on the database level and the typedal level).
+    #     """
+    #     # drop calls TypedTable.drop() and removes it from the `_class_map`
+    #     if cls := self._class_map.pop(table_name, None):
+    #         cls.drop()
+
+    # def drop_all(self, max_retries: int = None) -> None:
+    #     """
+    #     Remove all tables and keep doing so until everything is gone!
+    #     """
+    #     retries = 0
+    #     if max_retries is None:
+    #         max_retries = len(self.tables)
+    #
+    #     while self.tables:
+    #         retries += 1
+    #         for table in self.tables:
+    #             self.drop(table)
+    #
+    #         if retries > max_retries:
+    #             raise RuntimeError("Could not delete all tables")
+
     def __call__(self, *_args: T_Query, **kwargs: Any) -> "TypedSet":
         """
         A db instance can be called directly to perform a query.
@@ -848,7 +874,7 @@ class TableMeta(type):
         """
         return QueryBuilder(self).select(*a, **kw)
 
-    def paginate(self: typing.Type[T_MetaInstance], limit: int, page: int = 1) -> "QueryBuilder[T_MetaInstance]":
+    def paginate(self: typing.Type[T_MetaInstance], limit: int, page: int = 1) -> "PaginatedRows[T_MetaInstance]":
         """
         See QueryBuilder.paginate!
         """
@@ -1331,10 +1357,10 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         return QueryBuilder(
             self.model,
             (add_query & self.query) if add_query else overwrite_query or self.query,
-            (select_args + self.select_args) if select_args else self.select_args,
-            (select_kwargs | self.select_kwargs) if select_kwargs else self.select_kwargs,
-            (relationships | self.relationships) if relationships else self.relationships,
-            (metadata | self.metadata) if metadata else self.metadata,
+            (self.select_args + select_args) if select_args else self.select_args,
+            (self.select_kwargs | select_kwargs) if select_kwargs else self.select_kwargs,
+            (self.relationships | relationships) if relationships else self.relationships,
+            (self.metadata | metadata) if metadata else self.metadata,
         )
 
     def select(self, *fields: Any, **options: Any) -> "QueryBuilder[T_MetaInstance]":
@@ -1463,10 +1489,13 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
         return None
 
-    def collect(self, verbose: bool = False) -> "TypedRows[T_MetaInstance]":
+    def collect(self, verbose: bool = False, _to: typing.Type["TypedRows[Any]"] = None) -> "TypedRows[T_MetaInstance]":
         """
         Execute the built query and turn it into model instances, while handling relationships.
         """
+        if _to is None:
+            _to = TypedRows
+
         db = self._get_db()
 
         select_args = [self._select_arg_convert(_) for _ in self.select_args] or [self.model.ALL]
@@ -1502,13 +1531,13 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
         if not self.relationships:
             # easy
-            return TypedRows.from_rows(rows, self.model, metadata=metadata)
+            return _to.from_rows(rows, self.model, metadata=metadata)
 
         # harder: try to match rows to the belonging objects
         # assume structure of {'table': <data>} per row.
         # if that's not the case, return default behavior again
 
-        return self._collect_with_relationships(rows, metadata=metadata)
+        return self._collect_with_relationships(rows, metadata=metadata, _to=_to)
 
     def _handle_relationships_pre_select(
         self,
@@ -1581,7 +1610,9 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         select_kwargs["left"] = left
         return query, select_args
 
-    def _collect_with_relationships(self, rows: Rows, metadata: dict[str, Any]) -> "TypedRows[T_MetaInstance]":
+    def _collect_with_relationships(
+        self, rows: Rows, metadata: dict[str, Any], _to: typing.Type["TypedRows[Any]"] = None
+    ) -> "TypedRows[T_MetaInstance]":
         """
         Transform the raw rows into Typed Table model instances.
         """
@@ -1639,7 +1670,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
                     # create single T
                     records[main_id][column] = instance
 
-        return TypedRows(rows, self.model, records, metadata=metadata)
+        return _to(rows, self.model, records, metadata=metadata)
 
     def collect_or_fail(self) -> "TypedRows[T_MetaInstance]":
         """
@@ -1665,7 +1696,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         db = self._get_db()
         return db(self.query).count()
 
-    def paginate(self, limit: int, page: int = 1) -> "QueryBuilder[T_MetaInstance]":
+    def paginate(self, limit: int, page: int = 1, verbose: bool = False) -> "PaginatedRows[T_MetaInstance]":
         """
         Paginate transforms the more readable `page` and `limit` to pydals internal limit and offset.
 
@@ -1673,18 +1704,27 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
             can be loaded with relationship data!
         """
         _from = limit * (page - 1)
-        _to = limit * (page)
+        _to = limit * page
 
-        return self._extend(
+        available = self.count()
+
+        builder = self._extend(
             select_kwargs={"limitby": (_from, _to)},
             metadata={
                 "pagination": {
                     "limit": limit,
-                    "page": page,
+                    "current_page": page,
+                    "max_page": math.ceil(available / limit),
+                    "rows": available,
                     "min_max": (_from, _to),
                 }
             },
         )
+
+        rows = typing.cast(PaginatedRows[T_MetaInstance], builder.collect(verbose=verbose, _to=PaginatedRows))
+
+        rows._query_builder = builder
+        return rows
 
     def first(self, verbose: bool = False) -> T_MetaInstance | None:
         """
@@ -1692,10 +1732,8 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
         Also adds paginate, since it would be a waste to select more rows than needed.
         """
-        builder = self.paginate(page=1, limit=1)
-
-        if row := builder.collect(verbose=verbose).first():
-            return builder.model.from_row(row)
+        if row := self.paginate(page=1, limit=1, verbose=verbose).first():
+            return self.model.from_row(row)
         else:
             return None
 
@@ -2169,6 +2207,34 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
         Internal method to convert a Rows object to a TypedRows.
         """
         return cls(rows, model, metadata=metadata)
+
+
+class PaginatedRows(TypedRows[T_MetaInstance]):
+    """
+    Extension on top of rows that is used when calling .paginate() instead of .collect().
+    """
+
+    _query_builder: QueryBuilder[T_MetaInstance]
+
+    def next(self) -> Self:  # noqa: A003
+        """
+        Get the next page.
+        """
+        data = self.metadata["pagination"]
+        if data["current_page"] >= data["max_page"]:
+            raise StopIteration("Final Page")
+
+        return self._query_builder.paginate(limit=data["limit"], page=data["current_page"] + 1)
+
+    def previous(self) -> Self:
+        """
+        Get the previous page.
+        """
+        data = self.metadata["pagination"]
+        if data["current_page"] <= 1:
+            raise StopIteration("First Page")
+
+        return self._query_builder.paginate(limit=data["limit"], page=data["current_page"] - 1)
 
 
 class TypedSet(pydal.objects.Set):  # type: ignore # pragma: no cover
