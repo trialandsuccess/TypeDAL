@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v2.0.0-beta.2 (2023-10-26)
+
+### Fix
+
+* **core:** Table(0) can also work in some instances, so don't check for falsey but for None ([`4430453`](https://github.com/trialandsuccess/TypeDAL/commit/4430453495e4d9e594cd48547707e4d4bb0e2ff2))
+
 ## v2.0.0-beta.1 (2023-10-26)
 
 ### Feature
