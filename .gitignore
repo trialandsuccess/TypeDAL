@@ -1,9 +1,11 @@
 .idea
 __pycache__/
 *.pyc
-venv/
+venv*
 *.egg-info
 dist/
 build/
 .coverage
 coverage.json
+*.table
+*.db

@@ -13,7 +13,7 @@ db = TypeDAL("sqlite:memory")
 
 @db.define
 class Person(TypedTable):
-    name: str
+    name: TypedField[str]
 
     age = TypedField(int, default=18)
     nicknames: list[str]
@@ -26,7 +26,7 @@ assert db.person._format == "%(name)s"
 
 @db.define
 class Pet(TypedTable):
-    name: str
+    name: TypedField[str]
     owners: list[Person]
 
 
@@ -40,19 +40,27 @@ class Later(TypedTable):
 
 db.define(Later)
 
-Person.insert(name="Henk", age=44, nicknames=["Henkie", "Gekke Henk"])
+_henk = Person.insert(name="Henk", age=44, nicknames=["Henkie", "Gekke Henk"])
 db.person.insert(name="Ingrid", nicknames=[])
 
 henk: Person = db(Person.name == "Henk").select().first()
 ingrid: Person = db(db.person.name == "Ingrid").select().first()
 print(henk, ingrid)
 
-Pet.insert(name="Max", owners=[henk, ingrid])
+assert ingrid
+assert henk
+assert _henk
+assert henk.as_dict() == _henk.as_dict()
+
+_max = Pet.insert(name="Max", owners=[henk, ingrid])
 
 max = Pet(name="Max")
+assert max.as_dict() == _max.as_dict()
 print(max)
 
-people: TypedRows[Person] = db(Person).select()  # db(db.person.id > 0).select()
+people = Person.select().collect()
+
+# people: TypedRows[Person] = db(Person).select()  # db(db.person.id > 0).select()
 
 print(people.first())
 
@@ -61,6 +69,7 @@ for person in people:
 
 # max ran away!
 Pet.update_or_insert(Pet.name == "Max", owners=[])
+# max = Pet.update_or_insert(Pet.name == "Max", owners=[])
 max = Pet(name="Max")
 
 assert not max.owners
@@ -152,13 +161,6 @@ class AllFieldsExplicit(TypedTable):
     json = fields.JSONField()
     bigint = fields.BigintField()
 
-
-# todo: fix:
-# for fname, ftype in AllFieldsBasic.__annotations__.items():
-#     print(fname, repr(ftype))
-#
-# for fname, ftype in AllFieldsAdvanced.__annotations__.items():
-#     print(fname, repr(ftype))
 
 now = dt.datetime.utcnow()
 

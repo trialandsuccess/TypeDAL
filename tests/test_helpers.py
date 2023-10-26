@@ -1,0 +1,114 @@
+import typing
+
+from src.typedal.helpers import (
+    DummyQuery,
+    all_annotations,
+    extract_type_optional,
+    instanciate,
+    is_union,
+    looks_like,
+    mktable,
+    origin_is_subclass,
+    to_snake,
+    unwrap_type,
+)
+
+
+def test_is_union():
+    assert is_union(int | str)
+    assert is_union(typing.Union[int, str])
+    assert is_union(int | None)
+    assert is_union(typing.Union[int, None])
+    assert is_union(typing.Optional[str])
+    assert not is_union(int)
+    assert not is_union(list[str])
+    assert not is_union(list[str | int])
+
+
+class Base:
+    a: int
+    b: str
+
+
+class Child(Base):
+    c: float
+    d: bool
+
+
+def test_all_annotations():
+    assert all_annotations(Child) == {"a": int, "b": str, "c": float, "d": bool}
+
+
+def test_instanciate():
+    assert instanciate(list) == []
+    assert instanciate([1, 2]) == [1, 2]
+    assert isinstance(instanciate(Child), Child)
+    assert instanciate(list[str]) == []
+    assert instanciate(dict[str, float]) == {}
+
+
+class MyList(list):
+    ...
+
+
+def test_origin_is_subclass():
+    assert origin_is_subclass(MyList[str], list)
+    # not a generic:
+    assert not origin_is_subclass(MyList, list)
+    # not subclass of dict:
+    assert not origin_is_subclass(MyList[str], dict)
+    assert not origin_is_subclass(MyList, dict)
+
+
+def test_mktable():
+    data = {
+        "1": {"id": 1, "name": "Alice", "Age": 25, "Occupation": "Software Engineer"},
+        "2": {"id": 2, "name": "Bob", "Age": 30, "Occupation": "Doctor"},
+        "3": {"id": 3, "name": "Carol", "Age": 35, "Occupation": "Lawyer"},
+    }
+
+    assert mktable(data, skip_first=False)
+    assert mktable(data, header=["id", "name", "age", "occupation"])
+
+
+def test_unwrap():
+    my_type = typing.Optional[list[list[str]]]
+
+    assert unwrap_type(my_type) == str
+
+
+def test_looks_like():
+    assert looks_like([], list)
+    assert looks_like(list, list)
+    assert looks_like(list[str], list)
+
+    assert not looks_like([], str)
+    assert not looks_like(list, str)
+    assert not looks_like(list[str], str)
+
+
+def test_extract():
+    assert extract_type_optional(typing.Optional[bool]) == (bool, True)
+    assert extract_type_optional(bool | None) == (bool, True)
+    assert extract_type_optional(None | bool) == (bool, True)
+    assert extract_type_optional(bool) == (bool, False)
+    assert extract_type_optional(None) == (None, False)
+
+
+def test_to_snake():
+    assert to_snake("MyClass") == "my_class"
+    assert to_snake("myClass") == "my_class"
+    assert to_snake("myclass") == "myclass"
+    assert to_snake("my_class") == "my_class"
+    assert to_snake("my_Class") == "my__class"
+
+
+def test_dummy_query():
+    dummy = DummyQuery()
+
+    assert dummy & "nothing" == "nothing"
+    assert dummy & 123 == 123
+    assert dummy | "nothing" == "nothing"
+    assert dummy | 123 == 123
+
+    assert not dummy

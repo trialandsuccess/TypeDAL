@@ -4,6 +4,7 @@ from sqlite3 import IntegrityError
 
 import pydal
 import pytest
+from pydal.objects import Query
 
 from src.typedal import *
 from src.typedal.__about__ import __version__
@@ -168,12 +169,14 @@ def test_dont_allow_bool_in_query():
 
 def test_invalid_union():
     with pytest.raises(NotImplementedError):
+
         @db.define
         class Invalid(TypedTable):
             valid: int | None
             invalid: int | str
 
     with pytest.raises(NotImplementedError):
+
         @db.define
         class Invalid(TypedTable):
             valid: list[int]
@@ -195,22 +198,54 @@ def test_using_model_without_define():
 def test_typedfield_reprs():
     # str() and repr()
 
-    assert str(TypedField(str)) == "TypedField.str"
-    assert str(TypedField(str | None)) == "TypedField.str"
-    assert str(TypedField(typing.Optional[str])) == "TypedField.str"
-    assert repr(TypedField(str)) == "<TypedField.str with options {}>"
-    assert str(TypedField(str, type="text")) == "TypedField.text"
-    assert repr(TypedField(str, type="text", default="def")) == "<TypedField.text with options {'default': 'def'}>"
-    assert str(TextField()) == "TypedField.text"
-    assert repr(TextField()) == "<TypedField.text with options {}>"
+    @db.define()
+    class Demo(TypedTable):
+        field1 = TypedField(str | None, default="yes")
+        field2: TypedField[int | None]
+        field3: TypedField[float]
+        field4: int
+        textfield = TypedField(type="text")
+
+    assert Demo.field1
+    assert Demo.field2
+    assert Demo.field3
+    assert Demo.field4
+    assert Demo.textfield
+
+    assert str(Demo.field1) == "demo.field1"
+    assert str(Demo.field2) == "demo.field2"
+    assert str(Demo.field3) == "demo.field3"
+    assert str(Demo.field4) == "demo.field4"
+    assert str(Demo.textfield) == "demo.textfield"
+
+    assert Demo["field1"] == Demo.field1
+
+    assert isinstance(Demo.field1, pydal.objects.Field)
+    assert isinstance(Demo.field2, pydal.objects.Field)
+    assert isinstance(Demo.field3, pydal.objects.Field)
+    assert isinstance(Demo.field4, pydal.objects.Field)
+    assert isinstance(Demo.textfield, pydal.objects.Field)
+
+    # due to compatibility reasons, TypedField is now only a virtual (typing) class, at runtime its just a field!
+    # assert isinstance(Demo.field1, TypedField)
+    # assert isinstance(Demo.field2, TypedField)
+    # assert isinstance(Demo.field3, TypedField)
+    # assert isinstance(Demo.field4, pydal.objects.Field)
+    # assert isinstance(Demo.textfield, TypedField)
+
+    # typedfield reprs are not actually used anymore, because class.somefield now returns a pydal.Field!!!
+    # assert repr(Demo.field1) == "<TypedField[str].demo.field1 with options {'default': 'yes'}>"
+    # assert repr(Demo.field2) == "<TypedField[int].demo.field2 with options {}>"
+    # assert repr(Demo.field3) == "<TypedField[float].demo.field3 with options {}>"
+    # assert repr(Demo.textfield) == "<TypedField[text].demo.textfield with options {}>"
 
 
 def test_typedfield_to_field_type():
-    @db.define
+    @db.define()
     class SomeTable(TypedTable):
         name = TypedField(str)  # basic mapping
 
-    @db.define
+    @db.define()
     class OtherTable(TypedTable):
         second = ReferenceField(SomeTable)  # reference to TypedTable
         third = ReferenceField(db.some_table)  # reference to pydal table
@@ -219,7 +254,8 @@ def test_typedfield_to_field_type():
         optional_two = TypedField(str | None)
 
     with pytest.raises(NotImplementedError):
-        @db.define
+
+        @db.define()
         class Invalid(TypedTable):
             third = TypedField(dict[str, int])  # not supported
 
@@ -235,29 +271,34 @@ def test_fields():
 
     db.define(OtherNewTable)
 
-    assert str(StringField()) == "TypedField.string"
-    assert str(BlobField()) == "TypedField.blob"
-    assert str(Boolean()) == "TypedField.boolean"
-    assert str(IntegerField()) == "TypedField.integer"
-    assert str(DoubleField()) == "TypedField.double"
-    assert str(DecimalField(1, 1)) == "TypedField.decimal(1, 1)"
-    assert str(DateField()) == "TypedField.date"
-    assert str(TimeField()) == "TypedField.time"
-    assert str(DatetimeField()) == "TypedField.datetime"
-    assert str(PasswordField()) == "TypedField.password"
-    assert str(UploadField()) == "TypedField.upload"
-    assert str(ReferenceField("other")) == "TypedField.reference other"
-    assert str(ReferenceField(db.some_new_table)) == "TypedField.reference some_new_table"
-    assert str(ReferenceField(SomeNewTable)) == "TypedField.reference some_new_table"
-    assert str(ReferenceField(OtherNewTable)) == "TypedField.reference other_new_table"
-    with pytest.raises(ValueError):
-        ReferenceField(object())
+    @db.define()
+    class Everything(TypedTable):
+        stringfield = StringField()
+        blobfield = BlobField()
+        booleanfield = Boolean()
+        integerfield = IntegerField()
+        doublefield = DoubleField()
+        decimalfield = DecimalField(1, 1)
+        datefield = DateField()
+        timefield = TimeField()
+        datetimefield = DatetimeField()
+        passwordfield = PasswordField()
+        uploadfield = UploadField()
+        referencefield_some_new_table = ReferenceField(db.some_new_table)
+        referencefield_SomeNewTable = ReferenceField(SomeNewTable)
+        referencefield_other = ReferenceField("other_new_table")
+        referencefield_OtherNewTable = ReferenceField(OtherNewTable)
+        liststringfield = ListStringField()
+        listintegerfield = ListIntegerField()
+        listreferencefield_somenewtable = ListReferenceField("somenewtable")
+        jsonfield = JSONField()
+        bigintfield = BigintField()
 
-    assert str(ListStringField()) == "TypedField.list:string"
-    assert str(ListIntegerField()) == "TypedField.list:integer"
-    assert str(ListReferenceField("somenewtable")) == "TypedField.list:reference somenewtable"
-    assert str(JSONField()) == "TypedField.json"
-    assert str(BigintField()) == "TypedField.bigint"
+    with pytest.raises(ValueError):
+
+        @db.define()
+        class Wrong(TypedTable):
+            stringfield = ReferenceField(object())
 
     # test typedset:
     counted1 = db(SomeNewTable).count()
@@ -268,20 +309,16 @@ def test_fields():
 
     select2: TypedRows[SomeNewTable] = db(SomeNewTable.id > 0).select(SomeNewTable.name, SomeNewTable.name_alt)
 
-    for row in select2:
+    if list(select2):
         raise ValueError("no rows should exist")
 
-    SomeNewTable.update_or_insert(
-        SomeNewTable.name == "Hendrik",
-        name="Hendrik 2",
-        name_alt="Hendrik II"
-    )
+    SomeNewTable.update_or_insert(SomeNewTable.name == "Hendrik", name="Hendrik 2", name_alt="Hendrik II")
 
-    idx = OtherNewTable.update_or_insert(
+    instance = OtherNewTable.update_or_insert(
         OtherNewTable.name == "Hendrik",
         name="Hendrik 2",
     )
-    assert idx
+    assert instance
 
     OtherNewTable.update_or_insert(
         OtherNewTable.name == "Hendrik",
@@ -294,11 +331,49 @@ def test_fields():
     assert db(OtherNewTable.name == "Hendrik").count() == 0
     assert db(OtherNewTable.name == "Hendrik 2").count() == 2
 
-    no_idx = OtherNewTable.update_or_insert(
+    instance = OtherNewTable.update_or_insert(
         OtherNewTable.name == "Hendrik 2",
         name="Hendrik 3",
-    )  # should only update one and return None!
+    )  # should update and return new version
 
-    assert no_idx is None
+    assert instance
+    assert instance.name == "Hendrik 3"
+
     assert db(OtherNewTable.name == "Hendrik 2").count() == 1
     assert db(OtherNewTable.name == "Hendrik 3").count() == 1
+
+
+def test_quirks():
+    # don't inherit TypedTable:
+
+    class NonInherit:
+        name: str
+
+    with pytest.warns(UserWarning):
+        db.define(NonInherit)
+
+    # instanciating a TypedTable with an existing TypedTable
+    @db.define()
+    class MyTypedTable(TypedTable):
+        string: str
+
+    inst = MyTypedTable.insert(string="111")
+
+    inst_copy = MyTypedTable(inst)
+
+    assert inst == inst_copy
+
+    repred = repr(inst)
+    assert "MyTypedTable" in repred
+    assert "string" in repred
+    assert "111" in repred
+    inst.delete_record()
+
+    repred = repr(inst)
+    assert "MyTypedTable" in repred
+    assert "string" not in repred
+    assert "111" not in repred
+
+    with pytest.raises(EnvironmentError):
+        # inst is deleted, so almost everything will raise an error now (except repr).
+        inst.as_dict()

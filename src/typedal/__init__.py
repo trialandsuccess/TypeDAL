@@ -3,7 +3,11 @@ TypeDAL Library.
 """
 
 from . import fields
-from .core import TypeDAL, TypedRows, TypedTable
-from .fields import TypedField
+from .core import Relationship, TypeDAL, TypedField, TypedRows, TypedTable, relationship
 
-__all__ = ["TypeDAL", "TypedTable", "TypedField", "TypedRows", "fields"]
+try:
+    from .for_py4web import DAL as P4W_DAL
+except ImportError:  # pragma: no cover
+    P4W_DAL = None  # type: ignore
+
+__all__ = ["TypeDAL", "TypedTable", "TypedField", "TypedRows", "fields", "Relationship", "relationship"]

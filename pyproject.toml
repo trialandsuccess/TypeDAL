@@ -33,6 +33,10 @@ src-layout = true
 "typedal" = ["py.typed"]
 
 [project.optional-dependencies]
+py4web = [
+    "py4web"
+]
+
 dev = [
     "hatch",
     "su6[all]",
@@ -59,11 +63,14 @@ build_command = "hatch build"
 ### required in every su6 pyproject: ###
 [tool.su6]
 directory = "src"
-stop-after-first-failure = true
+stop-after-first-failure = false
 include = []
 exclude = []
 coverage = 100
 badge = true
+
+[tool.su6.default-flags]
+mypy = "--disable-error-code misc"
 
 [tool.black]
 target-version = ["py310"]
@@ -95,6 +102,7 @@ ignore_missing_imports = true
 strict = true
 # fixes defs with clear return var (doesn't seem to work for __init__ which is the most obvious case)
 # check_untyped_defs = True
+# disable_error_code = "misc" # skip misc makes mypy tests fail!
 
 exclude = ["venv", ".bak"]
 
