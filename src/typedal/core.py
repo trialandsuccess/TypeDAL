@@ -2209,6 +2209,30 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
         return cls(rows, model, metadata=metadata)
 
 
+class Pagination(typing.TypedDict):
+    """
+    Pagination key of a paginate dict has these items.
+    """
+
+    total_items: int
+    current_page: int
+    per_page: int
+    total_pages: int
+    has_next_page: bool
+    has_prev_page: bool
+    next_page: Optional[int]
+    prev_page: Optional[int]
+
+
+class PaginateDict(typing.TypedDict):
+    """
+    Result of PaginatedRows.as_dict().
+    """
+
+    data: dict[int, dict[str, Any]]
+    pagination: Pagination
+
+
 class PaginatedRows(TypedRows[T_MetaInstance]):
     """
     Extension on top of rows that is used when calling .paginate() instead of .collect().
@@ -2235,6 +2259,31 @@ class PaginatedRows(TypedRows[T_MetaInstance]):
             raise StopIteration("First Page")
 
         return self._query_builder.paginate(limit=data["limit"], page=data["current_page"] - 1)
+
+    def as_dict(self, *_: Any, **__: Any) -> PaginateDict:  # type: ignore
+        """
+        Convert to a dictionary with pagination info and original data.
+
+        All arguments are ignored!
+        """
+        data = self.metadata["pagination"]
+
+        has_next_page = data["current_page"] < data["max_page"]
+        has_prev_page = data["current_page"] > 1
+
+        return {
+            "data": super().as_dict(),
+            "pagination": {
+                "total_items": data["rows"],
+                "current_page": data["current_page"],
+                "per_page": data["limit"],
+                "total_pages": data["max_page"],
+                "has_next_page": has_next_page,
+                "has_prev_page": has_prev_page,
+                "next_page": data["current_page"] + 1 if has_next_page else None,
+                "prev_page": data["current_page"] - 1 if has_prev_page else None,
+            },
+        }
 
 
 class TypedSet(pydal.objects.Set):  # type: ignore # pragma: no cover

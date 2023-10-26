@@ -215,3 +215,10 @@ def test_paginate():
 
     with pytest.raises(StopIteration):
         result.next()
+
+    page_dict = result.as_dict()["pagination"]
+
+    assert page_dict["has_next_page"] is False
+    assert page_dict["has_prev_page"] is False
+    assert page_dict["next_page"] is None
+    assert page_dict["prev_page"] is None
