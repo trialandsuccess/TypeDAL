@@ -982,7 +982,7 @@ class TableMeta(type):
         self,
         csvfile: typing.TextIO,
         id_map: dict[str, str] = None,
-        null: str = "<NULL>",
+        null: Any = "<NULL>",
         unique: str = "uuid",
         id_offset: dict[str, int] = None,  # id_offset used only when id_map is None
         transform: typing.Callable[[dict[Any, Any]], dict[Any, Any]] = None,
@@ -1283,6 +1283,7 @@ class TypedTable(metaclass=TableMeta):
         Example:
             MyTable.update(MyTable.id == 1, name="NewName") -> MyTable
         """
+        # todo: update multiple?
         if record := cls(query):
             return record.update_record(**fields)
         else:
@@ -1371,6 +1372,21 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         self.select_kwargs = select_kwargs or {}
         self.relationships = relationships or {}
         self.metadata = metadata or {}
+
+    def __str__(self) -> str:
+        return f"QueryBuilder for {self.model}"
+
+    def __repr__(self) -> str:
+        return (f"<QueryBuilder for {self.model} with "
+                f"{len(self.select_args)} select args; "
+                f"{len(self.select_kwargs)} select kwargs; "
+                f"{len(self.relationships)} relationships; "
+                f"query:    {bool(self.query)}; "
+                f"metadata: {self.metadata}; "
+                f">")
+
+    def __bool__(self) -> bool:
+        return self.count() > 0
 
     def _extend(
         self,
@@ -1542,6 +1558,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         """
         Based on the current query, update `fields` and return a list of updated IDs.
         """
+        # todo: limit?
         db = self._get_db()
         updated_ids = db(self.query).select("id").column("id")
         if db(self.query).update(**fields):
@@ -2314,7 +2331,7 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
     def export_to_csv_file(
         self,
         ofile: typing.TextIO,
-        null: str = "<NULL>",
+        null: Any = "<NULL>",
         delimiter: str = ",",
         quotechar: str = '"',
         quoting: int = csv.QUOTE_MINIMAL,
@@ -2389,6 +2406,27 @@ class PaginatedRows(TypedRows[T_MetaInstance]):
 
     _query_builder: QueryBuilder[T_MetaInstance]
 
+    @property
+    def data(self) -> list[T_MetaInstance]:
+        return list(self.records.values())
+
+    @property
+    def pagination(self) -> Pagination:
+        pagination_data = self.metadata["pagination"]
+
+        has_next_page = pagination_data["current_page"] < pagination_data["max_page"]
+        has_prev_page = pagination_data["current_page"] > 1
+        return {
+            "total_items": pagination_data["rows"],
+            "current_page": pagination_data["current_page"],
+            "per_page": pagination_data["limit"],
+            "total_pages": pagination_data["max_page"],
+            "has_next_page": has_next_page,
+            "has_prev_page": has_prev_page,
+            "next_page": pagination_data["current_page"] + 1 if has_next_page else None,
+            "prev_page": pagination_data["current_page"] - 1 if has_prev_page else None,
+        }
+
     def next(self) -> Self:  # noqa: A003
         """
         Get the next page.
@@ -2415,23 +2453,9 @@ class PaginatedRows(TypedRows[T_MetaInstance]):
 
         All arguments are ignored!
         """
-        pagination_data = self.metadata["pagination"]
-
-        has_next_page = pagination_data["current_page"] < pagination_data["max_page"]
-        has_prev_page = pagination_data["current_page"] > 1
-
         return {
             "data": super().as_dict(),
-            "pagination": {
-                "total_items": pagination_data["rows"],
-                "current_page": pagination_data["current_page"],
-                "per_page": pagination_data["limit"],
-                "total_pages": pagination_data["max_page"],
-                "has_next_page": has_next_page,
-                "has_prev_page": has_prev_page,
-                "next_page": pagination_data["current_page"] + 1 if has_next_page else None,
-                "prev_page": pagination_data["current_page"] - 1 if has_prev_page else None,
-            },
+            "pagination": self.pagination
         }
 
 
