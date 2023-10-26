@@ -26,6 +26,7 @@ from .helpers import (
     DummyQuery,
     all_annotations,
     all_dict,
+    as_lambda,
     extract_type_optional,
     filter_out,
     instanciate,
@@ -795,6 +796,11 @@ class TableMeta(type):
         # it already is an int but mypy doesn't understand that
         return self(result)
 
+    def _insert(self, **fields: Any) -> str:
+        table = self._ensure_table_defined()
+
+        return str(table._insert(**fields))
+
     def bulk_insert(self: typing.Type[T_MetaInstance], items: list[dict[str, Any]]) -> "TypedRows[T_MetaInstance]":
         """
         Insert multiple rows, returns a TypedRows set of new instances.
@@ -914,12 +920,16 @@ class TableMeta(type):
         return QueryBuilder(self).first()
 
     def join(
-        self: typing.Type[T_MetaInstance], *fields: str, method: JOIN_OPTIONS = None
+        self: typing.Type[T_MetaInstance],
+        *fields: str | typing.Type["TypedTable"],
+        method: JOIN_OPTIONS = None,
+        on: OnQuery | list[Expression] | Expression = None,
+        condition: Condition = None,
     ) -> "QueryBuilder[T_MetaInstance]":
         """
         See QueryBuilder.join!
         """
-        return QueryBuilder(self).join(*fields, method=method)
+        return QueryBuilder(self).join(*fields, on=on, condition=condition, method=method)
 
     def collect(self: typing.Type[T_MetaInstance], verbose: bool = False) -> "TypedRows[T_MetaInstance]":
         """
@@ -1002,7 +1012,7 @@ class TableMeta(type):
             **kwargs,
         )
 
-    def on(self, query: Query) -> Expression:
+    def on(self, query: Query | bool) -> Expression:
         """
         Shadow Table.on.
 
@@ -1446,7 +1456,13 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
         return self._extend(overwrite_query=new_query)
 
-    def join(self, *fields: str, method: JOIN_OPTIONS = None) -> "QueryBuilder[T_MetaInstance]":
+    def join(
+        self,
+        *fields: str | typing.Type[TypedTable],
+        method: JOIN_OPTIONS = None,
+        on: OnQuery | list[Expression] | Expression = None,
+        condition: Condition = None,
+    ) -> "QueryBuilder[T_MetaInstance]":
         """
         Include relationship fields in the result.
 
@@ -1458,12 +1474,34 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         """
         relationships = self.model.get_relationships()
 
-        if fields:
-            # join on every relationship
-            relationships = {k: relationships[k] for k in fields}
+        if condition and on:
+            raise ValueError("condition and on can not be used together!")
+        elif condition:
+            if len(fields) != 1:
+                raise ValueError("join(field, condition=...) can only be used with exactly one field!")
 
-        if method:
-            relationships = {k: r.clone(join=method) for k, r in relationships.items()}
+            if isinstance(condition, pydal.objects.Query):
+                condition = as_lambda(condition)
+
+            relationships = {str(fields[0]): relationship(fields[0], condition=condition, join=method)}
+        elif on:
+            if len(fields) != 1:
+                raise ValueError("join(field, on=...) can only be used with exactly one field!")
+
+            if isinstance(on, pydal.objects.Expression):
+                on = [on]
+
+            if isinstance(on, list):
+                on = as_lambda(on)
+            relationships = {str(fields[0]): relationship(fields[0], on=on, join=method)}
+
+        else:
+            if fields:
+                # join on every relationship
+                relationships = {str(k): relationships[str(k)] for k in fields}
+
+            if method:
+                relationships = {str(k): r.clone(join=method) for k, r in relationships.items()}
 
         return self._extend(relationships=relationships)
 
@@ -1492,6 +1530,10 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
         return None
 
+    def _delete(self) -> str:
+        db = self._get_db()
+        return str(db(self.query)._delete())
+
     def update(self, **fields: Any) -> list[int] | None:
         """
         Based on the current query, update `fields` and return a list of updated IDs.
@@ -1504,23 +1546,16 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
         return None
 
-    def collect(self, verbose: bool = False, _to: typing.Type["TypedRows[Any]"] = None) -> "TypedRows[T_MetaInstance]":
-        """
-        Execute the built query and turn it into model instances, while handling relationships.
-        """
-        if _to is None:
-            _to = TypedRows
-
+    def _update(self, **fields: Any) -> str:
         db = self._get_db()
+        return str(db(self.query)._update(**fields))
 
+    def _before_query(self, mut_metadata: dict[str, Any]) -> tuple[Query, list[Any], dict[str, Any]]:
         select_args = [self._select_arg_convert(_) for _ in self.select_args] or [self.model.ALL]
         select_kwargs = self.select_kwargs.copy()
-        metadata = self.metadata.copy()
         query = self.query
         model = self.model
-
-        metadata["query"] = query
-
+        mut_metadata["query"] = query
         # require at least id of main table:
         select_fields = ", ".join([str(_) for _ in select_args])
         tablename = str(model)
@@ -1530,7 +1565,42 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
             select_args.append(model.id)
 
         if self.relationships:
-            query, select_args = self._handle_relationships_pre_select(query, select_args, select_kwargs, metadata)
+            query, select_args = self._handle_relationships_pre_select(query, select_args, select_kwargs, mut_metadata)
+
+        return query, select_args, select_kwargs
+
+    def to_sql(self) -> str:
+        """
+        Generate the SQL for the built query.
+        """
+        db = self._get_db()
+
+        query, select_args, select_kwargs = self._before_query({})
+
+        return str(db(query)._select(*select_args, **select_kwargs))
+
+    def _collect(self) -> str:
+        """
+        Alias for to_sql, pydal-like syntax.
+        """
+        return self.to_sql()
+
+    def collect(self, verbose: bool = False, _to: typing.Type["TypedRows[Any]"] = None) -> "TypedRows[T_MetaInstance]":
+        """
+        Execute the built query and turn it into model instances, while handling relationships.
+        """
+        if _to is None:
+            _to = TypedRows
+
+        db = self._get_db()
+        metadata = self.metadata.copy()
+
+        query, select_args, select_kwargs = self._before_query(metadata)
+
+        metadata["sql"] = db(query)._select(*select_args, **select_kwargs)
+
+        if verbose:  # pragma: no cover
+            print(metadata["sql"])
 
         rows: Rows = db(query).select(*select_args, **select_kwargs)
 
@@ -1538,10 +1608,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         metadata["final_args"] = [str(_) for _ in select_args]
         metadata["final_kwargs"] = select_kwargs
 
-        metadata["sql"] = db(query)._select(*select_args, **select_kwargs)
-
         if verbose:  # pragma: no cover
-            print(metadata["sql"])
             print(rows)
 
         if not self.relationships:
@@ -1551,7 +1618,6 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         # harder: try to match rows to the belonging objects
         # assume structure of {'table': <data>} per row.
         # if that's not the case, return default behavior again
-
         return self._collect_with_relationships(rows, metadata=metadata, _to=_to)
 
     def _handle_relationships_pre_select(
@@ -1565,15 +1631,34 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         model = self.model
 
         metadata["relationships"] = set(self.relationships.keys())
+
+        # query = self._update_query_for_inner(db, model, query)
+        join = []
+        for key, relation in self.relationships.items():
+            if not relation.condition or relation.join != "inner":
+                continue
+
+            other = relation.get_table(db)
+            other = other.with_alias(f"{key}_{hash(relation)}")
+            join.append(other.on(relation.condition(model, other)))
+
         if limitby := select_kwargs.pop("limitby", None):
             # if limitby + relationships:
             # 1. get IDs of main table entries that match 'query'
             # 2. change query to .belongs(id)
             # 3. add joins etc
 
-            ids = db(query)._select(model.id, limitby=limitby)
+            kwargs = {"limitby": limitby}
+
+            if join:
+                kwargs["join"] = join
+
+            ids = db(query)._select(model.id, **kwargs)
             query = model.id.belongs(ids)
             metadata["ids"] = ids
+
+        if join:
+            select_kwargs["join"] = join
 
         left = []
 
@@ -1604,9 +1689,10 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
                 condition = typing.cast(Query, relation.condition(model, other))
                 left.append(other.on(condition))
             else:
-                # else: inner join
-                other = other.with_alias(f"{key}_{hash(relation)}")
-                query &= relation.condition(model, other)
+                # else: inner join (handled earlier)
+                other = other.with_alias(f"{key}_{hash(relation)}")  # only for replace
+                # other = other.with_alias(f"{key}_{hash(relation)}")
+                # query &= relation.condition(model, other)
 
             # if no fields of 'other' are included, add other.ALL
             # else: only add other.id if missing
@@ -1709,21 +1795,34 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         Return the amount of rows matching the current query.
         """
         db = self._get_db()
-        return db(self.query).count()
+        model = self.model
+        query = self.query
 
-    def paginate(self, limit: int, page: int = 1, verbose: bool = False) -> "PaginatedRows[T_MetaInstance]":
-        """
-        Paginate transforms the more readable `page` and `limit` to pydals internal limit and offset.
+        query = self._update_query_for_inner(db, model, query)
 
-        Note: when using relationships, this limit is only applied to the 'main' table and any number of extra rows \
-            can be loaded with relationship data!
-        """
+        return db(query).count()
+
+    def _update_query_for_inner(self, db: TypeDAL, model: "typing.Type[T_MetaInstance]", query: Query) -> Query:
+        for key, relation in self.relationships.items():
+            if not relation.condition or relation.join != "inner":
+                continue
+
+            other = relation.get_table(db)
+            other = other.with_alias(f"{key}_{hash(relation)}")
+            query &= relation.condition(model, other)
+        return query
+
+    def __paginate(
+        self,
+        limit: int,
+        page: int = 1,
+    ) -> "QueryBuilder[T_MetaInstance]":
         _from = limit * (page - 1)
         _to = limit * page
 
         available = self.count()
 
-        builder = self._extend(
+        return self._extend(
             select_kwargs={"limitby": (_from, _to)},
             metadata={
                 "pagination": {
@@ -1736,10 +1835,27 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
             },
         )
 
+    def paginate(self, limit: int, page: int = 1, verbose: bool = False) -> "PaginatedRows[T_MetaInstance]":
+        """
+        Paginate transforms the more readable `page` and `limit` to pydals internal limit and offset.
+
+        Note: when using relationships, this limit is only applied to the 'main' table and any number of extra rows \
+            can be loaded with relationship data!
+        """
+        builder = self.__paginate(limit, page)
+
         rows = typing.cast(PaginatedRows[T_MetaInstance], builder.collect(verbose=verbose, _to=PaginatedRows))
 
         rows._query_builder = builder
         return rows
+
+    def _paginate(
+        self,
+        limit: int,
+        page: int = 1,
+    ) -> str:
+        builder = self.__paginate(limit, page)
+        return builder._collect()
 
     def first(self, verbose: bool = False) -> T_MetaInstance | None:
         """
@@ -1751,6 +1867,9 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
             return self.model.from_row(row)
         else:
             return None
+
+    def _first(self) -> str:
+        return self._paginate(page=1, limit=1)
 
     def first_or_fail(self, verbose: bool = False) -> T_MetaInstance:
         """

@@ -231,3 +231,10 @@ class DummyQuery:
         A dummy query is falsey, since it can't actually be used!
         """
         return False
+
+
+def as_lambda(value: T) -> typing.Callable[..., T]:
+    """
+    Wrap value in a callable.
+    """
+    return lambda *_, **__: value

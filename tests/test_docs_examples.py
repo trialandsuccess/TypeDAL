@@ -3,6 +3,7 @@ from src.typedal import TypeDAL, TypedTable, relationship
 
 def test_example_relationships():
     db = TypeDAL("sqlite:memory")
+    # db = TypeDAL("sqlite://debug.db")
 
     class ExampleRole(TypedTable):
         name: str  # e.g. writer, editor
@@ -49,6 +50,9 @@ def test_example_relationships():
     db.define(ExampleTag)
     db.define(ExampleTagged)
 
+    for table in db.tables:
+        db[table].truncate()
+
     writer, editor = ExampleRole.bulk_insert([{"name": "writer"}, {"name": "editor"}])
 
     first = ExampleAuthor.insert(name="first", roles=[writer, editor])
@@ -68,9 +72,11 @@ def test_example_relationships():
         ]
     )
 
+    db.commit()
+
     # from user to roles, posts
 
-    user1, user2 = ExampleAuthor.join().collect()
+    user1, user2 = ExampleAuthor.join().collect(verbose=True)
 
     assert user1
     assert user2
@@ -84,7 +90,9 @@ def test_example_relationships():
     assert len(user2.roles) == 1
 
     # from post to user
-    post = ExamplePost.join().where(id=1).first()
+    builder = ExamplePost.join().where(id=1)
+
+    post = builder.first()
 
     assert post
     assert post.author.name == "first"

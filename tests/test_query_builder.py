@@ -6,7 +6,8 @@ from pydal.objects import Query
 
 from src.typedal import Relationship, TypeDAL, TypedField, TypedTable, relationship
 
-db = TypeDAL("sqlite:memory")
+# db = TypeDAL("sqlite:memory")
+db = TypeDAL("sqlite://debug.db")
 
 
 @db.define()
@@ -61,6 +62,8 @@ def _setup_data():
     TestRelationship.insert(name="Third Relation", querytable=second, value=33)
     TestRelationship.insert(name="Fourth Relation", querytable=second, value=33)
 
+    db.commit()
+
 
 def test_where_builder():
     _setup_data()
@@ -70,6 +73,9 @@ def test_where_builder():
     builder = TestQueryTable.where(lambda row: row.number < 3).where(TestQueryTable.number > 1)
     results = builder.collect()
     assert len(results) == 1
+
+    sql = builder._first()
+    assert "LIMIT 1" in sql
 
     instance = results.first()
 
@@ -96,14 +102,25 @@ def test_where_builder():
     assert not results.yet_another
 
     # delete all numbers above 2
-    result = TestQueryTable.where(lambda row: row.number > 2).delete()
+    builder = TestQueryTable.where(lambda row: row.number > 2)
+    assert builder._delete()
+    assert isinstance(builder._delete(), str)
+
+    result = builder.delete()
     assert len(result) == 2  # -> 3 and 4
 
     assert TestQueryTable.where(lambda row: row.number > 99).delete() is None  # nothing deleted
 
     assert TestQueryTable.count() == 3  # 0 - 2
 
-    result = TestQueryTable.where(lambda row: row.number == 0).update(number=5)
+    builder = TestQueryTable.where(lambda row: row.number == 0)
+    sql = builder._update(number=5)
+    assert sql
+    assert isinstance(sql, str)
+    assert "number" in sql
+    assert "5" in sql
+
+    result = builder.update(number=5)
     assert TestQueryTable.where(lambda row: row.number == -1).update(number=5) is None  # nothing updated
     assert result == [1]  # id 1 updated
 
@@ -195,6 +212,12 @@ def test_paginate():
     assert meta["min_max"] == (1, 2)
 
     next_page = result.next()
+
+    sql = TestQueryTable.join(method="left")._paginate(limit=1, page=3)
+
+    assert "LIMIT 1" in sql
+    assert "OFFSET 2" in sql
+
     result = TestQueryTable.join(method="left").paginate(limit=1, page=3)
 
     assert len(result) == 1 == len(next_page)
@@ -222,3 +245,108 @@ def test_paginate():
     assert page_dict["has_prev_page"] is False
     assert page_dict["next_page"] is None
     assert page_dict["prev_page"] is None
+
+
+def test_complex_join():
+    _setup_data()
+
+    # only rows that ahve a TestQueryTable with number == 1
+    builder = TestRelationship.join(
+        "test_query_table",
+        method="inner",
+        condition=(TestRelationship.querytable == TestQueryTable.id) & (TestQueryTable.number == 1),
+    )
+
+    assert builder.count() == 4
+
+    assert builder.collect()
+
+    # notation 2:
+
+    builder = TestRelationship.join(
+        TestQueryTable,
+        method="inner",
+        condition=lambda relation, query: (relation.querytable == query.id) & (query.number == 1),
+    )
+
+    assert builder.count() == 4
+
+    sql = builder._collect()
+    assert "JOIN" in sql
+    assert "LEFT" not in sql
+    assert "CROSS" not in sql
+
+    rows = builder.collect()
+
+    # value = 3 only ahppens for querytable.number == 0
+    assert len(rows) == 4
+    assert set(rows.column("value")) == {33}
+
+    for row in rows:
+        # note: other column name since it's a manual relationship:
+        assert row.test_query_table.number == 1
+
+    page = builder.paginate(limit=2)
+
+    assert set(page.column("value")) == {33}
+    assert len(page) == 2
+
+    page = page.next()
+    assert len(page) == 2
+    assert set(page.column("value")) == {33}
+
+    with pytest.raises(StopIteration):
+        assert not page.next()
+
+    # custom .on:
+
+    builder = TestRelationship.join(
+        TestQueryTable,
+        on=lambda relation, query: query.on((relation.querytable == query.id) & (query.number == 1)),
+    )
+
+    sql = builder._collect()
+    assert "JOIN" in sql
+    assert "LEFT" in sql
+    assert "INNER" not in sql
+    assert "CROSS" not in sql
+
+    assert builder.count() == 8  # all but with less extra's
+
+    # notation 2:
+
+    builder = TestRelationship.join(
+        TestQueryTable,
+        on=TestQueryTable.on((TestRelationship.querytable == TestQueryTable.id) & (TestQueryTable.number == 1)),
+    )
+
+    assert builder.count() == 8  # all but with less extra's
+
+    for row in builder.collect():
+        if row.test_query_table:
+            assert row.test_query_table.number == 1
+
+    # value errors:
+
+    with pytest.raises(ValueError):
+        TestRelationship.join(
+            TestQueryTable,
+            TestRelationship,
+            condition=lambda relation, query: (relation.querytable == query.id) & (query.number == 1),
+        )
+
+    with pytest.raises(ValueError):
+        TestRelationship.join(
+            TestQueryTable,
+            TestRelationship,
+            method="inner",
+            on=lambda relation, query: (relation.querytable == query.id) & (query.number == 1),
+        )
+
+    with pytest.raises(ValueError):
+        TestRelationship.join(
+            TestQueryTable,
+            method="inner",
+            condition=lambda relation, query: (relation.querytable == query.id) & (query.number == 1),
+            on=lambda relation, query: (relation.querytable == query.id) & (query.number == 1),
+        )

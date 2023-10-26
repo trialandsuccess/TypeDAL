@@ -3,6 +3,7 @@ import typing
 from src.typedal.helpers import (
     DummyQuery,
     all_annotations,
+    as_lambda,
     extract_type_optional,
     instanciate,
     is_union,
@@ -112,3 +113,16 @@ def test_dummy_query():
     assert dummy | 123 == 123
 
     assert not dummy
+
+
+def test_as_lambda():
+    o = {}
+    call = as_lambda(o)
+
+    assert call() is o
+    assert call(1, "two", {}) is o
+    o["new"] = "value"
+
+    assert call(one=1, two="two", three={}) is o
+
+    assert call()["new"] == "value"

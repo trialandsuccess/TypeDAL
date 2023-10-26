@@ -136,6 +136,10 @@ def test_orm_classes():
 
     ijsjes = Post.insert(title="IJsjes")
 
+    sql = Tag._insert(slug="post-by-henkie")
+    assert sql
+    assert isinstance(sql, str)
+
     post_by_henkie = Tag.insert(slug="post-by-henkie")
 
     melk_producten = Tag.insert(slug="melk-producten")
