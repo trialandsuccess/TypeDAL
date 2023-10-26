@@ -1,7 +1,5 @@
 import json
 
-import json_fix
-
 from src.typedal import TypedTable
 from src.typedal.for_py4web import DAL
 

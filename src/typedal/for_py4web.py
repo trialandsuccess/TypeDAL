@@ -4,6 +4,7 @@ ONLY USE IN COMBINATION WITH PY4WEB!
 
 from typing import Any
 
+import json_fix  # noqa: F401
 import threadsafevariable
 from py4web.core import ICECUBE, Fixture
 
