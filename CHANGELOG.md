@@ -2,6 +2,18 @@
 
 <!--next-version-placeholder-->
 
+## v2.0.2 (2023-11-01)
+
+### Fix
+
+* Proper capitalization on pypi ([`8a0c320`](https://github.com/trialandsuccess/TypeDAL/commit/8a0c32043b2d0e05915f6cf3ff8f33da1b227b6a))
+
+### Documentation
+
+* Updated readme ([`7706e75`](https://github.com/trialandsuccess/TypeDAL/commit/7706e75053c1333f850ccd59c089690f7f3b1c4e))
+* Added one-to-one relationship example (and included it in tests) ([`dac1721`](https://github.com/trialandsuccess/TypeDAL/commit/dac172146f7e97caa212eb277a9971bae565faf7))
+* Fix typo ([`77981c9`](https://github.com/trialandsuccess/TypeDAL/commit/77981c9cabe354e78a10fe460bdd3ec2d6354316))
+
 ## v2.0.1 (2023-11-01)
 
 ### Fix
