@@ -2,6 +2,17 @@
 
 <!--next-version-placeholder-->
 
+## v2.0.1 (2023-11-01)
+
+### Fix
+
+* Or_fail functions can now be passed a specific error ([`75b49e9`](https://github.com/trialandsuccess/TypeDAL/commit/75b49e973ad884ab282571ef4122d1041e81cb06))
+
+### Documentation
+
+* Set urls from relative to absolute so they work on pypi ([`d71e7c4`](https://github.com/trialandsuccess/TypeDAL/commit/d71e7c43a19001774a0296d4fbc0515c812d465b))
+* Merged prerelease changelog entries into one 2.0.0 entry ([`f2d73e1`](https://github.com/trialandsuccess/TypeDAL/commit/f2d73e1f256ed21d1a8f2f6499a155d4a8c4c05d))
+
 ## v2.0.0 (2023-11-01)
 
 ### Features
