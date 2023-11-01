@@ -26,6 +26,7 @@ Most notably, a Typed Query Builder that sees your table classes as models with 
 See [3. Building Queries](./docs/3_building_queries.md) for more details.
 
 ## Quick Overview
+
 Below you'll find a quick overview of translation from pydal to TypeDAL. For more info, see [the docs](./docs).
 
 ### Translations from pydal to typedal
@@ -143,7 +144,11 @@ TableName.insert(fieldname="value")
 <td>
 
 ```python
-rows = db(db.table_name).select()  # -> Any (Rows)
+# all:
+all_rows = db(db.table_name).select()  # -> Any (Rows)
+# some:
+rows = db((db.table_name.id > 5) & (db.table_name.id < 50)).select(db.table_name.id)
+# one:
 row = db.table_name(id=1)  # -> Any (Row)
 ```
 
@@ -154,15 +159,26 @@ row = db.table_name(id=1)  # -> Any (Row)
 <td>
 
 ```python
-rows: TypedRows[TableName] = db(db.table_name).select()  # -> TypedRows[TableName]
-row: TableName = db.table_name(id=1)  # -> TableName
+# all:
+all_rows = TableName.collect()  # or .all()
+# some:
+# order of select and where is interchangable here
+rows = TableName.select(Tablename.id).where(TableName.id > 5).where(TableName.id < 50).collect()
+# one:
+row = TableName(id=1)  # or .where(...).first()
+
 ```
 
 <td>
 
 ```python
-rows: TypedRows[TableName] = db(TableName).select()  # -> TypedRows[TableName]
-row = TableName(id=1)  # -> TableName
+# you can also still use the old syntax and type hint on top of it;
+# all:
+all_rows: TypedRows[TableName] = db(db.table_name).select()
+# some:
+rows: TypedRows[TableName] = db((db.table_name.id > 5) & (db.table_name.id < 50)).select(db.table_name.id)
+# one:
+row: TableName = db.table_name(id=1)
 ```
 
 </td>
@@ -199,6 +215,20 @@ row = TableName(id=1)  # -> TableName
 ### All Types
 
 See [2. Defining Tables](docs/2_defining_tables.md)
+
+## Roadmap
+
+This section contains a non-exhaustive list of planned features for future feature releases:
+
+- 2.1
+    - Caching: adding a `.cache()` operation to the query builder which loads a repeated execution from cache (via
+      pickling of the final object). Optionally, dependency tracking could be added to automatically expire cache items
+      when one of the underlying objects have changed in the database.
+- 2.2
+    - Migrations: currently, you can use pydal's automatic migrations or disable those and manage them yourself, but
+      adding something like [`edwh-migrate`](https://github.com/educationwarehouse/migrate#readme)
+      with [`pydal2sql`](https://github.com/robinvandernoord/pydal2sql-core) as an option could make this project more
+      production-friendly.
 
 ## Caveats
 
