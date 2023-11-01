@@ -1813,7 +1813,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
         return _to(rows, self.model, records, metadata=metadata)
 
-    def collect_or_fail(self) -> "TypedRows[T_MetaInstance]":
+    def collect_or_fail(self, exception: Exception = None) -> "TypedRows[T_MetaInstance]":
         """
         Call .collect() and raise an error if nothing found.
 
@@ -1821,8 +1821,11 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         """
         if result := self.collect():
             return result
-        else:
-            raise ValueError("Nothing found!")
+
+        if not exception:
+            exception = ValueError("Nothing found!")
+
+        raise exception
 
     def __iter__(self) -> typing.Generator[T_MetaInstance, None, None]:
         """
@@ -1928,7 +1931,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
     def _first(self) -> str:
         return self._paginate(page=1, limit=1)
 
-    def first_or_fail(self, verbose: bool = False) -> T_MetaInstance:
+    def first_or_fail(self, exception: Exception = None, verbose: bool = False) -> T_MetaInstance:
         """
         Call .first() and raise an error if nothing found.
 
@@ -1936,8 +1939,11 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         """
         if inst := self.first(verbose=verbose):
             return inst
-        else:
-            raise ValueError("Nothing found!")
+
+        if not exception:
+            exception = ValueError("Nothing found!")
+
+        raise exception
 
 
 class TypedField(typing.Generic[T_Value]):  # pragma: no cover

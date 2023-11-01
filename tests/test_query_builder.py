@@ -138,8 +138,14 @@ def test_where_builder():
     with pytest.raises(ValueError):
         TestQueryTable.where(id=-1).collect_or_fail()
 
+    with pytest.raises(TypeError):
+        TestQueryTable.where(id=-1).collect_or_fail(TypeError("pytest"))
+
     with pytest.raises(ValueError):
         assert not TestQueryTable.where(id=-1).first_or_fail()
+
+    with pytest.raises(TypeError):
+        assert not TestQueryTable.where(id=-1).first_or_fail(TypeError("pytest"))
 
     # try to break stuff:
 
