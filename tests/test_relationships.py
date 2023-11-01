@@ -1,13 +1,17 @@
 import types
 import typing
+from pprint import pp
 from uuid import uuid4
 
 import pytest
 
 from src.typedal import Relationship, TypeDAL, TypedField, TypedTable, relationship
+from src.typedal.caching import remove_cache
 from src.typedal.core import to_relationship
 
 db = TypeDAL("sqlite:memory")
+
+
 # db = TypeDAL("sqlite://debug.db")
 
 
@@ -78,6 +82,8 @@ def _setup_data():
     # clean up
     for table in db.tables:
         db[table].truncate()
+
+    db._timings.clear()
 
     # roles
     roles = ["reader", "writer", "editor"]
@@ -297,8 +303,83 @@ def test_reprs():
     assert empty.get_table_name() == "new"
 
 
+def test_caching():
+    _setup_data()
+
+    uncached = User.join().collect_or_fail()
+    cached = User.cache().join().collect_or_fail()
+    cached_user_only = User.join().cache(User.id).collect_or_fail()
+
+    assert uncached.as_dict() == cached.as_dict() == cached_user_only.as_dict()
+
+    assert not uncached.metadata.get("cache", {}).get("enabled")
+    assert cached.metadata.get("cache", {}).get("enabled")
+    assert cached_user_only.metadata.get("cache", {}).get("enabled")
+
+    assert not uncached.metadata.get("cache", {}).get("depends_on")
+    assert not cached.metadata.get("cache", {}).get("depends_on")
+    assert cached_user_only.metadata.get("cache", {}).get("depends_on")
+
+    assert uncached.metadata.get("cache", {}).get("status") != "cached"
+    assert cached.metadata.get("cache", {}).get("status") != "cached"
+    assert cached_user_only.metadata.get("cache", {}).get("status") != "cached"
+
+    # assert not uncached.metadata.get("cached_at")
+    # assert not cached.metadata.get("cached_at")
+    # assert not cached_user_only.metadata.get("cached_at")
+
+    uncached2 = User.join().collect_or_fail()
+    cached2 = User.cache().join().collect_or_fail()
+    cached_user_only2 = User.join().cache(User.id).collect_or_fail()
+
+    assert (
+        len(uncached2)
+        == len(uncached)
+        == len(cached2)
+        == len(cached)
+        == len(cached_user_only2)
+        == len(cached_user_only)
+    )
+
+    assert cached.first().gid == cached2.first().gid
+
+    assert (
+        [_.name for _ in uncached2.first().roles]
+        == [_.name for _ in cached.first().roles]
+        == [_.name for _ in cached2.first().roles]
+    )
+
+    assert not uncached2.metadata.get("cache", {}).get("enabled")
+    assert cached2.metadata.get("cache", {}).get("enabled")
+    assert cached_user_only2.metadata.get("cache", {}).get("enabled")
+
+    assert not uncached2.metadata.get("cache", {}).get("depends_on")
+    assert not cached2.metadata.get("cache", {}).get("depends_on")
+    assert cached_user_only2.metadata.get("cache", {}).get("depends_on")
+
+    assert uncached2.metadata.get("cache", {}).get("status") != "cached"
+    assert cached2.metadata.get("cache", {}).get("status") == "cached"
+    assert cached_user_only2.metadata.get("cache", {}).get("status") == "cached"
+
+    # now lets update (and invalidate) something
+    Role.where(name="reader").update(name="new-reader")
+
+    uncached3 = User.join().collect_or_fail()
+    cached3 = User.cache().join().collect_or_fail()
+    cached_user_only3 = User.join().cache(User.id).collect_or_fail()
+
+    assert "new-reader" in {_.name for _ in uncached3.first().roles}
+    assert "new-reader" in {_.name for _ in cached3.first().roles}  # should be dropped by dependency
+    assert "new-reader" not in {_.name for _ in cached_user_only3.first().roles}  # still old value
+
+    assert uncached3.metadata.get("cache", {}).get("status") != "cached"
+    assert cached3.metadata.get("cache", {}).get("status") != "cached"
+    assert cached_user_only3.metadata.get("cache", {}).get("status") == "cached"
+
+    # and again but with something that shouldn't invalidate:
+    ...
+
 def test_illegal():
     with pytest.raises(ValueError), pytest.warns(UserWarning):
-
         class HasRelationship:
             something = relationship("...", condition=lambda: 1, on=lambda: 2)

@@ -318,58 +318,60 @@ class TypeDAL(pydal.DAL):  # type: ignore
     Drop-in replacement for pyDAL with layer to convert class-based table definitions to classical pydal define_tables.
     """
 
-    # dal: Table
-    # def __init__(self,
-    #              uri="sqlite://dummy.db",
-    #              pool_size=0,
-    #              folder=None,
-    #              db_codec="UTF-8",
-    #              check_reserved=None,
-    #              migrate=True,
-    #              fake_migrate=False,
-    #              migrate_enabled=True,
-    #              fake_migrate_all=False,
-    #              decode_credentials=False,
-    #              driver_args=None,
-    #              adapter_args=None,
-    #              attempts=5,
-    #              auto_import=False,
-    #              bigint_id=False,
-    #              debug=False,
-    #              lazy_tables=False,
-    #              db_uid=None,
-    #              after_connection=None,
-    #              tables=None,
-    #              ignore_field_case=True,
-    #              entity_quoting=True,
-    #              table_hash=None,
-    #              ):
-    #     super().__init__(
-    #         uri,
-    #         pool_size,
-    #         folder,
-    #         db_codec,
-    #         check_reserved,
-    #         migrate,
-    #         fake_migrate,
-    #         migrate_enabled,
-    #         fake_migrate_all,
-    #         decode_credentials,
-    #         driver_args,
-    #         adapter_args,
-    #         attempts,
-    #         auto_import,
-    #         bigint_id,
-    #         debug,
-    #         lazy_tables,
-    #         db_uid,
-    #         after_connection,
-    #         tables,
-    #         ignore_field_case,
-    #         entity_quoting,
-    #         table_hash,
-    #     )
-    #     self.representers[TypedField] = lambda x: x
+    def __init__(
+        self,
+        uri: str = "sqlite://dummy.db",
+        pool_size: int = 0,
+        folder: Optional[str] = None,
+        db_codec: str = "UTF-8",
+        check_reserved: Optional[list[str]] = None,
+        migrate: bool = True,
+        fake_migrate: bool = False,
+        migrate_enabled: bool = True,
+        fake_migrate_all: bool = False,
+        decode_credentials: bool = False,
+        driver_args: Optional[dict[str, Any]] = None,
+        adapter_args: Optional[dict[str, Any]] = None,
+        attempts: int = 5,
+        auto_import: bool = False,
+        bigint_id: bool = False,
+        debug: bool = False,
+        lazy_tables: bool = False,
+        db_uid: Optional[str] = None,
+        after_connection: typing.Callable[..., Any] = None,
+        tables: Optional[list[str]] = None,
+        ignore_field_case: bool = True,
+        entity_quoting: bool = True,
+        table_hash: Optional[str] = None,
+    ) -> None:
+        super().__init__(
+            uri,
+            pool_size,
+            folder,
+            db_codec,
+            check_reserved,
+            migrate,
+            fake_migrate,
+            migrate_enabled,
+            fake_migrate_all,
+            decode_credentials,
+            driver_args,
+            adapter_args,
+            attempts,
+            auto_import,
+            bigint_id,
+            debug,
+            lazy_tables,
+            db_uid,
+            after_connection,
+            tables,
+            ignore_field_case,
+            entity_quoting,
+            table_hash,
+        )
+
+        self.define(_TypedalCache)
+        self.define(_TypedalCacheDependency)
 
     default_kwargs: typing.ClassVar[typing.Dict[str, Any]] = {
         # fields are 'required' (notnull) by default:
@@ -380,6 +382,13 @@ class TypeDAL(pydal.DAL):  # type: ignore
     _class_map: typing.ClassVar[dict[str, typing.Type["TypedTable"]]] = {}
 
     def _define(self, cls: typing.Type[T]) -> typing.Type[T]:
+        # todo: new relationship item added should also invalidate (previously unrelated) cache result
+
+        # todo: option to enable/disable cache dependency behavior:
+        #   - don't set _before_update and _before_delete
+        #   - don't add TypedalCacheDependency entry
+        #   - don't invalidate other item on new row of this type
+
         # when __future__.annotations is implemented, cls.__annotations__ will not work anymore as below.
         # proper way to handle this would be (but gives error right now due to Table implementing magic methods):
         # typing.get_type_hints(cls, globalns=None, localns=None)
@@ -453,6 +462,11 @@ class TypeDAL(pydal.DAL):  # type: ignore
             self._class_map[str(table)] = cls
         else:
             warnings.warn("db.define used without inheriting TypedTable. This could lead to strange problems!")
+
+        if not tablename.startswith("typedal_"):
+            # todo: config
+            table._before_update.append(lambda s, _: _remove_cache(s, tablename))
+            table._before_delete.append(lambda s: _remove_cache(s, tablename))
 
         return cls
 
@@ -917,6 +931,9 @@ class TableMeta(type):
         """
         return QueryBuilder(self).where(*a, **kw)
 
+    def cache(self: typing.Type[T_MetaInstance], *deps: Any) -> "QueryBuilder[T_MetaInstance]":
+        return QueryBuilder(self).cache(*deps)
+
     def count(self: typing.Type[T_MetaInstance]) -> int:
         """
         See QueryBuilder.count!
@@ -1049,6 +1066,172 @@ class TableMeta(type):
     # @typing.dataclass_transform()
 
 
+class TypedField(typing.Generic[T_Value]):  # pragma: no cover
+    """
+    Typed version of pydal.Field, which will be converted to a normal Field in the background.
+    """
+
+    # will be set by .bind on db.define
+    name = ""
+    _db: Optional[pydal.DAL] = None
+    _rname: Optional[str] = None
+    _table: Optional[Table] = None
+    _field: Optional[Field] = None
+
+    _type: T_annotation
+    kwargs: Any
+
+    def __init__(self, _type: typing.Type[T_Value] | types.UnionType = str, /, **settings: Any) -> None:  # type: ignore
+        """
+        A TypedFieldType should not be inited manually, but TypedField (from `fields.py`) should be used!
+        """
+        self._type = _type
+        self.kwargs = settings
+        super().__init__()
+
+    @typing.overload
+    def __get__(self, instance: T_MetaInstance, owner: typing.Type[T_MetaInstance]) -> T_Value:  # pragma: no cover
+        """
+        row.field -> (actual data).
+        """
+
+    @typing.overload
+    def __get__(self, instance: None, owner: "typing.Type[TypedTable]") -> "TypedField[T_Value]":  # pragma: no cover
+        """
+        Table.field -> Field.
+        """
+
+    def __get__(
+        self, instance: T_MetaInstance | None, owner: typing.Type[T_MetaInstance]
+    ) -> typing.Union[T_Value, "TypedField[T_Value]"]:
+        """
+        Since this class is a Descriptor field, \
+            it returns something else depending on if it's called on a class or instance.
+
+        (this is mostly for mypy/typing)
+        """
+        if instance:
+            # this is only reached in a very specific case:
+            # an instance of the object was created with a specific set of fields selected (excluding the current one)
+            # in that case, no value was stored in the owner -> return None (since the field was not selected)
+            return typing.cast(T_Value, None)  # cast as T_Value so mypy understands it for selected fields
+        else:
+            # getting as class -> return actual field so pydal understands it when using in query etc.
+            return typing.cast(TypedField[T_Value], self._field)  # pretend it's still typed for IDE support
+
+    def __str__(self) -> str:
+        """
+        String representation of a Typed Field.
+
+        If `type` is set explicitly (e.g. TypedField(str, type="text")), that type is used: `TypedField.text`,
+        otherwise the type annotation is used (e.g. TypedField(str) -> TypedField.str)
+        """
+        return str(self._field) if self._field else ""
+
+    def __repr__(self) -> str:
+        """
+        More detailed string representation of a Typed Field.
+
+        Uses __str__ and adds the provided extra options (kwargs) in the representation.
+        """
+        s = self.__str__()
+
+        if "type" in self.kwargs:
+            # manual type in kwargs supplied
+            t = self.kwargs["type"]
+        elif issubclass(type, type(self._type)):
+            # normal type, str.__name__ = 'str'
+            t = getattr(self._type, "__name__", str(self._type))
+        elif t_args := typing.get_args(self._type):
+            # list[str] -> 'str'
+            t = t_args[0].__name__
+        else:  # pragma: no cover
+            # fallback - something else, may not even happen, I'm not sure
+            t = self._type
+
+        s = f"TypedField[{t}].{s}" if s else f"TypedField[{t}]"
+
+        kw = self.kwargs.copy()
+        kw.pop("type", None)
+        return f"<{s} with options {kw}>"
+
+    def _to_field(self, extra_kwargs: typing.MutableMapping[str, Any]) -> Optional[str]:
+        """
+        Convert a Typed Field instance to a pydal.Field.
+        """
+        other_kwargs = self.kwargs.copy()
+        extra_kwargs.update(other_kwargs)
+        return extra_kwargs.pop("type", False) or TypeDAL._annotation_to_pydal_fieldtype(self._type, extra_kwargs)
+
+    def bind(self, field: pydal.objects.Field, table: pydal.objects.Table) -> None:
+        """
+        Bind the right db/table/field info to this class, so queries can be made using `Class.field == ...`.
+        """
+        self._table = table
+        self._field = field
+
+    def __getattr__(self, key: str) -> Any:
+        """
+        If the regular getattribute does not work, try to get info from the related Field.
+        """
+        with contextlib.suppress(AttributeError):
+            return super().__getattribute__(key)
+
+        # try on actual field:
+        return getattr(self._field, key)
+
+    def __eq__(self, other: Any) -> Query:
+        """
+        Performing == on a Field will result in a Query.
+        """
+        return typing.cast(Query, self._field == other)
+
+    def __ne__(self, other: Any) -> Query:
+        """
+        Performing != on a Field will result in a Query.
+        """
+        return typing.cast(Query, self._field != other)
+
+    def __gt__(self, other: Any) -> Query:
+        """
+        Performing > on a Field will result in a Query.
+        """
+        return typing.cast(Query, self._field > other)
+
+    def __lt__(self, other: Any) -> Query:
+        """
+        Performing < on a Field will result in a Query.
+        """
+        return typing.cast(Query, self._field < other)
+
+    def __ge__(self, other: Any) -> Query:
+        """
+        Performing >= on a Field will result in a Query.
+        """
+        return typing.cast(Query, self._field >= other)
+
+    def __le__(self, other: Any) -> Query:
+        """
+        Performing <= on a Field will result in a Query.
+        """
+        return typing.cast(Query, self._field <= other)
+
+    def __hash__(self) -> int:
+        """
+        Shadow Field.__hash__.
+        """
+        return hash(self._field)
+
+    def __invert__(self) -> Expression:
+        """
+        Performing ~ on a Field will result in an Expression.
+        """
+        if not self._field:  # pragma: no cover
+            raise ValueError("Unbound Field can not be inverted!")
+
+        return typing.cast(Expression, ~self._field)
+
+
 class TypedTable(metaclass=TableMeta):
     """
     Enhanded modeling system on top of pydal's Table that adds typing and additional functionality.
@@ -1084,6 +1267,7 @@ class TypedTable(metaclass=TableMeta):
             MyTable(MyTable.id == 1)
         """
         table = cls._ensure_table_defined()
+        inst = super().__new__(cls)
 
         if isinstance(row_or_id, TypedTable):
             # existing typed table instance!
@@ -1092,13 +1276,16 @@ class TypedTable(metaclass=TableMeta):
             row = row_or_id
         elif row_or_id is not None:
             row = table(row_or_id, **filters)
-        else:
+        elif filters:
             row = table(**filters)
+            print(f"{row=}, {filters=}")
+        else:
+            # dummy object
+            return inst
 
         if not row:
             return None  # type: ignore
 
-        inst = super().__new__(cls)
         inst._row = row
         inst.__dict__.update(row)
         inst._setup_instance_methods()
@@ -1340,9 +1527,371 @@ class TypedTable(metaclass=TableMeta):
 
     # __del__ is also called on the end of a scope so don't remove records on every del!!
 
+    # pickling:
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        # as_dict also includes table info, so dump as json to only get the actual row data
+        # then create a new (more empty) row object:
+        state["_row"] = Row(json.loads(state["_row"]))
+        self.__dict__ |= state
+
+    def __getstate__(self) -> dict[str, Any]:
+        """
+        State to save when pickling.
+
+        Prevents db connection from being pickled.
+        Similar to as_dict but without changing the data of the relationships (dill does that recursively)
+        """
+        row = self._ensure_matching_row()
+        result: dict[str, Any] = row.as_dict()
+
+        if _with := getattr(self, "_with", None):
+            for relationship in _with:
+                data = self.get(relationship)
+
+                result[relationship] = data
+
+        result["_row"] = self._row.as_json() if self._row else ""
+        return result
+
 
 # backwards compat:
 TypedRow = TypedTable
+
+
+class TypedRows(typing.Collection[T_MetaInstance], Rows):
+    """
+    Slighly enhaned and typed functionality on top of pydal Rows (the result of a select).
+    """
+
+    records: dict[int, T_MetaInstance]
+    # _rows: Rows
+    model: typing.Type[T_MetaInstance]
+    metadata: dict[str, Any]
+
+    # pseudo-properties: actually stored in _rows
+    db: TypeDAL
+    colnames: list[str]
+    fields: list[Field]
+    colnames_fields: list[Field]
+    response: list[tuple[Any, ...]]
+
+    def __init__(
+        self,
+        rows: Rows,
+        model: typing.Type[T_MetaInstance],
+        records: dict[int, T_MetaInstance] = None,
+        metadata: dict[str, Any] = None,
+    ) -> None:
+        """
+        Should not be called manually!
+
+        Normally, the `records` from an existing `Rows` object are used
+            but these can be overwritten with a `records` dict.
+        `metadata` can be any (un)structured data
+        `model` is a Typed Table class
+        """
+        records = records or {row.id: model(row) for row in rows}
+        super().__init__(rows.db, records, rows.colnames, rows.compact, rows.response, rows.fields)
+        self.model = model
+        self.metadata = metadata or {}
+
+    def __len__(self) -> int:
+        """
+        Return the count of rows.
+        """
+        return len(self.records)
+
+    def __iter__(self) -> typing.Iterator[T_MetaInstance]:
+        """
+        Loop through the rows.
+        """
+        yield from self.records.values()
+
+    def __contains__(self, ind: Any) -> bool:
+        """
+        Check if an id exists in this result set.
+        """
+        return ind in self.records
+
+    def first(self) -> T_MetaInstance | None:
+        """
+        Get the row with the lowest id.
+        """
+        if not self.records:
+            return None
+
+        return next(iter(self))
+
+    def last(self) -> T_MetaInstance | None:
+        """
+        Get the row with the highest id.
+        """
+        if not self.records:
+            return None
+
+        max_id = max(self.records.keys())
+        return self[max_id]
+
+    def find(
+        self, f: typing.Callable[[T_MetaInstance], Query], limitby: tuple[int, int] = None
+    ) -> "TypedRows[T_MetaInstance]":
+        """
+        Returns a new Rows object, a subset of the original object, filtered by the function `f`.
+        """
+        if not self.records:
+            return self.__class__(self, self.model, {})
+
+        records = {}
+        if limitby:
+            _min, _max = limitby
+        else:
+            _min, _max = 0, len(self)
+        count = 0
+        for i, row in self.records.items():
+            if f(row):
+                if _min <= count:
+                    records[i] = row
+                count += 1
+                if count == _max:
+                    break
+
+        return self.__class__(self, self.model, records)
+
+    def exclude(self, f: typing.Callable[[T_MetaInstance], Query]) -> "TypedRows[T_MetaInstance]":
+        """
+        Removes elements from the calling Rows object, filtered by the function `f`, \
+            and returns a new Rows object containing the removed elements.
+        """
+        if not self.records:
+            return self.__class__(self, self.model, {})
+        removed = {}
+        to_remove = []
+        for i in self.records:
+            row = self[i]
+            if f(row):
+                removed[i] = self.records[i]
+                to_remove.append(i)
+
+        [self.records.pop(i) for i in to_remove]
+
+        return self.__class__(
+            self,
+            self.model,
+            removed,
+        )
+
+    def sort(self, f: typing.Callable[[T_MetaInstance], Any], reverse: bool = False) -> list[T_MetaInstance]:
+        """
+        Returns a list of sorted elements (not sorted in place).
+        """
+        return [r for (r, s) in sorted(zip(self.records.values(), self), key=lambda r: f(r[1]), reverse=reverse)]
+
+    def __str__(self) -> str:
+        """
+        Simple string representation.
+        """
+        return f"<TypedRows with {len(self)} records>"
+
+    def __repr__(self) -> str:
+        """
+        Print a table on repr().
+        """
+        data = self.as_dict()
+        headers = list(next(iter(data.values())).keys())
+        return mktable(data, headers)
+
+    def group_by_value(
+        self, *fields: "str | Field | TypedField[T]", one_result: bool = False, **kwargs: Any
+    ) -> dict[T, list[T_MetaInstance]]:
+        """
+        Group the rows by a specific field (which will be the dict key).
+        """
+        kwargs["one_result"] = one_result
+        result = super().group_by_value(*fields, **kwargs)
+        return typing.cast(dict[T, list[T_MetaInstance]], result)
+
+    def column(self, column: str = None) -> list[Any]:
+        """
+        Get a list of all values in a specific column.
+
+        Example:
+                rows.column('name') -> ['Name 1', 'Name 2', ...]
+        """
+        return typing.cast(list[Any], super().column(column))
+
+    def as_csv(self) -> str:
+        """
+        Dump the data to csv.
+        """
+        return typing.cast(str, super().as_csv())
+
+    def as_dict(
+        self,
+        key: str = None,
+        compact: bool = False,
+        storage_to_dict: bool = False,
+        datetime_to_str: bool = False,
+        custom_types: list[type] = None,
+    ) -> dict[int, dict[str, Any]]:
+        """
+        Get the data in a dict of dicts.
+        """
+        if any([key, compact, storage_to_dict, datetime_to_str, custom_types]):
+            # functionality not guaranteed
+            return typing.cast(
+                dict[int, dict[str, Any]],
+                super().as_dict(
+                    key or "id",
+                    compact,
+                    storage_to_dict,
+                    datetime_to_str,
+                    custom_types,
+                ),
+            )
+
+        return {k: v.as_dict() for k, v in self.records.items()}
+
+    def as_json(self, mode: str = "object", default: typing.Callable[[Any], Any] = None) -> str:
+        """
+        Turn the data into a dict and then dump to JSON.
+        """
+        return typing.cast(str, super().as_json(mode=mode, default=default))
+
+    def json(self, mode: str = "object", default: typing.Callable[[Any], Any] = None) -> str:
+        """
+        Turn the data into a dict and then dump to JSON.
+        """
+        return typing.cast(str, super().as_json(mode=mode, default=default))
+
+    def as_list(
+        self,
+        compact: bool = False,
+        storage_to_dict: bool = False,
+        datetime_to_str: bool = False,
+        custom_types: list[type] = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Get the data in a list of dicts.
+        """
+        if any([compact, storage_to_dict, datetime_to_str, custom_types]):
+            return typing.cast(
+                list[dict[str, Any]], super().as_list(compact, storage_to_dict, datetime_to_str, custom_types)
+            )
+        return [_.as_dict() for _ in self.records.values()]
+
+    def __getitem__(self, item: int) -> T_MetaInstance:
+        """
+        You can get a specific row by ID from a typedrows by using rows[idx] notation.
+
+        Since pydal's implementation differs (they expect a list instead of a dict with id keys),
+        using rows[0] will return the first row, regardless of its id.
+        """
+        try:
+            return self.records[item]
+        except KeyError as e:
+            if item == 0 and (row := self.first()):
+                # special case: pydal internals think Rows.records is a list, not a dict
+                return row
+
+            raise e
+
+    def get(self, item: int) -> typing.Optional[T_MetaInstance]:
+        """
+        Get a row by ID, or receive None if it isn't in this result set.
+        """
+        return self.records.get(item)
+
+    def join(
+        self,
+        field: "Field | TypedField[Any]",
+        name: str = None,
+        constraint: Query = None,
+        fields: list[str | Field] = None,
+        orderby: Optional[str | Field] = None,
+    ) -> T_MetaInstance:
+        """
+        This can be used to JOIN with some relationships after the initial select.
+
+        Using the querybuilder's .join() method is prefered!
+        """
+        result = super().join(field, name, constraint, fields or [], orderby)
+        return typing.cast(T_MetaInstance, result)
+
+    def export_to_csv_file(
+        self,
+        ofile: typing.TextIO,
+        null: Any = "<NULL>",
+        delimiter: str = ",",
+        quotechar: str = '"',
+        quoting: int = csv.QUOTE_MINIMAL,
+        represent: bool = False,
+        colnames: list[str] = None,
+        write_colnames: bool = True,
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
+        """
+        Shadow export_to_csv_file from Rows, but with typing.
+
+        See http://web2py.com/books/default/chapter/29/06/the-database-abstraction-layer?search=export_to_csv_file#Exporting-and-importing-data
+        """
+        super().export_to_csv_file(
+            ofile,
+            null,
+            *args,
+            delimiter=delimiter,
+            quotechar=quotechar,
+            quoting=quoting,
+            represent=represent,
+            colnames=colnames or self.colnames,
+            write_colnames=write_colnames,
+            **kwargs,
+        )
+
+    @classmethod
+    def from_rows(
+        cls, rows: Rows, model: typing.Type[T_MetaInstance], metadata: dict[str, Any] = None
+    ) -> "TypedRows[T_MetaInstance]":
+        """
+        Internal method to convert a Rows object to a TypedRows.
+        """
+        return cls(rows, model, metadata=metadata)
+
+    def __json__(self) -> dict[str, Any]:
+        """
+        For json-fix.
+        """
+        return typing.cast(dict[str, Any], self.as_dict())
+
+    # def __reduce_ex__(self, _):
+    #     # Create a tuple with the class constructor and a dictionary of attributes to serialize
+    #     data = {
+    #         'rows': {},
+    #         'model': str(self.model),
+    #         'records': {k: v.as_dict() for k, v in self.records.items()},
+    #         'metadata': prepare(self.metadata),
+    #     }
+    #     return (self.__class__, ({}, "", {}, {}))
+
+    def __getstate__(self) -> dict[str, Any]:
+        return {
+            "metadata": json.dumps(self.metadata, default=str),
+            "records": self.records,
+        }
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        state["metadata"] = json.loads(state["metadata"])
+        self.__dict__.update(state)
+
+
+from .caching import (  # noqa: E402
+    _remove_cache,
+    _TypedalCache,
+    _TypedalCacheDependency,
+    create_and_hash_cache_key,
+    load_from_cache,
+    save_to_cache,
+)
 
 
 class QueryBuilder(typing.Generic[T_MetaInstance]):
@@ -1544,6 +2093,17 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
         return self._extend(relationships=relationships)
 
+    def cache(self, *deps: Any) -> "QueryBuilder[T_MetaInstance]":
+        existing = self.metadata.get("cache", {})
+        return self._extend(
+            metadata={
+                "cache": {
+                    "enabled": True,
+                    "depends_on": existing.get("depends_on", []) + [str(_) for _ in deps],
+                }
+            }
+        )
+
     def _get_db(self) -> TypeDAL:
         if db := self.model._db:
             return db
@@ -1590,7 +2150,9 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         db = self._get_db()
         return str(db(self.query)._update(**fields))
 
-    def _before_query(self, mut_metadata: dict[str, Any]) -> tuple[Query, list[Any], dict[str, Any]]:
+    def _before_query(
+        self, mut_metadata: dict[str, Any], add_id: bool = True
+    ) -> tuple[Query, list[Any], dict[str, Any]]:
         select_args = [self._select_arg_convert(_) for _ in self.select_args] or [self.model.ALL]
         select_kwargs = self.select_kwargs.copy()
         query = self.query
@@ -1600,7 +2162,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         select_fields = ", ".join([str(_) for _ in select_args])
         tablename = str(model)
 
-        if f"{tablename}.id" not in select_fields:
+        if add_id and f"{tablename}.id" not in select_fields:
             # fields of other selected, but required ID is missing.
             select_args.append(model.id)
 
@@ -1609,13 +2171,13 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
         return query, select_args, select_kwargs
 
-    def to_sql(self) -> str:
+    def to_sql(self, add_id: bool = False) -> str:
         """
         Generate the SQL for the built query.
         """
         db = self._get_db()
 
-        query, select_args, select_kwargs = self._before_query({})
+        query, select_args, select_kwargs = self._before_query({}, add_id=add_id)
 
         return str(db(query)._select(*select_args, **select_kwargs))
 
@@ -1625,7 +2187,22 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         """
         return self.to_sql()
 
-    def collect(self, verbose: bool = False, _to: typing.Type["TypedRows[Any]"] = None) -> "TypedRows[T_MetaInstance]":
+    def collect_cached(self, metadata: dict[str, Any]) -> "TypedRows[T_MetaInstance] | None":
+        _, key = create_and_hash_cache_key(
+            self.model,
+            metadata,
+            self.query,
+            self.select_args,
+            self.select_kwargs,
+            self.relationships.keys(),
+        )
+        metadata["cache"]["key"] = key
+
+        return load_from_cache(key)
+
+    def collect(
+        self, verbose: bool = False, _to: typing.Type["TypedRows[Any]"] = None, add_id: bool = True
+    ) -> "TypedRows[T_MetaInstance]":
         """
         Execute the built query and turn it into model instances, while handling relationships.
         """
@@ -1635,7 +2212,10 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         db = self._get_db()
         metadata = self.metadata.copy()
 
-        query, select_args, select_kwargs = self._before_query(metadata)
+        if metadata.get("cache", {}).get("enabled") and (result := self.collect_cached(metadata)):
+            return result
+
+        query, select_args, select_kwargs = self._before_query(metadata, add_id=add_id)
 
         metadata["sql"] = db(query)._select(*select_args, **select_kwargs)
 
@@ -1653,12 +2233,15 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
         if not self.relationships:
             # easy
-            return _to.from_rows(rows, self.model, metadata=metadata)
+            instance = _to.from_rows(rows, self.model, metadata=metadata)
 
-        # harder: try to match rows to the belonging objects
-        # assume structure of {'table': <data>} per row.
-        # if that's not the case, return default behavior again
-        return self._collect_with_relationships(rows, metadata=metadata, _to=_to)
+        else:
+            # harder: try to match rows to the belonging objects
+            # assume structure of {'table': <data>} per row.
+            # if that's not the case, return default behavior again
+            instance = self._collect_with_relationships(rows, metadata=metadata, _to=_to)
+
+        return save_to_cache(instance, rows)
 
     def _handle_relationships_pre_select(
         self,
@@ -1946,479 +2529,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         raise exception
 
 
-class TypedField(typing.Generic[T_Value]):  # pragma: no cover
-    """
-    Typed version of pydal.Field, which will be converted to a normal Field in the background.
-    """
-
-    # will be set by .bind on db.define
-    name = ""
-    _db: Optional[pydal.DAL] = None
-    _rname: Optional[str] = None
-    _table: Optional[Table] = None
-    _field: Optional[Field] = None
-
-    _type: T_annotation
-    kwargs: Any
-
-    def __init__(self, _type: typing.Type[T_Value] | types.UnionType = str, /, **settings: Any) -> None:  # type: ignore
-        """
-        A TypedFieldType should not be inited manually, but TypedField (from `fields.py`) should be used!
-        """
-        self._type = _type
-        self.kwargs = settings
-        super().__init__()
-
-    @typing.overload
-    def __get__(self, instance: T_MetaInstance, owner: typing.Type[T_MetaInstance]) -> T_Value:  # pragma: no cover
-        """
-        row.field -> (actual data).
-        """
-
-    @typing.overload
-    def __get__(self, instance: None, owner: typing.Type[TypedTable]) -> "TypedField[T_Value]":  # pragma: no cover
-        """
-        Table.field -> Field.
-        """
-
-    def __get__(
-        self, instance: T_MetaInstance | None, owner: typing.Type[T_MetaInstance]
-    ) -> typing.Union[T_Value, "TypedField[T_Value]"]:
-        """
-        Since this class is a Descriptor field, \
-            it returns something else depending on if it's called on a class or instance.
-
-        (this is mostly for mypy/typing)
-        """
-        if instance:
-            # this is only reached in a very specific case:
-            # an instance of the object was created with a specific set of fields selected (excluding the current one)
-            # in that case, no value was stored in the owner -> return None (since the field was not selected)
-            return typing.cast(T_Value, None)  # cast as T_Value so mypy understands it for selected fields
-        else:
-            # getting as class -> return actual field so pydal understands it when using in query etc.
-            return typing.cast(TypedField[T_Value], self._field)  # pretend it's still typed for IDE support
-
-    def __str__(self) -> str:
-        """
-        String representation of a Typed Field.
-
-        If `type` is set explicitly (e.g. TypedField(str, type="text")), that type is used: `TypedField.text`,
-        otherwise the type annotation is used (e.g. TypedField(str) -> TypedField.str)
-        """
-        return str(self._field) if self._field else ""
-
-    def __repr__(self) -> str:
-        """
-        More detailed string representation of a Typed Field.
-
-        Uses __str__ and adds the provided extra options (kwargs) in the representation.
-        """
-        s = self.__str__()
-
-        if "type" in self.kwargs:
-            # manual type in kwargs supplied
-            t = self.kwargs["type"]
-        elif issubclass(type, type(self._type)):
-            # normal type, str.__name__ = 'str'
-            t = getattr(self._type, "__name__", str(self._type))
-        elif t_args := typing.get_args(self._type):
-            # list[str] -> 'str'
-            t = t_args[0].__name__
-        else:  # pragma: no cover
-            # fallback - something else, may not even happen, I'm not sure
-            t = self._type
-
-        s = f"TypedField[{t}].{s}" if s else f"TypedField[{t}]"
-
-        kw = self.kwargs.copy()
-        kw.pop("type", None)
-        return f"<{s} with options {kw}>"
-
-    def _to_field(self, extra_kwargs: typing.MutableMapping[str, Any]) -> Optional[str]:
-        """
-        Convert a Typed Field instance to a pydal.Field.
-        """
-        other_kwargs = self.kwargs.copy()
-        extra_kwargs.update(other_kwargs)
-        return extra_kwargs.pop("type", False) or TypeDAL._annotation_to_pydal_fieldtype(self._type, extra_kwargs)
-
-    def bind(self, field: pydal.objects.Field, table: pydal.objects.Table) -> None:
-        """
-        Bind the right db/table/field info to this class, so queries can be made using `Class.field == ...`.
-        """
-        self._table = table
-        self._field = field
-
-    def __getattr__(self, key: str) -> Any:
-        """
-        If the regular getattribute does not work, try to get info from the related Field.
-        """
-        with contextlib.suppress(AttributeError):
-            return super().__getattribute__(key)
-
-        # try on actual field:
-        return getattr(self._field, key)
-
-    def __eq__(self, other: Any) -> Query:
-        """
-        Performing == on a Field will result in a Query.
-        """
-        return typing.cast(Query, self._field == other)
-
-    def __ne__(self, other: Any) -> Query:
-        """
-        Performing != on a Field will result in a Query.
-        """
-        return typing.cast(Query, self._field != other)
-
-    def __gt__(self, other: Any) -> Query:
-        """
-        Performing > on a Field will result in a Query.
-        """
-        return typing.cast(Query, self._field > other)
-
-    def __lt__(self, other: Any) -> Query:
-        """
-        Performing < on a Field will result in a Query.
-        """
-        return typing.cast(Query, self._field < other)
-
-    def __ge__(self, other: Any) -> Query:
-        """
-        Performing >= on a Field will result in a Query.
-        """
-        return typing.cast(Query, self._field >= other)
-
-    def __le__(self, other: Any) -> Query:
-        """
-        Performing <= on a Field will result in a Query.
-        """
-        return typing.cast(Query, self._field <= other)
-
-    def __hash__(self) -> int:
-        """
-        Shadow Field.__hash__.
-        """
-        return hash(self._field)
-
-    def __invert__(self) -> Expression:
-        """
-        Performing ~ on a Field will result in an Expression.
-        """
-        if not self._field:  # pragma: no cover
-            raise ValueError("Unbound Field can not be inverted!")
-
-        return typing.cast(Expression, ~self._field)
-
-
 S = typing.TypeVar("S")
-
-
-class TypedRows(typing.Collection[T_MetaInstance], Rows):
-    """
-    Slighly enhaned and typed functionality on top of pydal Rows (the result of a select).
-    """
-
-    records: dict[int, T_MetaInstance]
-    # _rows: Rows
-    model: typing.Type[T_MetaInstance]
-    metadata: dict[str, Any]
-
-    # pseudo-properties: actually stored in _rows
-    db: TypeDAL
-    colnames: list[str]
-    fields: list[Field]
-    colnames_fields: list[Field]
-    response: list[tuple[Any, ...]]
-
-    def __init__(
-        self,
-        rows: Rows,
-        model: typing.Type[T_MetaInstance],
-        records: dict[int, T_MetaInstance] = None,
-        metadata: dict[str, Any] = None,
-    ) -> None:
-        """
-        Should not be called manually!
-
-        Normally, the `records` from an existing `Rows` object are used
-            but these can be overwritten with a `records` dict.
-        `metadata` can be any (un)structured data
-        `model` is a Typed Table class
-        """
-        records = records or {row.id: model(row) for row in rows}
-        super().__init__(rows.db, records, rows.colnames, rows.compact, rows.response, rows.fields)
-        self.model = model
-        self.metadata = metadata or {}
-
-    def __len__(self) -> int:
-        """
-        Return the count of rows.
-        """
-        return len(self.records)
-
-    def __iter__(self) -> typing.Iterator[T_MetaInstance]:
-        """
-        Loop through the rows.
-        """
-        yield from self.records.values()
-
-    def __contains__(self, ind: Any) -> bool:
-        """
-        Check if an id exists in this result set.
-        """
-        return ind in self.records
-
-    def first(self) -> T_MetaInstance | None:
-        """
-        Get the row with the lowest id.
-        """
-        if not self.records:
-            return None
-
-        return next(iter(self))
-
-    def last(self) -> T_MetaInstance | None:
-        """
-        Get the row with the highest id.
-        """
-        if not self.records:
-            return None
-
-        max_id = max(self.records.keys())
-        return self[max_id]
-
-    def find(
-        self, f: typing.Callable[[T_MetaInstance], Query], limitby: tuple[int, int] = None
-    ) -> "TypedRows[T_MetaInstance]":
-        """
-        Returns a new Rows object, a subset of the original object, filtered by the function `f`.
-        """
-        if not self.records:
-            return self.__class__(self, self.model, {})
-
-        records = {}
-        if limitby:
-            _min, _max = limitby
-        else:
-            _min, _max = 0, len(self)
-        count = 0
-        for i, row in self.records.items():
-            if f(row):
-                if _min <= count:
-                    records[i] = row
-                count += 1
-                if count == _max:
-                    break
-
-        return self.__class__(self, self.model, records)
-
-    def exclude(self, f: typing.Callable[[T_MetaInstance], Query]) -> "TypedRows[T_MetaInstance]":
-        """
-        Removes elements from the calling Rows object, filtered by the function `f`, \
-            and returns a new Rows object containing the removed elements.
-        """
-        if not self.records:
-            return self.__class__(self, self.model, {})
-        removed = {}
-        to_remove = []
-        for i in self.records:
-            row = self[i]
-            if f(row):
-                removed[i] = self.records[i]
-                to_remove.append(i)
-
-        [self.records.pop(i) for i in to_remove]
-
-        return self.__class__(
-            self,
-            self.model,
-            removed,
-        )
-
-    def sort(self, f: typing.Callable[[T_MetaInstance], Any], reverse: bool = False) -> list[T_MetaInstance]:
-        """
-        Returns a list of sorted elements (not sorted in place).
-        """
-        return [r for (r, s) in sorted(zip(self.records.values(), self), key=lambda r: f(r[1]), reverse=reverse)]
-
-    def __str__(self) -> str:
-        """
-        Simple string representation.
-        """
-        return f"<TypedRows with {len(self)} records>"
-
-    def __repr__(self) -> str:
-        """
-        Print a table on repr().
-        """
-        data = self.as_dict()
-        headers = list(next(iter(data.values())).keys())
-        return mktable(data, headers)
-
-    def group_by_value(
-        self, *fields: str | Field | TypedField[T], one_result: bool = False, **kwargs: Any
-    ) -> dict[T, list[T_MetaInstance]]:
-        """
-        Group the rows by a specific field (which will be the dict key).
-        """
-        kwargs["one_result"] = one_result
-        result = super().group_by_value(*fields, **kwargs)
-        return typing.cast(dict[T, list[T_MetaInstance]], result)
-
-    def column(self, column: str = None) -> list[Any]:
-        """
-        Get a list of all values in a specific column.
-
-        Example:
-                rows.column('name') -> ['Name 1', 'Name 2', ...]
-        """
-        return typing.cast(list[Any], super().column(column))
-
-    def as_csv(self) -> str:
-        """
-        Dump the data to csv.
-        """
-        return typing.cast(str, super().as_csv())
-
-    def as_dict(
-        self,
-        key: str = None,
-        compact: bool = False,
-        storage_to_dict: bool = False,
-        datetime_to_str: bool = False,
-        custom_types: list[type] = None,
-    ) -> dict[int, dict[str, Any]]:
-        """
-        Get the data in a dict of dicts.
-        """
-        if any([key, compact, storage_to_dict, datetime_to_str, custom_types]):
-            # functionality not guaranteed
-            return typing.cast(
-                dict[int, dict[str, Any]],
-                super().as_dict(
-                    key or "id",
-                    compact,
-                    storage_to_dict,
-                    datetime_to_str,
-                    custom_types,
-                ),
-            )
-
-        return {k: v.as_dict() for k, v in self.records.items()}
-
-    def as_json(self, mode: str = "object", default: typing.Callable[[Any], Any] = None) -> str:
-        """
-        Turn the data into a dict and then dump to JSON.
-        """
-        return typing.cast(str, super().as_json(mode=mode, default=default))
-
-    def json(self, mode: str = "object", default: typing.Callable[[Any], Any] = None) -> str:
-        """
-        Turn the data into a dict and then dump to JSON.
-        """
-        return typing.cast(str, super().as_json(mode=mode, default=default))
-
-    def as_list(
-        self,
-        compact: bool = False,
-        storage_to_dict: bool = False,
-        datetime_to_str: bool = False,
-        custom_types: list[type] = None,
-    ) -> list[dict[str, Any]]:
-        """
-        Get the data in a list of dicts.
-        """
-        if any([compact, storage_to_dict, datetime_to_str, custom_types]):
-            return typing.cast(
-                list[dict[str, Any]], super().as_list(compact, storage_to_dict, datetime_to_str, custom_types)
-            )
-        return [_.as_dict() for _ in self.records.values()]
-
-    def __getitem__(self, item: int) -> T_MetaInstance:
-        """
-        You can get a specific row by ID from a typedrows by using rows[idx] notation.
-
-        Since pydal's implementation differs (they expect a list instead of a dict with id keys),
-        using rows[0] will return the first row, regardless of its id.
-        """
-        try:
-            return self.records[item]
-        except KeyError as e:
-            if item == 0 and (row := self.first()):
-                # special case: pydal internals think Rows.records is a list, not a dict
-                return row
-
-            raise e
-
-    def get(self, item: int) -> typing.Optional[T_MetaInstance]:
-        """
-        Get a row by ID, or receive None if it isn't in this result set.
-        """
-        return self.records.get(item)
-
-    def join(
-        self,
-        field: Field | TypedField[Any],
-        name: str = None,
-        constraint: Query = None,
-        fields: list[str | Field] = None,
-        orderby: Optional[str | Field] = None,
-    ) -> T_MetaInstance:
-        """
-        This can be used to JOIN with some relationships after the initial select.
-
-        Using the querybuilder's .join() method is prefered!
-        """
-        result = super().join(field, name, constraint, fields or [], orderby)
-        return typing.cast(T_MetaInstance, result)
-
-    def export_to_csv_file(
-        self,
-        ofile: typing.TextIO,
-        null: Any = "<NULL>",
-        delimiter: str = ",",
-        quotechar: str = '"',
-        quoting: int = csv.QUOTE_MINIMAL,
-        represent: bool = False,
-        colnames: list[str] = None,
-        write_colnames: bool = True,
-        *args: Any,
-        **kwargs: Any,
-    ) -> None:
-        """
-        Shadow export_to_csv_file from Rows, but with typing.
-
-        See http://web2py.com/books/default/chapter/29/06/the-database-abstraction-layer?search=export_to_csv_file#Exporting-and-importing-data
-        """
-        super().export_to_csv_file(
-            ofile,
-            null,
-            *args,
-            delimiter=delimiter,
-            quotechar=quotechar,
-            quoting=quoting,
-            represent=represent,
-            colnames=colnames or self.colnames,
-            write_colnames=write_colnames,
-            **kwargs,
-        )
-
-    @classmethod
-    def from_rows(
-        cls, rows: Rows, model: typing.Type[T_MetaInstance], metadata: dict[str, Any] = None
-    ) -> "TypedRows[T_MetaInstance]":
-        """
-        Internal method to convert a Rows object to a TypedRows.
-        """
-        return cls(rows, model, metadata=metadata)
-
-    def __json__(self) -> dict[str, Any]:
-        """
-        For json-fix.
-        """
-        return typing.cast(dict[str, Any], self.as_dict())
 
 
 class PaginatedRows(TypedRows[T_MetaInstance]):
