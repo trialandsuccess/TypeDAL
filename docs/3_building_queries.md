@@ -1,4 +1,4 @@
-# 3. Bulding Queries
+# 3. Building Queries
 
 Insert, update and delete work basically the same as in pydal. Select can be done in the same way, but TypeDAL 2.0 also
 introduces the Query Builder, which provides a more modern abstraction to query your data.
