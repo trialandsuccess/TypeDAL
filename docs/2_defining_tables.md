@@ -21,7 +21,7 @@ class MyTable(TypedTable):
 
 In this example, pydal's `Field('my_field')` implicitly sets the type to 'string'.
 The TypeDAL variant uses Python type annotations and maps these to the right database types.  
-The `TypedField[]` annotation is not necessary (at runtime), but improves type hinting.
+The `TypedField[]` annotation is not necessary (at runtime), but improves type hinting and IDE support.
 
 ### All Types
 

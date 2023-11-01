@@ -34,7 +34,7 @@ Below you'll find a quick overview of translation from pydal to TypeDAL. For mor
 <table>
 <tr>
 <td>Description</td>
-<td> pydal </td> <td> pydal alternative </td> <td> typedal </td> <td> typedal alternative(s) </td> <td> ... </td>
+<td> pydal </td> <td> typedal </td> <td> typedal alternative(s) </td> <td> ... </td>
 </tr>
 <tr>
 <tr>
@@ -49,13 +49,10 @@ db = DAL(...)
 
 </td>
 
-<td></td>
 <td>
 
 ```python
-from src.typedal import TypeDAL, TypedTable, TypedField, TypedRows
-from src.typedal.fields import TextField
-from typing import Optional
+from typedal import TypeDAL, TypedTable, TypedField
 
 db = TypeDAL(...)
 ```
@@ -75,8 +72,6 @@ db.define_table("table_name",
                 )
 ```
 
-</td>
-<td>
 </td>
 
 <td>
@@ -120,18 +115,17 @@ db.table_name.insert(fieldname="value")
 
 </td>
 
-<td></td>
-
 <td>
 
 ```python
-db.table_name.insert(fieldname="value")
+TableName.insert(fieldname="value")
 ```
 
 <td>
 
 ```python
-TableName.insert(fieldname="value")
+# the old syntax is also still supported:
+db.table_name.insert(fieldname="value")
 ```
 
 </td>
@@ -153,8 +147,6 @@ row = db.table_name(id=1)  # -> Any (Row)
 ```
 
 </td>
-
-<td></td>
 
 <td>
 
@@ -197,8 +189,6 @@ row: TableName = db.table_name(id=1)
 ```
 
 </td>
-
-<td></td>
 
 <td>
 

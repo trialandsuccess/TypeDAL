@@ -62,9 +62,9 @@ Can be used in multiple ways:
 - `.where(id=5)` -> via keyword arguments
 
 When using multiple where's, they will be ANDed:  
-`.where(lambda table: table.id == 5).where(lambda table: table.id == 6) == (table.id == 5) & (table.id=6)`  
+`.where(lambda table: table.id == 5).where(lambda table: table.id == 6)` equals `(table.id == 5) & (table.id=6)`  
 When passing multiple queries to a single .where, they will be ORed:  
-`.where(lambda table: table.id == 5, lambda table: table.id == 6) == (table.id == 5) | (table.id=6)`
+`.where(lambda table: table.id == 5, lambda table: table.id == 6)` equals `(table.id == 5) | (table.id=6)`
 
 ### select
 
