@@ -6,8 +6,8 @@ from pydal.objects import Query
 
 from src.typedal import Relationship, TypeDAL, TypedField, TypedTable, relationship
 
-# db = TypeDAL("sqlite:memory")
-db = TypeDAL("sqlite://debug.db")
+db = TypeDAL("sqlite:memory")
+# db = TypeDAL("sqlite://debug.db")
 
 
 @db.define()

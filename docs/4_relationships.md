@@ -66,6 +66,27 @@ Here, contains is used since `Author.roles` is a `list:reference`.
 See [the web2py docs](http://www.web2py.com/books/default/chapter/29/06/the-database-abstraction-layer#list-type-and-contains)
 for more details.
 
+## One-to-One
+
+```python
+# assuming every superhero has exactly one side kick, and a sidekick 'belongs to' one superhero:
+@db.define()
+class SuperHero(TypedTable):
+    name: str
+    sidekick: Relationship["Sidekick"] = relationship("Sidekick", lambda hero, sidekick: hero.id == sidekick.superhero)
+
+
+@db.define()
+class Sidekick(TypedTable):
+    name: str
+    superhero: SuperHero
+```
+
+In this example, `Relationship["Sidekick"]` is added as an extra type hint, since the reference to the table
+in `relationship("Sidekick", ...)` is a string. This has to be passed as a string, since the Sidekick class is defined
+after the superhero class.
+Adding the `Relationship["Sidekick"]` hint is optional, but recommended to improve editor support.
+
 ## Many-to-Many
 
 Setting up a relationship that uses a junction/pivot table is slightly harder.

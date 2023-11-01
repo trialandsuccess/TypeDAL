@@ -41,7 +41,7 @@ class User(TypedTable, TaggableMixin):
     articles = relationship(list["Article"], lambda self, other: other.author == self.id)
 
     # one-to-one
-    bestie = relationship("BestFriend", lambda _user, _bestie: _user.id == _bestie.friend)
+    bestie: Relationship["BestFriend"] = relationship("BestFriend", lambda _user, _bestie: _user.id == _bestie.friend)
 
 
 @db.define()
