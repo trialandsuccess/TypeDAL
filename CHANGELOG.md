@@ -2,6 +2,22 @@
 
 <!--next-version-placeholder-->
 
+## v2.0.0-beta.8 (2023-11-01)
+
+### Feature
+
+* Add .chunk to query builder + chore more tests ([`51f5979`](https://github.com/trialandsuccess/TypeDAL/commit/51f5979e003733f0f7074e5629d63ac5e3eb71f7))
+
+### Fix
+
+* Minor tweaks in pagination and typing ([`c6dcc67`](https://github.com/trialandsuccess/TypeDAL/commit/c6dcc6783d064160a690f12a9eefc1d6bcb2a0a1))
+
+### Documentation
+
+* Minor improvements in examples and text ([`76d0bae`](https://github.com/trialandsuccess/TypeDAL/commit/76d0baee6b6fda551b04032e0f49134bd3be8ef4))
+* Updated examples and roadmap ([`55901fd`](https://github.com/trialandsuccess/TypeDAL/commit/55901fd0ee6af1bb9b0e28088c8eb15647f6b8e1))
+* Added docstrings ([`98093fc`](https://github.com/trialandsuccess/TypeDAL/commit/98093fcfe13354435e5933d7ca63c933d2849c67))
+
 ## v2.0.0-beta.7 (2023-10-26)
 
 ### Documentation
