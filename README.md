@@ -15,19 +15,21 @@ the underlying `db.define_table` pydal Tables.
 
 - `TypeDAL` is the replacement class for DAL that manages the code on top of DAL.
 - `TypedTable` must be the parent class of any custom Tables you define (e.g. `class SomeTable(TypedTable)`)
-- `TypedField` can be used instead of Python native types when extra settings (such as default) are required (
-  e.g. `name = TypedField(str, default="John Doe")`)
-- `TypedRows`: can be used as the return type of .select() and subscribed with the actual table class, so
-  e.g. `rows: TypedRows[SomeTable]`. If you're lazy, `list[SomeTable]` works fine too but that misses hinting
-  possibilities such as `.first()`.
+- `TypedField` can be used instead of Python native types when extra settings (such as `default`) are required (
+  e.g. `name = TypedField(str, default="John Doe")`). It can also be used in an annotation (`name: TypedField[str]`) to improve
+  editor support over only annotating with `str`.
+- `TypedRows`: can be used as the return type annotation of pydal's `.select()` and subscribed with the actual table class, so
+  e.g. `rows: TypedRows[SomeTable] = db(...).select()`. When using the QueryBuilder, a `TypedRows` instance is returned by `.collect()`.
 
 Version 2.0 also introduces more ORM-like funcionality.
 Most notably, a Typed Query Builder that sees your table classes as models with relationships to each other.
-See [3. Building Queries](https://github.com/trialandsuccess/TypeDAL/blob/master/docs/3_building_queries.md) for more details.
+See [3. Building Queries](https://github.com/trialandsuccess/TypeDAL/blob/master/docs/3_building_queries.md) for more
+details.
 
 ## Quick Overview
 
-Below you'll find a quick overview of translation from pydal to TypeDAL. For more info, see [the docs](https://github.com/trialandsuccess/TypeDAL/tree/master/docs).
+Below you'll find a quick overview of translation from pydal to TypeDAL. For more info,
+see [the docs](https://github.com/trialandsuccess/TypeDAL/tree/master/docs).
 
 ### Translations from pydal to typedal
 
