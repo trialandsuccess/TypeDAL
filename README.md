@@ -23,11 +23,11 @@ the underlying `db.define_table` pydal Tables.
 
 Version 2.0 also introduces more ORM-like funcionality.
 Most notably, a Typed Query Builder that sees your table classes as models with relationships to each other.
-See [3. Building Queries](./docs/3_building_queries.md) for more details.
+See [3. Building Queries](https://github.com/trialandsuccess/TypeDAL/blob/master/docs/3_building_queries.md) for more details.
 
 ## Quick Overview
 
-Below you'll find a quick overview of translation from pydal to TypeDAL. For more info, see [the docs](./docs).
+Below you'll find a quick overview of translation from pydal to TypeDAL. For more info, see [the docs](https://github.com/trialandsuccess/TypeDAL/tree/master/docs).
 
 ### Translations from pydal to typedal
 
