@@ -220,7 +220,7 @@ def test_paginate():
 
     result = TestQueryTable.join(method="left").paginate(limit=1, page=3)
 
-    assert len(result) == 1 == len(next_page)
+    assert len(result) == 1 == len(next_page) == len(result.data)
     assert len(result.first().relations) == 0 == len(next_page.first().relations)
 
     meta = result.metadata["pagination"]
@@ -245,6 +245,19 @@ def test_paginate():
     assert page_dict["has_prev_page"] is False
     assert page_dict["next_page"] is None
     assert page_dict["prev_page"] is None
+
+
+def test_chunking():
+    _setup_data()
+
+    total = 0
+    size = 3
+    for rows in TestQueryTable.chunk(size):
+        assert rows
+        assert len(rows) <= size
+        total += len(rows)
+
+    assert total == TestQueryTable.count()
 
 
 def test_complex_join():
@@ -350,3 +363,11 @@ def test_complex_join():
             condition=lambda relation, query: (relation.querytable == query.id) & (query.number == 1),
             on=lambda relation, query: (relation.querytable == query.id) & (query.number == 1),
         )
+
+
+def test_reprs_and_bool():
+    assert TestQueryTable.where(id=1)
+    assert not TestQueryTable.where(id=101)
+
+    assert repr(TestQueryTable.where(id=1))
+    assert str(TestQueryTable.where(id=1))

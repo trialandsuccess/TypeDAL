@@ -37,7 +37,7 @@ from .helpers import (
     to_snake,
     unwrap_type,
 )
-from .types import Expression, Field, Query, _Types
+from .types import Expression, Field, PaginateDict, Pagination, Query, _Types
 
 # use typing.cast(type, ...) to make mypy happy with unions
 T_annotation = typing.Type[Any] | types.UnionType
@@ -902,6 +902,14 @@ class TableMeta(type):
         See QueryBuilder.paginate!
         """
         return QueryBuilder(self).paginate(limit=limit, page=page)
+
+    def chunk(
+        self: typing.Type[T_MetaInstance], chunk_size: int
+    ) -> typing.Generator["TypedRows[T_MetaInstance]", Any, None]:
+        """
+        See QueryBuilder.chunk!
+        """
+        return QueryBuilder(self).chunk(chunk_size)
 
     def where(self: typing.Type[T_MetaInstance], *a: Any, **kw: Any) -> "QueryBuilder[T_MetaInstance]":
         """
@@ -1885,6 +1893,27 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         builder = self.__paginate(limit, page)
         return builder._collect()
 
+    def chunk(self, chunk_size: int) -> typing.Generator["TypedRows[T_MetaInstance]", Any, None]:
+        """
+        Generator that yields rows from a paginated source in chunks.
+
+        This function retrieves rows from a paginated data source in chunks of the
+        specified `chunk_size` and yields them as TypedRows.
+
+        Example:
+            ```
+            for chunk_of_rows in Table.where(SomeTable.id > 5).chunk(100):
+                for row in chunk_of_rows:
+                    # Process each row within the chunk.
+                    pass
+            ```
+        """
+        page = 1
+
+        while rows := self.__paginate(chunk_size, page).collect():
+            yield rows
+            page += 1
+
     def first(self, verbose: bool = False) -> T_MetaInstance | None:
         """
         Get the first row matching the currently built query.
@@ -2384,30 +2413,6 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
         For json-fix.
         """
         return typing.cast(dict[str, Any], self.as_dict())
-
-
-class Pagination(typing.TypedDict):
-    """
-    Pagination key of a paginate dict has these items.
-    """
-
-    total_items: int
-    current_page: int
-    per_page: int
-    total_pages: int
-    has_next_page: bool
-    has_prev_page: bool
-    next_page: Optional[int]
-    prev_page: Optional[int]
-
-
-class PaginateDict(typing.TypedDict):
-    """
-    Result of PaginatedRows.as_dict().
-    """
-
-    data: dict[int, dict[str, Any]]
-    pagination: Pagination
 
 
 class PaginatedRows(TypedRows[T_MetaInstance]):

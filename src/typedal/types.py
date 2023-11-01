@@ -1,6 +1,7 @@
 """
 Stuff to make mypy happy.
 """
+from typing import Any, Optional, TypedDict
 
 from pydal.objects import Expression as _Expression
 from pydal.objects import Field as _Field
@@ -37,3 +38,27 @@ class _Types:
     """
 
     NONETYPE = type(None)
+
+
+class Pagination(TypedDict):
+    """
+    Pagination key of a paginate dict has these items.
+    """
+
+    total_items: int
+    current_page: int
+    per_page: int
+    total_pages: int
+    has_next_page: bool
+    has_prev_page: bool
+    next_page: Optional[int]
+    prev_page: Optional[int]
+
+
+class PaginateDict(TypedDict):
+    """
+    Result of PaginatedRows.as_dict().
+    """
+
+    data: dict[int, dict[str, Any]]
+    pagination: Pagination
