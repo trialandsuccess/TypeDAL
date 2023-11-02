@@ -5,4 +5,4 @@ This file contains the Version info for this package.
 # SPDX-FileCopyrightText: 2023-present Robin van der Noord <robinvandernoord@gmail.com>
 #
 # SPDX-License-Identifier: MIT
-__version__ = "2.0.2"
+__version__ = "2.1.0-beta.1"

@@ -2,6 +2,25 @@
 
 <!--next-version-placeholder-->
 
+## v2.1.0-beta.1 (2023-11-02)
+
+### Feature
+
+* **p4w:** Add AuthUser class ([`d355314`](https://github.com/trialandsuccess/TypeDAL/commit/d355314686aebf57b0fd2babeae6c4cd07207264))
+* **caching:** You can now mark a table as "not a caching dependency" with db.define(cache_dependency=False) ([`e1ad350`](https://github.com/trialandsuccess/TypeDAL/commit/e1ad350fc688c1cadd3c5f49a79316eb1fd9bc6f))
+* **caching:** Allow setting ttl/expire datetime for cache ([`c3b4671`](https://github.com/trialandsuccess/TypeDAL/commit/c3b4671a6abcf26dfb1b177d91c0f5b30bd5fd97))
+* Started implementing .cache() on query builder ([`a2687dc`](https://github.com/trialandsuccess/TypeDAL/commit/a2687dc8835547ff98e6ed668c428315a7830661))
+
+### Fix
+
+* Caching requires dill ([`a7e5ca8`](https://github.com/trialandsuccess/TypeDAL/commit/a7e5ca81bf3076ef53cc1258751bbab39e75ad75))
+* **caching:** Tweaks to improve caching behavior ([`56caad2`](https://github.com/trialandsuccess/TypeDAL/commit/56caad22dc3aaa11e9c5075bbeccffe05b67d0c1))
+
+### Documentation
+
+* Explained you can pass kwargs to db.define ([`7d6591c`](https://github.com/trialandsuccess/TypeDAL/commit/7d6591c364dfb751fccd20acef00a036f770a754))
+* Added .cache() to the query builder docs ([`60f8f93`](https://github.com/trialandsuccess/TypeDAL/commit/60f8f93ae91583515316532c7c1cfcd0accfe82e))
+
 ## v2.0.2 (2023-11-01)
 
 ### Fix
