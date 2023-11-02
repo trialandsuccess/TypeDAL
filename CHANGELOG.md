@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v2.1.2 (2023-11-02)
+
+### Fix
+
+* Auto-fake internal tables if migrating fails ([`4a87190`](https://github.com/trialandsuccess/TypeDAL/commit/4a871904fb75fbcd077f2b6e261b5c767b996200))
+
 ## v2.1.1 (2023-11-02)
 
 ### Documentation
