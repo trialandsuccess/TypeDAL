@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v2.1.3 (2023-11-02)
+
+### Fix
+
+* **mypy:** TypeDAL(folder=...) folder can also be a Path ([`f7494ed`](https://github.com/trialandsuccess/TypeDAL/commit/f7494ed3a3cae561ee8113ea3af1b57d4973b8b5))
+
 ## v2.1.2 (2023-11-02)
 
 ### Fix
