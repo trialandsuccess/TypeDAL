@@ -23,6 +23,8 @@ In this example, pydal's `Field('my_field')` implicitly sets the type to 'string
 The TypeDAL variant uses Python type annotations and maps these to the right database types.  
 The `TypedField[]` annotation is not necessary (at runtime), but improves type hinting and IDE support.
 
+Any keyword arguments you would pass to `db.define_table`, you can also pass to `db.define()`.
+
 ### All Types
 
 | pydal                                     | typedal (native python type) | typedal (using TypedField annotations) | typedal (using TypedField)                | typedal (using specific Field)       |
