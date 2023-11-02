@@ -23,6 +23,8 @@ from .common import db
 
 
 class AuthUser(_AuthUser):
+    redefine = True
+    
     bookmarks = relationship(list["Bookmark"], ...)
 
 
