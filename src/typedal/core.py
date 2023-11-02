@@ -12,6 +12,7 @@ import typing
 import warnings
 from collections import defaultdict
 from decimal import Decimal
+from pathlib import Path
 from typing import Any, Optional
 
 import pydal
@@ -337,7 +338,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
         self,
         uri: str = "sqlite://dummy.db",
         pool_size: int = 0,
-        folder: Optional[str] = None,
+        folder: Optional[str | Path] = None,
         db_codec: str = "UTF-8",
         check_reserved: Optional[list[str]] = None,
         migrate: bool = True,
