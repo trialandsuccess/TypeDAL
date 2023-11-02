@@ -22,6 +22,7 @@ A Query Builder can be initialized by calling one of these methods on a TypedTab
 - where
 - select
 - join
+- cache
 
 e.g. `Person.where(...)` -> `QueryBuilder[Person]`
 
@@ -91,6 +92,37 @@ This can be overwritten with the `method` keyword argument (left or inner)
 ```python
 Person.join('articles', method='inner')  # will only yield persons that have related articles
 ```
+
+### cache
+
+```python
+# all dependencies:
+Person.cache()
+# specific dependencies:
+Person.cache(Person.id).cache(Article.id).join()
+# same as above:
+Person.cache(Person.id, Article.id).join()
+# add an expire datetime:
+Person.cache(expires_at=...)
+# add an expire date via ttl (in seconds or timedelta):
+Person.cache(ttl=60)
+```
+
+Queries can be cached using the `.cache` operator. Cached rows are saved using `dill` in the `typedal_cache` table.
+It keeps track of dependencies to other tables. By default, this is all selected `id` columns (including joins).
+You can specify specific id columns if you only want to have the cache depend on those.
+When some of the underlying data changes, the cache entry is invalidated and the data will be loaded fresh from the
+database when the query is next executed. When an `expire_at` or `ttl` is provided, data is also invalidated after that
+time.
+
+```python
+@db.define(cache_dependency=False)
+class ...
+```
+
+In order to enable this functionality, TypeDAL adds a `before update` and `before delete` hook to your tables, 
+which manages the dependencies. You can disable this behavior by passing `cache_dependency=False` to `db.define`.
+Be aware doing this might break some caching functionality!
 
 ### Collecting
 
