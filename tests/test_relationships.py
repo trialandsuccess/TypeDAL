@@ -1,14 +1,18 @@
 import time
 import types
 import typing
-from pprint import pp
 from uuid import uuid4
 
 import pytest
 
 from src.typedal import Relationship, TypeDAL, TypedField, TypedTable, relationship
-from src.typedal.caching import remove_cache, clear_cache, _TypedalCache, _TypedalCacheDependency, clear_expired
-from src.typedal.core import to_relationship
+from src.typedal.caching import (
+    _TypedalCache,
+    _TypedalCacheDependency,
+    clear_cache,
+    clear_expired,
+    remove_cache,
+)
 
 db = TypeDAL("sqlite:memory")
 
@@ -415,7 +419,6 @@ def test_caching():
     assert data.get("status") == "fresh"
     assert not data.get("cached_at")
 
-
     assert _TypedalCache.count()
     assert _TypedalCacheDependency.count()
 
@@ -428,5 +431,6 @@ def test_caching():
 
 def test_illegal():
     with pytest.raises(ValueError), pytest.warns(UserWarning):
+
         class HasRelationship:
             something = relationship("...", condition=lambda: 1, on=lambda: 2)

@@ -1,10 +1,8 @@
 import re
-import typing
 from sqlite3 import IntegrityError
 
 import pydal
 import pytest
-from pydal.objects import Query
 
 from src.typedal import *
 from src.typedal.__about__ import __version__
