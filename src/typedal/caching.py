@@ -1,16 +1,24 @@
 """
 Helpers to facilitate db-based caching.
 """
+
 import contextlib
 import hashlib
 import json
-import typing
-from typing import Any
+from datetime import datetime, timedelta, timezone
+from typing import Any, Iterable, Mapping, Optional, TypeVar
 
 import dill  # nosec
 from pydal.objects import Field, Rows, Set
 
 from .core import TypedField, TypedRows, TypedTable
+
+
+def get_now(tz: timezone = timezone.utc) -> datetime:
+    """
+    Get the default datetime, optionally in a specific timezone.
+    """
+    return datetime.now(tz)
 
 
 class _TypedalCache(TypedTable):
@@ -20,7 +28,8 @@ class _TypedalCache(TypedTable):
 
     key: TypedField[str]
     data: TypedField[bytes]
-    # todo: cached_at + ttl
+    cached_at = TypedField(datetime, default=get_now)
+    expires_at: TypedField[datetime | None]
 
 
 class _TypedalCacheDependency(TypedTable):
@@ -42,10 +51,10 @@ def prepare(field: Any) -> str:
     """
     if isinstance(field, str):
         return field
-    elif isinstance(field, (dict, typing.Mapping)):
+    elif isinstance(field, (dict, Mapping)):
         data = {str(k): prepare(v) for k, v in field.items()}
         return json.dumps(data, sort_keys=True)
-    elif isinstance(field, typing.Iterable):
+    elif isinstance(field, Iterable):
         return ",".join(sorted([prepare(_) for _ in field]))
     elif isinstance(field, bool):
         return str(int(field))
@@ -130,11 +139,11 @@ def _determine_dependencies(instance: TypedRows[Any], rows: Rows, depends_on: li
     return _get_dependency_ids(rows, dependency_keys)
 
 
-def remove_cache(idx: int | typing.Iterable[int], table: str) -> None:
+def remove_cache(idx: int | Iterable[int], table: str) -> None:
     """
     Remove any cache entries that are dependant on one or multiple indices of a table.
     """
-    if not isinstance(idx, typing.Iterable):
+    if not isinstance(idx, Iterable):
         idx = [idx]
 
     related = (
@@ -142,6 +151,24 @@ def remove_cache(idx: int | typing.Iterable[int], table: str) -> None:
     )
 
     _TypedalCache.where(_TypedalCache.id.belongs(related)).delete()
+
+
+def clear_cache() -> None:
+    """
+    Remove everything from the cache.
+    """
+    _TypedalCacheDependency.truncate()
+    _TypedalCache.truncate()
+
+
+def clear_expired() -> int:
+    """
+    Remove all expired items from the cache.
+
+    By default, expired items are only removed when trying to access them.
+    """
+    now = get_now()
+    return len(_TypedalCache.where(_TypedalCache.expires_at > now).delete())
 
 
 def _remove_cache(s: Set, tablename: str) -> None:
@@ -152,10 +179,35 @@ def _remove_cache(s: Set, tablename: str) -> None:
     remove_cache(indeces, tablename)
 
 
-T_TypedTable = typing.TypeVar("T_TypedTable", bound=TypedTable)
+T_TypedTable = TypeVar("T_TypedTable", bound=TypedTable)
 
 
-def save_to_cache(instance: TypedRows[T_TypedTable], rows: Rows) -> TypedRows[T_TypedTable]:
+def get_expire(
+    expires_at: Optional[datetime] = None, ttl: Optional[int | timedelta] = None, now: Optional[datetime] = None
+) -> datetime | None:
+    """
+    Based on an expires_at date or a ttl (in seconds or a time delta), determine the expire date.
+    """
+    now = now or get_now()
+
+    if expires_at and ttl:
+        raise ValueError("Please only supply an `expired at` date or a `ttl` in seconds!")
+    elif isinstance(ttl, timedelta):
+        return now + ttl
+    elif ttl:
+        return now + timedelta(seconds=ttl)
+    elif expires_at:
+        return expires_at
+
+    return None
+
+
+def save_to_cache(
+    instance: TypedRows[T_TypedTable],
+    rows: Rows,
+    expires_at: Optional[datetime] = None,
+    ttl: Optional[int | timedelta] = None,
+) -> TypedRows[T_TypedTable]:
     """
     Save a typedrows result to the database, and save dependencies from rows.
 
@@ -163,9 +215,15 @@ def save_to_cache(instance: TypedRows[T_TypedTable], rows: Rows) -> TypedRows[T_
     """
     db = rows.db
     if (c := instance.metadata.get("cache", {})) and c.get("enabled") and (key := c.get("key")):
+        expires_at = get_expire(expires_at=expires_at, ttl=ttl) or c.get("expires_at")
+
         deps = _determine_dependencies(instance, rows, c["depends_on"])
 
-        entry = _TypedalCache.insert(key=key, data=dill.dumps(instance))
+        entry = _TypedalCache.insert(
+            key=key,
+            data=dill.dumps(instance),
+            expires_at=expires_at,
+        )
 
         _TypedalCacheDependency.bulk_insert([{"entry": entry, "table": table, "idx": idx} for table, idx in deps])
 
@@ -175,12 +233,22 @@ def save_to_cache(instance: TypedRows[T_TypedTable], rows: Rows) -> TypedRows[T_
 
 
 def _load_from_cache(key: str) -> Any | None:
-    if row := _TypedalCache.where(key=key).first():
-        inst = dill.loads(row.data)  # nosec
-        inst.metadata["cache"]["status"] = "cached"
-        return inst
+    if not (row := _TypedalCache.where(key=key).first()):
+        return None
 
-    return None
+    now = get_now()
+
+    expires = row.expires_at.replace(tzinfo=timezone.utc) if row.expires_at else None
+
+    if expires and now >= expires:
+        row.delete_record()
+        return None
+
+    inst = dill.loads(row.data)  # nosec
+    inst.metadata["cache"]["status"] = "cached"
+    inst.metadata["cache"]["cached_at"] = row.cached_at
+    inst.metadata["cache"]["expires_at"] = row.expires_at
+    return inst
 
 
 def load_from_cache(key: str) -> Any | None:

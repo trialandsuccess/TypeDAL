@@ -1,5 +1,9 @@
 import typing
+from datetime import datetime, timedelta
 
+import pytest
+
+from src.typedal.caching import get_expire, get_now
 from src.typedal.helpers import (
     DummyQuery,
     all_annotations,
@@ -126,3 +130,16 @@ def test_as_lambda():
     assert call(one=1, two="two", three={}) is o
 
     assert call()["new"] == "value"
+
+
+def test_get_expire():
+    now = datetime(year=2023, hour=12, minute=1, second=1, month=1, day=1)
+
+    assert get_expire() is None
+    assert get_expire(ttl=2, now=now) == datetime(year=2023, hour=12, minute=1, second=3, month=1, day=1)
+    assert get_expire(ttl=timedelta(seconds=2), now=now) == datetime(year=2023, hour=12, minute=1, second=3, month=1, day=1)
+
+    assert get_expire(now) == now
+
+    with pytest.raises(ValueError):
+        get_expire(expires_at=now, ttl=3)

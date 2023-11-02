@@ -386,8 +386,8 @@ class TypeDAL(pydal.DAL):  # type: ignore
         )
 
         if enable_typedal_caching:
-            self.define(_TypedalCache)
-            self.define(_TypedalCacheDependency)
+            self.define(_TypedalCache, migrate=True)
+            self.define(_TypedalCacheDependency, migrate=True)
 
     default_kwargs: typing.ClassVar[typing.Dict[str, Any]] = {
         # fields are 'required' (notnull) by default:
@@ -952,11 +952,11 @@ class TableMeta(type):
         """
         return QueryBuilder(self).where(*a, **kw)
 
-    def cache(self: typing.Type[T_MetaInstance], *deps: Any) -> "QueryBuilder[T_MetaInstance]":
+    def cache(self: typing.Type[T_MetaInstance], *deps: Any, **kwargs: Any) -> "QueryBuilder[T_MetaInstance]":
         """
         See QueryBuilder.cache!
         """
-        return QueryBuilder(self).cache(*deps)
+        return QueryBuilder(self).cache(*deps, **kwargs)
 
     def count(self: typing.Type[T_MetaInstance]) -> int:
         """
@@ -1911,6 +1911,7 @@ from .caching import (  # noqa: E402
     _TypedalCache,
     _TypedalCacheDependency,
     create_and_hash_cache_key,
+    get_expire,
     load_from_cache,
     save_to_cache,
 )
@@ -2115,7 +2116,9 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
         return self._extend(relationships=relationships)
 
-    def cache(self, *deps: Any) -> "QueryBuilder[T_MetaInstance]":
+    def cache(
+        self, *deps: Any, expires_at: Optional[dt.datetime] = None, ttl: Optional[int | dt.timedelta] = None
+    ) -> "QueryBuilder[T_MetaInstance]":
         """
         Enable caching for this query to load repeated calls from a dill row \
             instead of executing the sql and collecing matching rows again.
@@ -2123,12 +2126,14 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         existing = self.metadata.get("cache", {})
 
         metadata: Metadata = {}
+
         cache_meta = typing.cast(
             CacheMetadata,
             self.metadata.get("cache", {})
             | {
                 "enabled": True,
                 "depends_on": existing.get("depends_on", []) + [str(_) for _ in deps],
+                "expires_at": get_expire(expires_at=expires_at, ttl=ttl),
             },
         )
 
@@ -2148,7 +2153,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
         return arg
 
-    def delete(self) -> list[int] | None:
+    def delete(self) -> list[int]:
         """
         Based on the current query, delete rows and return a list of deleted IDs.
         """
@@ -2158,13 +2163,13 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
             # success!
             return removed_ids
 
-        return None
+        return []
 
     def _delete(self) -> str:
         db = self._get_db()
         return str(db(self.query)._delete())
 
-    def update(self, **fields: Any) -> list[int] | None:
+    def update(self, **fields: Any) -> list[int]:
         """
         Based on the current query, update `fields` and return a list of updated IDs.
         """
@@ -2175,7 +2180,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
             # success!
             return updated_ids
 
-        return None
+        return []
 
     def _update(self, **fields: Any) -> str:
         db = self._get_db()
@@ -2217,10 +2222,13 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         return self.to_sql()
 
     def _collect_cached(self, metadata: Metadata) -> "TypedRows[T_MetaInstance] | None":
+        expires_at = metadata["cache"].get("expires_at")
         metadata["cache"] |= {
             # key is partly dependant on cache metadata but not these:
             "key": None,
             "status": None,
+            "cached_at": None,
+            "expires_at": None,
         }  # type: ignore
 
         _, key = create_and_hash_cache_key(
@@ -2232,6 +2240,8 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
             self.relationships.keys(),
         )
 
+        # re-set after creating key:
+        metadata["cache"]["expires_at"] = expires_at
         metadata["cache"]["key"] = key
 
         return load_from_cache(key)
@@ -2277,6 +2287,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
             # if that's not the case, return default behavior again
             typed_rows = self._collect_with_relationships(rows, metadata=metadata, _to=_to)
 
+        # only saves if requested in metadata:
         return save_to_cache(typed_rows, rows)
 
     def _handle_relationships_pre_select(

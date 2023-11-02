@@ -1,6 +1,7 @@
 """
 Stuff to make mypy happy.
 """
+from datetime import datetime
 from typing import Any, Optional, TypedDict
 
 from pydal.objects import Expression as _Expression
@@ -74,6 +75,8 @@ class CacheMetadata(TypedDict):
     depends_on: list[Any]
     key: NotRequired[str | None]
     status: NotRequired[str | None]
+    expires_at: NotRequired[datetime | None]
+    cached_at: NotRequired[datetime | None]
 
 
 class PaginationMetadata(TypedDict):

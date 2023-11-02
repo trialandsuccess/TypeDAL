@@ -1,3 +1,4 @@
+import time
 import types
 import typing
 from pprint import pp
@@ -6,7 +7,7 @@ from uuid import uuid4
 import pytest
 
 from src.typedal import Relationship, TypeDAL, TypedField, TypedTable, relationship
-from src.typedal.caching import remove_cache
+from src.typedal.caching import remove_cache, clear_cache, _TypedalCache, _TypedalCacheDependency, clear_expired
 from src.typedal.core import to_relationship
 
 db = TypeDAL("sqlite:memory")
@@ -381,8 +382,11 @@ def test_caching():
     assert User.cache("id").join().paginate(limit=1, page=1).metadata["cache"].get("status") == "fresh"
     assert User.cache("id").join().paginate(limit=1, page=1).metadata["cache"].get("status") == "cached"
 
-    assert User.cache().join().paginate(limit=1, page=2).metadata["cache"].get("status") == "fresh"
+    data = User.cache().join().paginate(limit=1, page=2).metadata["cache"]
+    assert data.get("status") == "fresh"
+    assert not data.get("cached_at")
     assert User.cache().join().paginate(limit=1, page=2).metadata["cache"].get("status") == "cached"
+    assert User.cache().join().paginate(limit=1, page=2).metadata["cache"].get("cached_at")
 
     remove_cache(1, "user")
     remove_cache([2], "user")
@@ -396,6 +400,30 @@ def test_caching():
 
     for chunk in User.cache().join().chunk(2):
         assert chunk.metadata["cache"]["status"] == "cached"
+
+    clear_cache()
+
+    assert User.cache(ttl=2).collect().metadata["cache"].get("status") == "fresh"
+    assert User.cache(ttl=2).collect().metadata["cache"].get("status") == "cached"
+    assert User.cache(ttl=2).collect().metadata["cache"].get("cached_at")
+
+    assert _TypedalCache.count()
+    assert _TypedalCacheDependency.count()
+
+    time.sleep(3)
+    data = User.cache(ttl=2).collect().metadata["cache"]
+    assert data.get("status") == "fresh"
+    assert not data.get("cached_at")
+
+
+    assert _TypedalCache.count()
+    assert _TypedalCacheDependency.count()
+
+    assert clear_expired()
+    assert not clear_expired()
+
+    assert not _TypedalCache.count()
+    assert not _TypedalCacheDependency.count()
 
 
 def test_illegal():

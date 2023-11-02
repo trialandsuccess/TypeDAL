@@ -7,6 +7,8 @@ from pydal.objects import Query
 from src.typedal import Relationship, TypeDAL, TypedField, TypedTable, relationship
 
 db = TypeDAL("sqlite:memory")
+
+
 # db = TypeDAL("sqlite://debug.db")
 
 
@@ -109,7 +111,7 @@ def test_where_builder():
     result = builder.delete()
     assert len(result) == 2  # -> 3 and 4
 
-    assert TestQueryTable.where(lambda row: row.number > 99).delete() is None  # nothing deleted
+    assert TestQueryTable.where(lambda row: row.number > 99).delete() == []  # nothing deleted
 
     assert TestQueryTable.count() == 3 == len(TestQueryTable.collect())  # 0 - 2
 
@@ -121,7 +123,7 @@ def test_where_builder():
     assert "5" in sql
 
     result = builder.update(number=5)
-    assert TestQueryTable.where(lambda row: row.number == -1).update(number=5) is None  # nothing updated
+    assert TestQueryTable.where(lambda row: row.number == -1).update(number=5) == []  # nothing updated
     assert result == [1]  # id 1 updated
 
     assert TestQueryTable(1).number == 5
