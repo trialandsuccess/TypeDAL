@@ -40,6 +40,7 @@ class AuthUser(TypedTable):
     """
     Class for db.auth_user in py4web (probably not w2p).
     """
+
     redefine = True
     migrate = False
 
