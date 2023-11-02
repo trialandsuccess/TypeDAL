@@ -464,6 +464,8 @@ class TypeDAL(pydal.DAL):  # type: ignore
             if k not in relationships and (new_relationship := to_relationship(cls, k, annotations[k]))
         }
 
+        cache_dependency = other_kwargs.pop("cache_dependency", True)
+
         table: Table = self.define_table(tablename, *fields.values(), **other_kwargs)
 
         for name, typed_field in typedfields.items():
@@ -481,8 +483,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
         else:
             warnings.warn("db.define used without inheriting TypedTable. This could lead to strange problems!")
 
-        if not tablename.startswith("typedal_"):
-            # todo: config
+        if not tablename.startswith("typedal_") and cache_dependency:
             table._before_update.append(lambda s, _: _remove_cache(s, tablename))
             table._before_delete.append(lambda s: _remove_cache(s, tablename))
 

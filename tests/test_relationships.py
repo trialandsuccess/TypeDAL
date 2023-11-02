@@ -308,6 +308,22 @@ def test_reprs():
     assert empty.get_table_name() == "new"
 
 
+@db.define()
+class CacheFirst(TypedTable):
+    name: str
+
+
+@db.define(cache_dependency=False)
+class NoCacheSecond(TypedTable):
+    name: str
+
+
+@db.define()
+class CacheTwoRelationships(TypedTable):
+    first: CacheFirst
+    second: NoCacheSecond
+
+
 def test_caching():
     _setup_data()
 
@@ -429,8 +445,43 @@ def test_caching():
     assert not _TypedalCacheDependency.count()
 
 
+def test_caching_dependencies():
+    first_one, first_two = CacheFirst.bulk_insert([
+        {"name": "one"},
+        {"name": "two"}
+    ])
+
+    second_one, second_two = NoCacheSecond.bulk_insert([
+        {"name": "een"},
+        {"name": "twee"},
+    ])
+
+    CacheTwoRelationships.insert(first=first_one, second=second_one)
+    CacheTwoRelationships.insert(first=first_two, second=second_two)
+
+    assert CacheTwoRelationships.join().cache().collect().metadata["cache"].get("status") == "fresh"
+    assert CacheTwoRelationships.join().cache().collect().metadata["cache"].get("status") == "cached"
+
+    # invalidates cache:
+    first_one.update_record(name="one 2.0")
+
+    assert CacheTwoRelationships.join().cache().collect().metadata["cache"].get("status") == "fresh"
+    assert CacheTwoRelationships.join().cache().collect().metadata["cache"].get("status") == "cached"
+
+    # does not invalidate cache:
+    second_one.update_record(name="een 2.0")
+
+    rows = CacheTwoRelationships.join().cache().collect()
+    assert rows.metadata["cache"].get("status") == "cached"
+
+    for row in rows:
+        # new name should be loaded into cache:
+        assert row.first.name != "one"
+        # old name should still be in cache for this one
+        assert row.second.name != "een 2.0"
+
+
 def test_illegal():
     with pytest.raises(ValueError), pytest.warns(UserWarning):
-
         class HasRelationship:
             something = relationship("...", condition=lambda: 1, on=lambda: 2)
