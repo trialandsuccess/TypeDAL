@@ -24,13 +24,8 @@ classifiers = [
 ]
 dependencies = [
     "pydal",
+    "dill",
 ]
-
-[template.plugins.default]
-src-layout = true
-
-[tool.setuptools.package-data]
-"typedal" = ["py.typed"]
 
 [project.optional-dependencies]
 py4web = [
@@ -44,6 +39,14 @@ dev = [
     "python-semantic-release < 8",
     "pytest-mypy-testing",
 ]
+
+[template.plugins.default]
+src-layout = true
+
+[tool.setuptools.package-data]
+"typedal" = ["py.typed"]
+
+
 
 [project.urls]
 Documentation = "https://github.com/trialandsuccess/TypeDAL#readme"
