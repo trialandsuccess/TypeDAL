@@ -446,15 +446,14 @@ def test_caching():
 
 
 def test_caching_dependencies():
-    first_one, first_two = CacheFirst.bulk_insert([
-        {"name": "one"},
-        {"name": "two"}
-    ])
+    first_one, first_two = CacheFirst.bulk_insert([{"name": "one"}, {"name": "two"}])
 
-    second_one, second_two = NoCacheSecond.bulk_insert([
-        {"name": "een"},
-        {"name": "twee"},
-    ])
+    second_one, second_two = NoCacheSecond.bulk_insert(
+        [
+            {"name": "een"},
+            {"name": "twee"},
+        ]
+    )
 
     CacheTwoRelationships.insert(first=first_one, second=second_one)
     CacheTwoRelationships.insert(first=first_two, second=second_two)
@@ -483,5 +482,6 @@ def test_caching_dependencies():
 
 def test_illegal():
     with pytest.raises(ValueError), pytest.warns(UserWarning):
+
         class HasRelationship:
             something = relationship("...", condition=lambda: 1, on=lambda: 2)
