@@ -38,6 +38,12 @@ from .helpers import (
     unwrap_type,
 )
 from .types import (
+    AfterDeleteCallable,
+    AfterInsertCallable,
+    AfterUpdateCallable,
+    BeforeDeleteCallable,
+    BeforeInsertCallable,
+    BeforeUpdateCallable,
     CacheMetadata,
     Expression,
     Field,
@@ -1268,6 +1274,13 @@ class TypedTable(metaclass=TableMeta):
     _with: list[str]
 
     id: "TypedField[int]"  # noqa: A003
+
+    _before_insert: list[BeforeInsertCallable]
+    _after_insert: list[AfterInsertCallable]
+    _before_update: list[BeforeUpdateCallable]
+    _after_update: list[AfterUpdateCallable]
+    _before_delete: list[BeforeDeleteCallable]
+    _after_delete: list[AfterDeleteCallable]
 
     def _setup_instance_methods(self) -> None:
         self.as_dict = self._as_dict  # type: ignore

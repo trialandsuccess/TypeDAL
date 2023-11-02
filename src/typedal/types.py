@@ -1,12 +1,16 @@
 """
 Stuff to make mypy happy.
 """
+import typing
 from datetime import datetime
 from typing import Any, Optional, TypedDict
 
+from pydal.helpers.classes import OpRow as _OpRow
+from pydal.helpers.classes import Reference as _Reference
 from pydal.objects import Expression as _Expression
 from pydal.objects import Field as _Field
 from pydal.objects import Query as _Query
+from pydal.objects import Set as _Set
 from typing_extensions import NotRequired
 
 
@@ -26,6 +30,30 @@ class Expression(_Expression):  # type: ignore
     """
 
 
+class Set(_Set):
+    """
+    Pydal Set object.
+
+    Make mypy happy.
+    """
+
+
+class OpRow(_OpRow):
+    """
+    Pydal OpRow object.
+
+    Make mypy happy.
+    """
+
+
+class Reference(_Reference):
+    """
+    Pydal Reference object.
+
+    Make mypy happy.
+    """
+
+
 class Field(_Field):
     """
     Pydal Field object.
@@ -40,6 +68,14 @@ class _Types:
     """
 
     NONETYPE = type(None)
+
+
+BeforeInsertCallable: typing.TypeAlias = typing.Callable[[OpRow], Any]
+AfterInsertCallable: typing.TypeAlias = typing.Callable[[OpRow, Reference], Any]
+BeforeUpdateCallable: typing.TypeAlias = typing.Callable[[Set, OpRow], Any]
+AfterUpdateCallable: typing.TypeAlias = typing.Callable[[Set, OpRow], Any]
+BeforeDeleteCallable: typing.TypeAlias = typing.Callable[[Set], Any]
+AfterDeleteCallable: typing.TypeAlias = typing.Callable[[Set], Any]
 
 
 class Pagination(TypedDict):

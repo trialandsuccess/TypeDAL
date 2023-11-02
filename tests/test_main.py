@@ -174,14 +174,12 @@ def test_dont_allow_bool_in_query():
 
 def test_invalid_union():
     with pytest.raises(NotImplementedError):
-
         @db.define
         class Invalid(TypedTable):
             valid: int | None
             invalid: int | str
 
     with pytest.raises(NotImplementedError):
-
         @db.define
         class Invalid(TypedTable):
             valid: list[int]
@@ -259,7 +257,6 @@ def test_typedfield_to_field_type():
         optional_two = TypedField(str | None)
 
     with pytest.raises(NotImplementedError):
-
         @db.define()
         class Invalid(TypedTable):
             third = TypedField(dict[str, int])  # not supported
@@ -300,7 +297,6 @@ def test_fields():
         bigintfield = BigintField()
 
     with pytest.raises(ValueError):
-
         @db.define()
         class Wrong(TypedTable):
             stringfield = ReferenceField(object())
@@ -382,3 +378,32 @@ def test_quirks():
     with pytest.raises(EnvironmentError):
         # inst is deleted, so almost everything will raise an error now (except repr).
         inst.as_dict()
+
+
+def test_hooks(capsys):
+    @db.define()
+    class HookedTable(TypedTable):
+        name: str
+
+    HookedTable._before_insert.append(lambda _f: print('before insert'))
+    HookedTable._after_insert.append(lambda _f, idx: print('after insert', idx))
+    HookedTable._before_update.append(lambda _s, _f: print('before update'))
+    HookedTable._after_update.append(lambda _s, _f: print('after update'))
+    HookedTable._before_delete.append(lambda _s: print('before delete'))
+    HookedTable._after_delete.append(lambda _s: print('after delete'))
+
+    steve = HookedTable.insert(name="Steve")
+    captured = capsys.readouterr()
+
+    assert 'before insert' in captured.out
+    assert 'after insert 1' in captured.out
+
+    steve.update_record(name="Not Steve")
+    captured = capsys.readouterr()
+    assert 'before update' in captured.out
+    assert 'after update' in captured.out
+
+    steve.delete_record()
+    captured = capsys.readouterr()
+    assert 'before delete' in captured.out
+    assert 'after delete' in captured.out
