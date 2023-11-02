@@ -4,15 +4,6 @@
 
 ## v2.1.0 (2023-11-02)
 
-### Documentation
-
-* You need `redefine=True` when extending AuthUser ([`29c63a3`](https://github.com/trialandsuccess/TypeDAL/commit/29c63a32e4c68026b750b625265a33d0664bb873))
-* Remove 2.1 from roadmap in preparation for 2.1 release ([`202a028`](https://github.com/trialandsuccess/TypeDAL/commit/202a0285a51eb157445ef851c84ed55efcd1fb30))
-* Add a small chapter about py4web integration ([`cb838d8`](https://github.com/trialandsuccess/TypeDAL/commit/cb838d8af47f10abaea212db674bdb0520ef7e14))
-* Cleaned up changelog ([`8dad225`](https://github.com/trialandsuccess/TypeDAL/commit/8dad2251cc40ee655d984549fb887e2f09233954))
-
-## v2.1.0-beta.1 (2023-11-02)
-
 ### Feature
 
 * **p4w:** Add AuthUser class ([`d355314`](https://github.com/trialandsuccess/TypeDAL/commit/d355314686aebf57b0fd2babeae6c4cd07207264))
@@ -25,6 +16,10 @@
 
 * Explained you can pass kwargs to db.define ([`7d6591c`](https://github.com/trialandsuccess/TypeDAL/commit/7d6591c364dfb751fccd20acef00a036f770a754))
 * Added .cache() to the query builder docs ([`60f8f93`](https://github.com/trialandsuccess/TypeDAL/commit/60f8f93ae91583515316532c7c1cfcd0accfe82e))
+* You need `redefine=True` when extending AuthUser ([`29c63a3`](https://github.com/trialandsuccess/TypeDAL/commit/29c63a32e4c68026b750b625265a33d0664bb873))
+* Remove 2.1 from roadmap in preparation for 2.1 release ([`202a028`](https://github.com/trialandsuccess/TypeDAL/commit/202a0285a51eb157445ef851c84ed55efcd1fb30))
+* Add a small chapter about py4web integration ([`cb838d8`](https://github.com/trialandsuccess/TypeDAL/commit/cb838d8af47f10abaea212db674bdb0520ef7e14))
+* Cleaned up changelog ([`8dad225`](https://github.com/trialandsuccess/TypeDAL/commit/8dad2251cc40ee655d984549fb887e2f09233954))
 
 ## v2.0.2 (2023-11-01)
 
