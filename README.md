@@ -212,10 +212,6 @@ See [2. Defining Tables](docs/2_defining_tables.md)
 
 This section contains a non-exhaustive list of planned features for future feature releases:
 
-- 2.1
-    - Caching: adding a `.cache()` operation to the query builder which loads a repeated execution from cache (via
-      pickling of the final object). Optionally, dependency tracking could be added to automatically expire cache items
-      when one of the underlying objects have changed in the database.
 - 2.2
     - Migrations: currently, you can use pydal's automatic migrations or disable those and manage them yourself, but
       adding something like [`edwh-migrate`](https://github.com/educationwarehouse/migrate#readme)
