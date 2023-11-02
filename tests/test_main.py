@@ -19,7 +19,7 @@ def test_about():
 db = TypeDAL("sqlite:memory")
 
 
-def test_mixed_defines():
+def test_mixed_defines(capsys):
     ### DEFINE
 
     # before:
@@ -48,7 +48,11 @@ def test_mixed_defines():
 
     # you can use native types or TypedField (if more settings are required, otherwise default are used)
 
-    @db.define
+    def example_ondefine(table):
+        print("on define", table)
+
+    # parens are optional, unless you want to pass more kwargs (like you would define_tables)
+    @db.define(on_define=example_ondefine)
     class FirstNewSyntax(TypedTable):
         # simple:
         name: str
@@ -64,6 +68,9 @@ def test_mixed_defines():
         old_relation: typing.Optional[db.relation]
         # generics:
         tags: list[str]
+
+    captured = capsys.readouterr()
+    assert "on define first_new_syntax" in captured.out
 
     # instead of using just a native type, TypedField can also always be used:
     class SecondNewSyntax(TypedTable):

@@ -310,8 +310,6 @@ def test_caching():
     cached = User.cache().join().collect_or_fail()
     cached_user_only = User.join().cache(User.id).collect_or_fail()
 
-    assert uncached.as_dict() == cached.as_dict() == cached_user_only.as_dict()
-
     assert not uncached.metadata.get("cache", {}).get("enabled")
     assert cached.metadata.get("cache", {}).get("enabled")
     assert cached_user_only.metadata.get("cache", {}).get("enabled")
@@ -323,6 +321,8 @@ def test_caching():
     assert uncached.metadata.get("cache", {}).get("status") != "cached"
     assert cached.metadata.get("cache", {}).get("status") != "cached"
     assert cached_user_only.metadata.get("cache", {}).get("status") != "cached"
+
+    assert uncached.as_dict() == cached.as_dict() == cached_user_only.as_dict()
 
     # assert not uncached.metadata.get("cached_at")
     # assert not cached.metadata.get("cached_at")
@@ -376,8 +376,27 @@ def test_caching():
     assert cached3.metadata.get("cache", {}).get("status") != "cached"
     assert cached_user_only3.metadata.get("cache", {}).get("status") == "cached"
 
-    # and again but with something that shouldn't invalidate:
-    ...
+    # check paginate
+
+    assert User.cache("id").join().paginate(limit=1, page=1).metadata["cache"].get("status") == "fresh"
+    assert User.cache("id").join().paginate(limit=1, page=1).metadata["cache"].get("status") == "cached"
+
+    assert User.cache().join().paginate(limit=1, page=2).metadata["cache"].get("status") == "fresh"
+    assert User.cache().join().paginate(limit=1, page=2).metadata["cache"].get("status") == "cached"
+
+    remove_cache(1, "user")
+    remove_cache([2], "user")
+
+    assert User.cache("id").join().paginate(limit=1, page=1).metadata["cache"].get("status") == "fresh"
+    assert User.cache().join().paginate(limit=1, page=2).metadata["cache"].get("status") == "fresh"
+
+    # check chunk
+    for chunk in User.cache().join().chunk(2):
+        assert chunk.metadata["cache"]["status"] == "fresh"
+
+    for chunk in User.cache().join().chunk(2):
+        assert chunk.metadata["cache"]["status"] == "cached"
+
 
 def test_illegal():
     with pytest.raises(ValueError), pytest.warns(UserWarning):

@@ -6,6 +6,7 @@ from typing import Any, Optional, TypedDict
 from pydal.objects import Expression as _Expression
 from pydal.objects import Field as _Field
 from pydal.objects import Query as _Query
+from typing_extensions import NotRequired
 
 
 class Query(_Query):  # type: ignore
@@ -62,3 +63,45 @@ class PaginateDict(TypedDict):
 
     data: dict[int, dict[str, Any]]
     pagination: Pagination
+
+
+class CacheMetadata(TypedDict):
+    """
+    Used by query builder metadata in the 'cache' key.
+    """
+
+    enabled: bool
+    depends_on: list[Any]
+    key: NotRequired[str | None]
+    status: NotRequired[str | None]
+
+
+class PaginationMetadata(TypedDict):
+    """
+    Used by query builder metadata in the 'pagination' key.
+    """
+
+    limit: int
+    current_page: int
+    max_page: int
+    rows: int
+    min_max: tuple[int, int]
+
+
+class Metadata(TypedDict):
+    """
+    Loosely structured metadata used by Query Builder.
+    """
+
+    cache: NotRequired[CacheMetadata]
+    pagination: NotRequired[PaginationMetadata]
+
+    query: NotRequired[Query | str | None]
+    ids: NotRequired[str]
+
+    final_query: NotRequired[Query | str | None]
+    final_args: NotRequired[list[Any]]
+    final_kwargs: NotRequired[dict[str, Any]]
+    relationships: NotRequired[set[str]]
+
+    sql: NotRequired[str]

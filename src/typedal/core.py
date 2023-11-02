@@ -37,7 +37,16 @@ from .helpers import (
     to_snake,
     unwrap_type,
 )
-from .types import Expression, Field, PaginateDict, Pagination, Query, _Types
+from .types import (
+    CacheMetadata,
+    Expression,
+    Field,
+    Metadata,
+    PaginateDict,
+    Pagination,
+    Query,
+    _Types,
+)
 
 # use typing.cast(type, ...) to make mypy happy with unions
 T_annotation = typing.Type[Any] | types.UnionType
@@ -343,7 +352,13 @@ class TypeDAL(pydal.DAL):  # type: ignore
         ignore_field_case: bool = True,
         entity_quoting: bool = True,
         table_hash: Optional[str] = None,
+        enable_typedal_caching: bool = True,
     ) -> None:
+        """
+        Adds some internal tables after calling pydal's default init.
+
+        Set enable_typedal_caching to False to disable this behavior.
+        """
         super().__init__(
             uri,
             pool_size,
@@ -370,8 +385,9 @@ class TypeDAL(pydal.DAL):  # type: ignore
             table_hash,
         )
 
-        self.define(_TypedalCache)
-        self.define(_TypedalCacheDependency)
+        if enable_typedal_caching:
+            self.define(_TypedalCache)
+            self.define(_TypedalCacheDependency)
 
     default_kwargs: typing.ClassVar[typing.Dict[str, Any]] = {
         # fields are 'required' (notnull) by default:
@@ -381,7 +397,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
     # maps table name to typedal class, for resolving future references
     _class_map: typing.ClassVar[dict[str, typing.Type["TypedTable"]]] = {}
 
-    def _define(self, cls: typing.Type[T]) -> typing.Type[T]:
+    def _define(self, cls: typing.Type[T], **kwargs: Any) -> typing.Type[T]:
         # todo: new relationship item added should also invalidate (previously unrelated) cache result
 
         # todo: option to enable/disable cache dependency behavior:
@@ -419,7 +435,9 @@ class TypeDAL(pydal.DAL):  # type: ignore
         fields = {fname: self._to_field(fname, ftype) for fname, ftype in annotations.items()}
 
         # ! dont' use full_dict here:
-        other_kwargs = {k: v for k, v in cls.__dict__.items() if k not in annotations and not k.startswith("_")}
+        other_kwargs = kwargs | {
+            k: v for k, v in cls.__dict__.items() if k not in annotations and not k.startswith("_")
+        }
 
         for key in typedfields.keys() - full_dict.keys():
             # typed fields that don't haven't been added to the object yet
@@ -471,7 +489,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
         return cls
 
     @typing.overload
-    def define(self, maybe_cls: None = None) -> typing.Callable[[typing.Type[T]], typing.Type[T]]:
+    def define(self, maybe_cls: None = None, **kwargs: Any) -> typing.Callable[[typing.Type[T]], typing.Type[T]]:
         """
         Typing Overload for define without a class.
 
@@ -480,7 +498,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
         """
 
     @typing.overload
-    def define(self, maybe_cls: typing.Type[T]) -> typing.Type[T]:
+    def define(self, maybe_cls: typing.Type[T], **kwargs: Any) -> typing.Type[T]:
         """
         Typing Overload for define with a class.
 
@@ -489,11 +507,14 @@ class TypeDAL(pydal.DAL):  # type: ignore
         """
 
     def define(
-        self, maybe_cls: typing.Type[T] | None = None
+        self, maybe_cls: typing.Type[T] | None = None, **kwargs: Any
     ) -> typing.Type[T] | typing.Callable[[typing.Type[T]], typing.Type[T]]:
         """
         Can be used as a decorator on a class that inherits `TypedTable`, \
           or as a regular method if you need to define your classes before you have access to a 'db' instance.
+
+        You can also pass extra arguments to db.define_table.
+            See http://www.web2py.com/books/default/chapter/29/06/the-database-abstraction-layer#Table-constructor
 
         Example:
             @db.define
@@ -511,7 +532,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
         """
 
         def wrapper(cls: typing.Type[T]) -> typing.Type[T]:
-            return self._define(cls)
+            return self._define(cls, **kwargs)
 
         if maybe_cls:
             return wrapper(maybe_cls)
@@ -932,6 +953,9 @@ class TableMeta(type):
         return QueryBuilder(self).where(*a, **kw)
 
     def cache(self: typing.Type[T_MetaInstance], *deps: Any) -> "QueryBuilder[T_MetaInstance]":
+        """
+        See QueryBuilder.cache!
+        """
         return QueryBuilder(self).cache(*deps)
 
     def count(self: typing.Type[T_MetaInstance]) -> int:
@@ -1278,7 +1302,6 @@ class TypedTable(metaclass=TableMeta):
             row = table(row_or_id, **filters)
         elif filters:
             row = table(**filters)
-            print(f"{row=}, {filters=}")
         else:
             # dummy object
             return inst
@@ -1529,6 +1552,9 @@ class TypedTable(metaclass=TableMeta):
 
     # pickling:
     def __setstate__(self, state: dict[str, Any]) -> None:
+        """
+        Used by dill when loading from a bytestring.
+        """
         # as_dict also includes table info, so dump as json to only get the actual row data
         # then create a new (more empty) row object:
         state["_row"] = Row(json.loads(state["_row"]))
@@ -1566,7 +1592,7 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
     records: dict[int, T_MetaInstance]
     # _rows: Rows
     model: typing.Type[T_MetaInstance]
-    metadata: dict[str, Any]
+    metadata: Metadata
 
     # pseudo-properties: actually stored in _rows
     db: TypeDAL
@@ -1580,7 +1606,7 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
         rows: Rows,
         model: typing.Type[T_MetaInstance],
         records: dict[int, T_MetaInstance] = None,
-        metadata: dict[str, Any] = None,
+        metadata: Metadata = None,
     ) -> None:
         """
         Should not be called manually!
@@ -1850,7 +1876,7 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
 
     @classmethod
     def from_rows(
-        cls, rows: Rows, model: typing.Type[T_MetaInstance], metadata: dict[str, Any] = None
+        cls, rows: Rows, model: typing.Type[T_MetaInstance], metadata: Metadata = None
     ) -> "TypedRows[T_MetaInstance]":
         """
         Internal method to convert a Rows object to a TypedRows.
@@ -1863,23 +1889,19 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
         """
         return typing.cast(dict[str, Any], self.as_dict())
 
-    # def __reduce_ex__(self, _):
-    #     # Create a tuple with the class constructor and a dictionary of attributes to serialize
-    #     data = {
-    #         'rows': {},
-    #         'model': str(self.model),
-    #         'records': {k: v.as_dict() for k, v in self.records.items()},
-    #         'metadata': prepare(self.metadata),
-    #     }
-    #     return (self.__class__, ({}, "", {}, {}))
-
     def __getstate__(self) -> dict[str, Any]:
+        """
+        Used by dill to dump to bytes (exclude db connection etc).
+        """
         return {
             "metadata": json.dumps(self.metadata, default=str),
             "records": self.records,
         }
 
     def __setstate__(self, state: dict[str, Any]) -> None:
+        """
+        Used by dill when loading from a bytestring.
+        """
         state["metadata"] = json.loads(state["metadata"])
         self.__dict__.update(state)
 
@@ -1904,7 +1926,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
     select_args: list[Any]
     select_kwargs: dict[str, Any]
     relationships: dict[str, Relationship[Any]]
-    metadata: dict[str, Any]
+    metadata: Metadata
 
     def __init__(
         self,
@@ -1913,7 +1935,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         select_args: Optional[list[Any]] = None,
         select_kwargs: Optional[dict[str, Any]] = None,
         relationships: dict[str, Relationship[Any]] = None,
-        metadata: dict[str, Any] = None,
+        metadata: Metadata = None,
     ):
         """
         Normally, you wouldn't manually initialize a QueryBuilder but start using a method on a TypedTable.
@@ -1963,7 +1985,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         select_args: Optional[list[Any]] = None,
         select_kwargs: Optional[dict[str, Any]] = None,
         relationships: dict[str, Relationship[Any]] = None,
-        metadata: dict[str, Any] = None,
+        metadata: Metadata = None,
     ) -> "QueryBuilder[T_MetaInstance]":
         return QueryBuilder(
             self.model,
@@ -1971,7 +1993,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
             (self.select_args + select_args) if select_args else self.select_args,
             (self.select_kwargs | select_kwargs) if select_kwargs else self.select_kwargs,
             (self.relationships | relationships) if relationships else self.relationships,
-            (self.metadata | metadata) if metadata else self.metadata,
+            (self.metadata | (metadata or {})) if metadata else self.metadata,
         )
 
     def select(self, *fields: Any, **options: Any) -> "QueryBuilder[T_MetaInstance]":
@@ -2094,15 +2116,24 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         return self._extend(relationships=relationships)
 
     def cache(self, *deps: Any) -> "QueryBuilder[T_MetaInstance]":
+        """
+        Enable caching for this query to load repeated calls from a dill row \
+            instead of executing the sql and collecing matching rows again.
+        """
         existing = self.metadata.get("cache", {})
-        return self._extend(
-            metadata={
-                "cache": {
-                    "enabled": True,
-                    "depends_on": existing.get("depends_on", []) + [str(_) for _ in deps],
-                }
-            }
+
+        metadata: Metadata = {}
+        cache_meta = typing.cast(
+            CacheMetadata,
+            self.metadata.get("cache", {})
+            | {
+                "enabled": True,
+                "depends_on": existing.get("depends_on", []) + [str(_) for _ in deps],
+            },
         )
+
+        metadata["cache"] = cache_meta
+        return self._extend(metadata=metadata)
 
     def _get_db(self) -> TypeDAL:
         if db := self.model._db:
@@ -2150,9 +2181,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         db = self._get_db()
         return str(db(self.query)._update(**fields))
 
-    def _before_query(
-        self, mut_metadata: dict[str, Any], add_id: bool = True
-    ) -> tuple[Query, list[Any], dict[str, Any]]:
+    def _before_query(self, mut_metadata: Metadata, add_id: bool = True) -> tuple[Query, list[Any], dict[str, Any]]:
         select_args = [self._select_arg_convert(_) for _ in self.select_args] or [self.model.ALL]
         select_kwargs = self.select_kwargs.copy()
         query = self.query
@@ -2187,7 +2216,13 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         """
         return self.to_sql()
 
-    def collect_cached(self, metadata: dict[str, Any]) -> "TypedRows[T_MetaInstance] | None":
+    def _collect_cached(self, metadata: Metadata) -> "TypedRows[T_MetaInstance] | None":
+        metadata["cache"] |= {
+            # key is partly dependant on cache metadata but not these:
+            "key": None,
+            "status": None,
+        }  # type: ignore
+
         _, key = create_and_hash_cache_key(
             self.model,
             metadata,
@@ -2196,6 +2231,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
             self.select_kwargs,
             self.relationships.keys(),
         )
+
         metadata["cache"]["key"] = key
 
         return load_from_cache(key)
@@ -2210,9 +2246,9 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
             _to = TypedRows
 
         db = self._get_db()
-        metadata = self.metadata.copy()
+        metadata = typing.cast(Metadata, self.metadata.copy())
 
-        if metadata.get("cache", {}).get("enabled") and (result := self.collect_cached(metadata)):
+        if metadata.get("cache", {}).get("enabled") and (result := self._collect_cached(metadata)):
             return result
 
         query, select_args, select_kwargs = self._before_query(metadata, add_id=add_id)
@@ -2233,22 +2269,22 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
         if not self.relationships:
             # easy
-            instance = _to.from_rows(rows, self.model, metadata=metadata)
+            typed_rows = _to.from_rows(rows, self.model, metadata=metadata)
 
         else:
             # harder: try to match rows to the belonging objects
             # assume structure of {'table': <data>} per row.
             # if that's not the case, return default behavior again
-            instance = self._collect_with_relationships(rows, metadata=metadata, _to=_to)
+            typed_rows = self._collect_with_relationships(rows, metadata=metadata, _to=_to)
 
-        return save_to_cache(instance, rows)
+        return save_to_cache(typed_rows, rows)
 
     def _handle_relationships_pre_select(
         self,
         query: Query,
         select_args: list[Any],
         select_kwargs: dict[str, Any],
-        metadata: dict[str, Any],
+        metadata: Metadata,
     ) -> tuple[Query, list[Any]]:
         db = self._get_db()
         model = self.model
@@ -2335,7 +2371,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         return query, select_args
 
     def _collect_with_relationships(
-        self, rows: Rows, metadata: dict[str, Any], _to: typing.Type["TypedRows[Any]"] = None
+        self, rows: Rows, metadata: Metadata, _to: typing.Type["TypedRows[Any]"] = None
     ) -> "TypedRows[T_MetaInstance]":
         """
         Transform the raw rows into Typed Table model instances.
@@ -2444,18 +2480,17 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
         available = self.count()
 
-        return self._extend(
-            select_kwargs={"limitby": (_from, _to)},
-            metadata={
-                "pagination": {
-                    "limit": limit,
-                    "current_page": page,
-                    "max_page": math.ceil(available / limit),
-                    "rows": available,
-                    "min_max": (_from, _to),
-                }
-            },
-        )
+        metadata: Metadata = {}
+
+        metadata["pagination"] = {
+            "limit": limit,
+            "current_page": page,
+            "max_page": math.ceil(available / limit),
+            "rows": available,
+            "min_max": (_from, _to),
+        }
+
+        return self._extend(select_kwargs={"limitby": (_from, _to)}, metadata=metadata)
 
     def paginate(self, limit: int, page: int = 1, verbose: bool = False) -> "PaginatedRows[T_MetaInstance]":
         """
