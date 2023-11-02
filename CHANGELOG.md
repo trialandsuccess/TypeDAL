@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v2.1.1 (2023-11-02)
+
+### Documentation
+
+* Update changelog for 2.1 release ([`6affca5`](https://github.com/trialandsuccess/TypeDAL/commit/6affca5bec1831dabe55e9025eb2b50b3ce46e2c))
+
 ## v2.1.0 (2023-11-02)
 
 ### Feature
