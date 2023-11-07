@@ -34,10 +34,17 @@ py4web = [
 ]
 
 dev = [
+    # build:
     "hatch",
+    # test:
     "su6[all]",
     "python-semantic-release < 8",
     "pytest-mypy-testing",
+    # docs:
+    'mkdocs',
+    'mkdocs-dracula-theme',
+    'Pygments',
+    'pymdown-extensions',
 ]
 
 [template.plugins.default]

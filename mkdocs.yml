@@ -1,0 +1,36 @@
+site_name: TypeDAL
+site_description: Welcome to TypeDAL's documentation
+site_url: https://github.com/trialandsuccess/typedal
+nav:
+  - Getting Started: 1_getting_started.md
+  - Defining Tables: 2_defining_tables.md
+  - Building Queries: 3_building_queries.md
+  - Relationships: 4_relationships.md
+  - py4web: 5_py4web.md
+
+#markdown_extensions:
+#  - pymdownx.highlight:
+#      anchor_linenums: true
+#      line_spans: __span
+#      pygments_lang_class: true
+#  - pymdownx.inlinehilite
+#  - pymdownx.snippets
+#  - pymdownx.superfences
+
+theme:
+  name: dracula
+  locale: en
+  highlightjs: true
+  hljs_style: tokyo-night-dark
+  hljs_languages:
+    - shell
+    - bash
+    - python
+    - sql
+
+  features:
+    - content.code.copy
+
+extra_css:
+  - https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/tokyo-night-dark.min.css
+  - css/code_blocks.css

@@ -9,3 +9,4 @@ build/
 coverage.json
 *.table
 *.db
+site/

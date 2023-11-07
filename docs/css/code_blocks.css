@@ -1,0 +1,7 @@
+pre:has(code) {
+    padding: 0;
+}
+
+.dot-ul {
+    display: none;
+}
