@@ -54,7 +54,7 @@ src-layout = true
 
 
 [project.urls]
-Documentation = "https://github.com/trialandsuccess/TypeDAL#readme"
+Documentation = "https://typedal.readthedocs.io/"
 Issues = "https://github.com/trialandsuccess/TypeDAL/issues"
 Source = "https://github.com/trialandsuccess/TypeDAL"
 
