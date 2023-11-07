@@ -2,6 +2,18 @@
 
 <!--next-version-placeholder-->
 
+## v2.1.4 (2023-11-07)
+
+### Fix
+
+* Readthedocs was missing dependencies ([`02e8109`](https://github.com/trialandsuccess/TypeDAL/commit/02e81094dea0026226683148e951203f91da1d70))
+
+### Documentation
+
+* Set new docs url on pypi ([`3b6ea5b`](https://github.com/trialandsuccess/TypeDAL/commit/3b6ea5bceecb434eee0d32378321abb8d8efbc69))
+* Renamed readme to index so RTD understands it better ([`9d544a3`](https://github.com/trialandsuccess/TypeDAL/commit/9d544a321ad7ebc4cf6d083598173de06e7d2462))
+* Add ReadTheDocs with mkdocs ([`e2d2e48`](https://github.com/trialandsuccess/TypeDAL/commit/e2d2e48ca8fa0fd8116396e6fe07a53281622bb6))
+
 ## v2.1.3 (2023-11-02)
 
 ### Fix
