@@ -43,8 +43,6 @@ dev = [
     # docs:
     'mkdocs',
     'mkdocs-dracula-theme',
-    'Pygments',
-    'pymdown-extensions',
 ]
 
 [template.plugins.default]
