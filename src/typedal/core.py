@@ -2266,7 +2266,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
             "status": None,
             "cached_at": None,
             "expires_at": None,
-        }  # type: ignore
+        }
 
         _, key = create_and_hash_cache_key(
             self.model,
