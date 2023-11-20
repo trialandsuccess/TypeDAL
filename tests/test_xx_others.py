@@ -5,7 +5,7 @@ For some reason, it's best to run these tasks last.
 import tempfile
 from pathlib import Path
 
-from src.typedal import TypedTable, TypeDAL
+from src.typedal import TypeDAL, TypedTable
 
 
 class DummyTable(TypedTable):
