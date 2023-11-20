@@ -399,15 +399,23 @@ class TypeDAL(pydal.DAL):  # type: ignore
             self.try_define(_TypedalCache)
             self.try_define(_TypedalCacheDependency)
 
-    def try_define(self, model: typing.Type[T]) -> typing.Type[T]:
+    def try_define(self, model: typing.Type[T], verbose: bool = False) -> typing.Type[T]:
         """
         Try to define a model with migrate or fall back to fake migrate.
         """
         try:
             return self.define(model, migrate=True)
         except Exception as e:
-            warnings.warn(f"{model} could not be migrated, try faking", source=e, category=RuntimeWarning)
-            return self.define(model, migrate=False, fake_migrate=True, redefine=True)
+            # clean up:
+            self.rollback()
+            if (tablename := self.to_snake(model.__name__)) and tablename in dir(self):
+                delattr(self, tablename)
+
+            if verbose:
+                warnings.warn(f"{model} could not be migrated, try faking", source=e, category=RuntimeWarning)
+
+            # try again:
+            return self.define(model, migrate=True, fake_migrate=True, redefine=True)
 
     default_kwargs: typing.ClassVar[typing.Dict[str, Any]] = {
         # fields are 'required' (notnull) by default:

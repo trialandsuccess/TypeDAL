@@ -420,4 +420,4 @@ def test_try():
     assert db.try_define(SomeTableToRetry)
 
     with pytest.warns(RuntimeWarning):
-        assert db.try_define(SomeTableToRetry)
+        assert db.try_define(SomeTableToRetry, verbose=True)
