@@ -33,6 +33,18 @@ py4web = [
     "json-fix",
 ]
 
+migrations = [
+    "pydal2sql",
+    "edwh-migrate",
+]
+
+all = [
+    "py4web",
+    "json-fix",
+    "pydal2sql[all]",
+    "edwh-migrate",
+]
+
 dev = [
     # build:
     "hatch",
