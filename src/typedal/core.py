@@ -336,7 +336,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
 
     def __init__(
         self,
-        uri: str = "sqlite://dummy.db",
+        uri: str = "sqlite:memory",
         pool_size: int = 0,
         folder: Optional[str | Path] = None,
         db_codec: str = "UTF-8",
@@ -366,10 +366,13 @@ class TypeDAL(pydal.DAL):  # type: ignore
 
         Set enable_typedal_caching to False to disable this behavior.
         """
+        if folder:
+            Path(folder).mkdir(exist_ok=True)
+
         super().__init__(
             uri,
             pool_size,
-            folder,
+            str(folder),
             db_codec,
             check_reserved,
             migrate,
@@ -604,6 +607,15 @@ class TypeDAL(pydal.DAL):  # type: ignore
 
         _set = super().__call__(*args, **kwargs)
         return typing.cast(TypedSet, _set)
+
+    def __getitem__(self, key: str) -> "Table":
+        """
+        Allows dynamically accessing a table by its name as a string.
+
+        Example:
+            db['users'] -> user
+        """
+        return typing.cast(Table, super().__getitem__(str(key)))
 
     @classmethod
     def _build_field(cls, name: str, _type: str, **kw: Any) -> Field:
