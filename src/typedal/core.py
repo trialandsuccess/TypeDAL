@@ -23,6 +23,7 @@ from pydal.objects import Row, Rows
 from pydal.objects import Table as _Table
 from typing_extensions import Self
 
+from .config import load_config
 from .helpers import (
     DummyQuery,
     all_annotations,
@@ -336,13 +337,13 @@ class TypeDAL(pydal.DAL):  # type: ignore
 
     def __init__(
         self,
-        uri: str = "sqlite:memory",
-        pool_size: int = 0,
-        folder: Optional[str | Path] = None,
+        uri: Optional[str] = None,  # default from config or 'sqlite:memory'
+        pool_size: int = None,  # default 1 if sqlite else 3
+        folder: Optional[str | Path] = None,  # default 'databases' in config
         db_codec: str = "UTF-8",
         check_reserved: Optional[list[str]] = None,
-        migrate: bool = True,
-        fake_migrate: bool = False,
+        migrate: Optional[bool] = None,  # default True by config
+        fake_migrate: Optional[bool] = None,  # default False by config
         migrate_enabled: bool = True,
         fake_migrate_all: bool = False,
         decode_credentials: bool = False,
@@ -359,24 +360,35 @@ class TypeDAL(pydal.DAL):  # type: ignore
         ignore_field_case: bool = True,
         entity_quoting: bool = True,
         table_hash: Optional[str] = None,
-        enable_typedal_caching: bool = True,
+        enable_typedal_caching: bool = None,
     ) -> None:
         """
         Adds some internal tables after calling pydal's default init.
 
         Set enable_typedal_caching to False to disable this behavior.
         """
-        if folder:
-            Path(folder).mkdir(exist_ok=True)
+        config = load_config()
+        config.update(
+            database=uri,
+            dialect=uri.split(":")[0] if uri and ":" in uri else None,
+            folder=str(folder),
+            migrate=migrate,
+            fake_migrate=fake_migrate,
+            caching=enable_typedal_caching,
+            pool_size=pool_size,
+        )
+
+        if config.folder:
+            Path(config.folder).mkdir(exist_ok=True)
 
         super().__init__(
-            uri,
-            pool_size,
-            str(folder),
+            config.database,
+            config.pool_size,
+            config.folder,
             db_codec,
             check_reserved,
-            migrate,
-            fake_migrate,
+            config.migrate,
+            config.fake_migrate,
             migrate_enabled,
             fake_migrate_all,
             decode_credentials,
@@ -395,7 +407,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
             table_hash,
         )
 
-        if enable_typedal_caching:
+        if config.caching:
             self.try_define(_TypedalCache)
             self.try_define(_TypedalCacheDependency)
 

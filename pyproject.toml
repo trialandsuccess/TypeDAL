@@ -23,8 +23,9 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
-    "pydal",
-    "dill",
+    "pydal", # core
+    "dill", # caching
+    "configuraptor", # config
 ]
 
 [project.optional-dependencies]

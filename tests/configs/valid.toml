@@ -1,0 +1,19 @@
+[tool.typedal]
+# in .env:
+# TYPEDAL_CONNECTION = "postgres"
+# TYPEDAL_DATABASE = "postgres://..."
+
+default = "sqlite"
+
+[tool.typedal.sqlite]
+dialect = 'sqlite' # optional, could be implied?
+input = 'lib/models.py'
+output = 'migrations_sqlite.py' # or migrations-file
+database = "sqlite://storage.db" # other name; from .env?
+db-folder = "databases" # optional
+
+[tool.typedal.postgres]
+dialect = 'postgres' # optional, could be implied?
+input = 'lib/models.py'
+output = 'migrations_postgres.py'  # or migrations-file
+# `database` from env different name
