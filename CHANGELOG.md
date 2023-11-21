@@ -2,6 +2,16 @@
 
 <!--next-version-placeholder-->
 
+## v2.1.5 (2023-11-21)
+
+### Feature
+
+* Automatically create the typedal 'folder' if it doesn't exist yet ([`163b205`](https://github.com/trialandsuccess/TypeDAL/commit/163b20548f73b764d688137efae87f060a29ec4d))
+
+### Fix
+
+* **cache:** If cache table exists but flags are missing, properly re-define with fake migrate ([`212eb8a`](https://github.com/trialandsuccess/TypeDAL/commit/212eb8a8d75afc995cf2fa0346b19a2a91d0fd56))
+
 ## v2.1.4 (2023-11-07)
 
 ### Fix
