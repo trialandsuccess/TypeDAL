@@ -3,7 +3,7 @@ import typing
 import pydal.objects
 import pytest
 
-from src.typedal import TypeDAL, TypedField, TypedRows, TypedTable
+from typedal import TypeDAL, TypedField, TypedRows, TypedTable  # fixme: why does src.typedal not work anymore?
 
 db = TypeDAL("sqlite:memory")
 
@@ -38,9 +38,9 @@ def mypy_test_typedal_define() -> None:
 
     typing.reveal_type(MyTable.normal)  # R: builtins.str
     typing.reveal_type(MyTable().normal)  # R: builtins.str
-    typing.reveal_type(MyTable.fancy)  # R: src.typedal.core.TypedField[builtins.str]
+    typing.reveal_type(MyTable.fancy)  # R: typedal.core.TypedField[builtins.str]
     typing.reveal_type(MyTable().fancy)  # R: builtins.str
-    typing.reveal_type(MyTable.options)  # R: src.typedal.core.TypedField[builtins.str]
+    typing.reveal_type(MyTable.options)  # R: typedal.core.TypedField[builtins.str]
     typing.reveal_type(MyTable().options)  # R: builtins.str
 
 
@@ -77,9 +77,9 @@ def mypy_test_typedset() -> None:
     select2: TypedRows[MyTable] = db(MyTable).select()
     select3 = MyTable.select().collect()
 
-    typing.reveal_type(select1)  # R: src.typedal.core.TypedRows[Any]
-    typing.reveal_type(select2)  # R: src.typedal.core.TypedRows[tests.test_mypy.MyTable]
-    typing.reveal_type(select3)  # R: src.typedal.core.TypedRows[tests.test_mypy.MyTable]
+    typing.reveal_type(select1)  # R: typedal.core.TypedRows[Any]
+    typing.reveal_type(select2)  # R: typedal.core.TypedRows[tests.test_mypy.MyTable]
+    typing.reveal_type(select3)  # R: typedal.core.TypedRows[tests.test_mypy.MyTable]
 
     typing.reveal_type(select1.first())  # R: Union[Any, None]
     typing.reveal_type(select2.first())  # R: Union[tests.test_mypy.MyTable, None]
@@ -104,7 +104,7 @@ def mypy_test_query() -> None:
 
     my_query = MyTable.id > 3
 
-    typing.reveal_type(my_query)  # R: src.typedal.types.Query
+    typing.reveal_type(my_query)  # R: typedal.types.Query
 
     MyTable.update_or_insert(MyTable)
     MyTable.update_or_insert(my_query)

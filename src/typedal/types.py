@@ -10,6 +10,7 @@ from pydal.helpers.classes import Reference as _Reference
 from pydal.objects import Expression as _Expression
 from pydal.objects import Field as _Field
 from pydal.objects import Query as _Query
+from pydal.objects import Rows as _Rows
 from pydal.objects import Set as _Set
 from typing_extensions import NotRequired
 
@@ -30,7 +31,7 @@ class Expression(_Expression):  # type: ignore
     """
 
 
-class Set(_Set):
+class Set(_Set):  # type: ignore
     """
     Pydal Set object.
 
@@ -38,7 +39,7 @@ class Set(_Set):
     """
 
 
-class OpRow(_OpRow):
+class OpRow(_OpRow):  # type: ignore
     """
     Pydal OpRow object.
 
@@ -46,7 +47,7 @@ class OpRow(_OpRow):
     """
 
 
-class Reference(_Reference):
+class Reference(_Reference):  # type: ignore
     """
     Pydal Reference object.
 
@@ -54,9 +55,17 @@ class Reference(_Reference):
     """
 
 
-class Field(_Field):
+class Field(_Field):  # type: ignore
     """
     Pydal Field object.
+
+    Make mypy happy.
+    """
+
+
+class Rows(_Rows):  # type: ignore
+    """
+    Pydal Rows object.
 
     Make mypy happy.
     """

@@ -6,9 +6,16 @@ from typing import Any, Optional
 
 import json_fix  # noqa: F401
 import threadsafevariable
-from py4web.core import ICECUBE, Fixture
+from py4web.core import ICECUBE
+from py4web.core import Fixture as _Fixture
 
 from .core import TypeDAL, TypedTable
+
+
+class Fixture(_Fixture):  # type: ignore
+    """
+    Make mypy happy.
+    """
 
 
 class DAL(TypeDAL, Fixture):  # pragma: no cover

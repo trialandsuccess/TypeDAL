@@ -19,7 +19,7 @@ import pydal
 from pydal._globals import DEFAULT
 from pydal.objects import Field as _Field
 from pydal.objects import Query as _Query
-from pydal.objects import Row, Rows
+from pydal.objects import Row
 from pydal.objects import Table as _Table
 from typing_extensions import Self
 
@@ -53,6 +53,7 @@ from .types import (
     PaginateDict,
     Pagination,
     Query,
+    Rows,
     _Types,
 )
 
@@ -361,17 +362,19 @@ class TypeDAL(pydal.DAL):  # type: ignore
         entity_quoting: bool = True,
         table_hash: Optional[str] = None,
         enable_typedal_caching: bool = None,
+        use_pyproject: bool | str = True,
+        use_env: bool | str = True,
     ) -> None:
         """
         Adds some internal tables after calling pydal's default init.
 
         Set enable_typedal_caching to False to disable this behavior.
         """
-        config = load_config()
+        config = load_config(_use_pyproject=use_pyproject, _use_env=use_env)
         config.update(
             database=uri,
             dialect=uri.split(":")[0] if uri and ":" in uri else None,
-            folder=str(folder),
+            folder=folder,
             migrate=migrate,
             fake_migrate=fake_migrate,
             caching=enable_typedal_caching,
@@ -1053,6 +1056,13 @@ class TableMeta(type):
     fields: list[str]
 
     # other table methods:
+
+    def truncate(self, mode: str = "") -> None:
+        """
+        Remove all data and reset index.
+        """
+        table = self._ensure_table_defined()
+        table.truncate(mode)
 
     def drop(self, mode: str = "") -> None:
         """
