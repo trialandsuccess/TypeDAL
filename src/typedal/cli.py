@@ -5,6 +5,8 @@ import warnings
 from pathlib import Path
 from typing import Optional
 
+import tomli
+
 try:
     import edwh_migrate
     import pydal2sql  # noqa: F401
@@ -29,7 +31,7 @@ from pydal2sql_core import core_alter, core_create
 from typing_extensions import Never
 
 from .__about__ import __version__
-from .config import load_config
+from .config import TypeDALConfig, load_config
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -38,8 +40,53 @@ app = typer.Typer(
 
 @app.command()
 @with_exit_code(hide_tb=IS_DEBUG)
-def setup() -> None:
+def setup(config_file: Optional[str] = None) -> None:
     print("Interactive or cli or dummy.")
+    # 1. check if [tool.typedal] in pyproject.toml and ask missing questions (excl .env vars)
+    # 2. else if [tool.migrate] and/or [tool.pydal2sql] exist in the config, ask the user with copied defaults
+    # 3. else: ask the user every question or minimal questions based on cli arg
+    #      todo: choose --minimal, --full
+    # todo: rename --config-file to --config and -c
+
+    config = load_config(config_file)
+
+    toml_path = Path(config.pyproject)
+
+    if not (config.pyproject and toml_path.exists()):
+        # no pyproject.toml found!
+        print("no pyproject.toml")
+        return
+
+    toml_contents = toml_path.read_text()
+    toml_obj = tomli.loads(toml_contents)
+
+    if "[tool.typedal]" in toml_contents:
+        print("existing typedal", toml_obj["tool"]["typedal"])
+        return
+
+    if "[tool.pydal2sql]" in toml_contents:
+        mapping = {"": ""}  # <- placeholder
+
+        extra_config = toml_obj["tool"]["pydal2sql"]
+        extra_config = {mapping.get(k, k): v for k, v in extra_config.items()}
+        extra_config.pop("format", None)  # always edwh-migrate
+        config.update(**extra_config)
+
+    if "[tool.migrate]" in toml_contents:
+        mapping = {"migrate_uri": "database"}
+
+        extra_config = toml_obj["tool"]["migrate"]
+        extra_config = {mapping.get(k, k): v for k, v in extra_config.items()}
+
+        config.update(**extra_config)
+
+    for prop, annotation in TypeDALConfig.__annotations__.items():
+        default_value = getattr(config, prop, None)
+        print(prop, annotation, default_value)
+
+    # todo: include logic from `load_config` before/after user answers questions
+    # e.g. 'schema' from database BEFORE asking schema (-> default)
+    #      schema://database if no : in database (-> automatically)
 
 
 @app.command()
@@ -47,7 +94,7 @@ def setup() -> None:
 def generate_migrations(
     filename_before: OptionalArgument[str] = None,
     filename_after: OptionalArgument[str] = None,
-    db_type: DBType_Option = None,
+    dialect: DBType_Option = None,
     tables: Tables_Option = None,
     magic: Optional[bool] = None,
     noop: Optional[bool] = None,
@@ -63,7 +110,7 @@ def generate_migrations(
         magic=magic,
         noop=noop,
         tables=tables,
-        db_type=db_type.value if db_type else None,
+        db_type=dialect.value if dialect else None,
         function=function,
         format=output_format,
         input=filename_before,
@@ -97,17 +144,42 @@ def generate_migrations(
 
 @app.command()
 @with_exit_code(hide_tb=IS_DEBUG)
-def run_migrations() -> None:
-    # todo: cli opts?
+def run_migrations(
+    migrations_file: OptionalArgument[str] = None,
+    db_uri: Optional[str] = None,
+    db_folder: Optional[str] = None,
+    schema_version: Optional[str] = None,
+    redis_host: Optional[str] = None,
+    migrate_cat_command: Optional[str] = None,
+    database_to_restore: Optional[str] = None,
+    migrate_table: Optional[str] = None,
+    flag_location: Optional[str] = None,
+    schema: Optional[str] = None,
+    create_flag_location: Optional[bool] = None,
+) -> None:
     # 1. build migrate Config from TypeDAL config
     # 2. import right file
     # 3. `activate_migrations`
     generic_config = load_config()
     migrate_config = generic_config.to_migrate()
 
-    print("import", migrate_config.migrations_file)
+    migrate_config.update(
+        migrate_uri=db_uri,
+        schema_version=schema_version,
+        redis_host=redis_host,
+        migrate_cat_command=migrate_cat_command,
+        database_to_restore=database_to_restore,
+        migrate_table=migrate_table,
+        flag_location=flag_location,
+        schema=schema,
+        create_flag_location=create_flag_location,
+        db_folder=db_folder,
+        migrations_file=migrations_file,
+    )
 
-    edwh_migrate.console_hook([], config=migrate_config)
+    print(f"{migrate_config=}")
+
+    return edwh_migrate.console_hook([], config=migrate_config)
 
 
 def version_callback() -> Never:

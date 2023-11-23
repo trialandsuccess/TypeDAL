@@ -29,6 +29,7 @@ class TypeDALConfig(TypedConfig):
     fake_migrate: bool = False
     caching: bool = True
     pool_size: int = 0
+    pyproject: str
 
     # pydal2sql:
     input: Optional[str]  # noqa: A003
@@ -59,7 +60,14 @@ class TypeDALConfig(TypedConfig):
         return f"<TypeDAL {self.__dict__}>"
 
     def to_pydal2sql(self) -> "P2SConfig":
-        from pydal2sql.typer_support import Config
+        from pydal2sql.typer_support import Config, get_pydal2sql_config
+
+        if self.pyproject:
+            project = Path(self.pyproject).read_text()
+
+            if "[tool.typedal]" not in project and "[tool.pydal2sql]" in project:
+                # no typedal config, but existing p2s config:
+                return get_pydal2sql_config(self.pyproject)
 
         return Config.load(
             {
@@ -70,12 +78,19 @@ class TypeDALConfig(TypedConfig):
                 "function": self.function,
                 "input": self.input,
                 "output": self.output,
-                "pyproject": find_pyproject_toml(),
+                "pyproject": self.pyproject,
             }
         )
 
     def to_migrate(self) -> "MigrateConfig":
-        from edwh_migrate import Config
+        from edwh_migrate import Config, get_config
+
+        if self.pyproject:
+            project = Path(self.pyproject).read_text()
+
+            if "[tool.typedal]" not in project and "[tool.migrate]" in project:
+                # no typedal config, but existing p2s config:
+                return get_config()
 
         return Config.load(
             {
@@ -101,7 +116,7 @@ def find_pyproject_toml(directory: str | None = None) -> typing.Optional[str]:
     return black.files.find_pyproject_toml((directory or os.getcwd(),))
 
 
-def _load_toml(path: str | bool = True) -> dict[str, Any]:
+def _load_toml(path: str | bool | None = True) -> tuple[str, dict[str, Any]]:
     """
     Path can be a file, a directory, a bool or None.
 
@@ -121,18 +136,18 @@ def _load_toml(path: str | bool = True) -> dict[str, Any]:
 
     if not toml_path:
         # nothing to load
-        return {}
+        return "", {}
 
     try:
         with open(toml_path, "rb") as f:
             data = tomli.load(f)
 
-        return typing.cast(dict[str, Any], data["tool"]["typedal"])
+        return toml_path or "", typing.cast(dict[str, Any], data["tool"]["typedal"])
     except Exception:
-        return {}
+        return toml_path or "", {}
 
 
-def _load_dotenv(path: str | bool = True) -> dict[str, Any]:
+def _load_dotenv(path: str | bool | None = True) -> tuple[str, dict[str, Any]]:
     if path is False:
         dotenv_path = None
     elif path in (True, None):
@@ -143,7 +158,7 @@ def _load_dotenv(path: str | bool = True) -> dict[str, Any]:
         dotenv_path = str(Path(str(path)) / ".env")
 
     if not dotenv_path:
-        return {}
+        return "", {}
 
     # 1. find everything with TYPEDAL_ prefix
     # 2. remove that prefix
@@ -153,10 +168,45 @@ def _load_dotenv(path: str | bool = True) -> dict[str, Any]:
 
     typedal_data = {k.lower().removeprefix("typedal_"): v for k, v in data.items() if k.lower().startswith("typedal_")}
 
-    return typedal_data
+    return dotenv_path, typedal_data
 
 
-def load_config(_use_pyproject: bool | str = True, _use_env: bool | str = True, **fallback: Any) -> TypeDALConfig:
+DEFAULTS: dict[str, Any | typing.Callable[[dict[str, Any]], Any]] = {
+    "database": "sqlite:memory",
+    "dialect": lambda data: data["database"].split(":")[0] if ":" in data["database"] else None,
+    "migrate": lambda data: not ("input" in data or "output" in data),
+    "flag_location": lambda data: f"{db_folder}/flags"
+    if (db_folder := (data.get("folder") or data.get("db_folder")))
+    else "/flags",
+    "pool_size": lambda data: 1 if data.get("dialect", "sqlite") == "sqlite" else 3,
+}
+
+# todo: TRANSFORMATIONS dict?
+# transform database -> dialect://database if not : in db
+
+TRANSFORMS: dict[str, typing.Callable[[dict[str, Any]], Any]] = {
+    "database": lambda data: data["database"]
+    if (":" in data["database"] or not data.get("dialect"))
+    else (data["dialect"] + "://" + data["database"])
+}
+
+
+def fill_defaults(data: dict[str, Any], prop: str) -> None:
+    if data.get(prop, None) is None:
+        default = DEFAULTS.get(prop)
+        if callable(default):
+            default = default(data)
+        data[prop] = default
+
+
+def transform(data: dict[str, Any], prop: str) -> None:
+    if fn := TRANSFORMS.get(prop):
+        data[prop] = fn(data)
+
+
+def load_config(
+    _use_pyproject: bool | str | None = True, _use_env: bool | str | None = True, **fallback: Any
+) -> TypeDALConfig:
     """
     Combines multiple sources of config into one config instance.
     """
@@ -164,8 +214,8 @@ def load_config(_use_pyproject: bool | str = True, _use_env: bool | str = True, 
     # load .env data
     # combine and fill with fallback values
     # load typedal config or fail
-    toml = _load_toml(_use_pyproject)
-    dotenv = _load_dotenv(_use_env)
+    toml_path, toml = _load_toml(_use_pyproject)
+    dotenv_path, dotenv = _load_dotenv(_use_env)
 
     connection_name = dotenv.get("connection", "") or toml.get("default", "")
     connection: dict[str, Any] = toml.get(connection_name) or {}
@@ -173,27 +223,12 @@ def load_config(_use_pyproject: bool | str = True, _use_env: bool | str = True, 
     combined = connection | dotenv | fallback
     combined = {k.replace("-", "_"): v for k, v in combined.items()}
 
-    if not combined.get("database"):
-        combined["database"] = "sqlite:memory"
+    combined["pyproject"] = toml_path
 
-    if not combined.get("dialect") and ":" in combined["database"]:
-        combined["dialect"] = combined["database"].split(":")[0]
+    for prop in TypeDALConfig.__annotations__:
+        fill_defaults(combined, prop)
 
-    if ":" not in combined["database"] and (dialect := combined.get("dialect")):
-        _db = combined["database"]
-        combined["database"] = f"{dialect}://{_db}"
-
-    if not combined.get("migrate"):
-        # if 'input' or 'output' is defined, you're probably using edwh-migrate -> don't auto migrate!
-        combined["migrate"] = not ("input" in combined or "output" in combined)
-
-    if not combined.get("flag_location"):
-        if db_folder := combined.get("folder") or combined.get("db_folder"):
-            combined["flag_location"] = f"{db_folder}/flags"
-        else:
-            combined["flag_location"] = "/flags"
-
-    if not combined.get("pool_size"):
-        combined["pool_size"] = 1 if combined["dialect"] == "sqlite" else 3
+    for prop in TypeDALConfig.__annotations__:
+        transform(combined, prop)
 
     return TypeDALConfig.load(combined)
