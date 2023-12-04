@@ -256,35 +256,35 @@ def generate_migrations(
             sys.stderr.flush()
 
             return True
-
-        return core_alter(
-            pydal2sql_config.input,
-            filename_after or pydal2sql_config.input,
-            db_type=pydal2sql_config.db_type,
-            tables=pydal2sql_config.tables,
-            noop=pydal2sql_config.noop,
-            magic=pydal2sql_config.magic,
-            function=pydal2sql_config.function,
-            output_format=pydal2sql_config.format,
-            output_file=pydal2sql_config.output,
-        )
+        else:  # pragma: no cover
+            return core_alter(
+                pydal2sql_config.input,
+                filename_after or pydal2sql_config.input,
+                db_type=pydal2sql_config.db_type,
+                tables=pydal2sql_config.tables,
+                noop=pydal2sql_config.noop,
+                magic=pydal2sql_config.magic,
+                function=pydal2sql_config.function,
+                output_format=pydal2sql_config.format,
+                output_file=pydal2sql_config.output,
+            )
     else:
         if dry_run:
             print("Would run `pyda2sql create` with config", asdict(pydal2sql_config), file=sys.stderr)
             sys.stderr.flush()
 
             return True
-
-        return core_create(
-            filename=pydal2sql_config.input,
-            db_type=pydal2sql_config.db_type,
-            tables=pydal2sql_config.tables,
-            noop=pydal2sql_config.noop,
-            magic=pydal2sql_config.magic,
-            function=pydal2sql_config.function,
-            output_format=pydal2sql_config.format,
-            output_file=pydal2sql_config.output,
-        )
+        else:  # pragma: no cover
+            return core_create(
+                filename=pydal2sql_config.input,
+                db_type=pydal2sql_config.db_type,
+                tables=pydal2sql_config.tables,
+                noop=pydal2sql_config.noop,
+                magic=pydal2sql_config.magic,
+                function=pydal2sql_config.function,
+                output_format=pydal2sql_config.format,
+                output_file=pydal2sql_config.output,
+            )
 
 
 @app.command()
@@ -328,9 +328,8 @@ def run_migrations(
 
     if dry_run:
         print("Would run `migrate` with config", asdict(migrate_config), file=sys.stderr)
-        return True
-
-    edwh_migrate.console_hook([], config=migrate_config)
+    else:  # pragma: no cover
+        edwh_migrate.console_hook([], config=migrate_config)
     return True
 
 
@@ -371,5 +370,5 @@ def main(
     # else: just continue
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     app()

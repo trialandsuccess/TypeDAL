@@ -1,3 +1,4 @@
+import os
 import shutil
 import tempfile
 import warnings
@@ -8,7 +9,7 @@ import psycopg2
 import pytest
 
 from src.typedal import TypeDAL
-from src.typedal.config import load_config
+from src.typedal.config import load_config, _load_dotenv, _load_toml
 
 
 @pytest.fixture
@@ -30,6 +31,28 @@ def _load_db_after_setup(dialect: str):
     assert f"'dialect': '{dialect}'" in repr(config)
 
     return True
+
+
+def test_load_toml(at_temp_dir):
+    base = Path("pyproject.toml")
+    base.write_text("# empty")
+
+    assert _load_toml(False) == ("", {})
+    assert _load_toml(None) == (str(base.resolve().absolute()), {})
+    assert _load_toml(str(base)) == ("pyproject.toml", {})
+    assert _load_toml(".") == (str(base.resolve().absolute()), {})
+
+
+def test_load_dotenv(at_temp_dir):
+    base = Path(".env")
+    base.write_text("# empty")
+
+    data = {**os.environ}
+
+    assert _load_dotenv(False)[0] == ""
+    assert _load_dotenv(None)[0] == str(base.resolve().absolute())
+    assert _load_dotenv(str(base))[0] == ".env"
+    assert _load_dotenv(".")[0] == ".env"
 
 
 def test_load_empty_config(at_temp_dir):

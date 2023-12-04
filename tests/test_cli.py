@@ -39,3 +39,10 @@ def test_run_dry():
     print(result.stderr)
 
     assert "would run" in result.stderr.lower()
+
+
+def test_show_config():
+    result = runner.invoke(app, ["--show-config"])
+    assert result.exit_code == 0
+    assert not result.stderr
+    assert result.stdout.strip().startswith("<TypeDAL")
