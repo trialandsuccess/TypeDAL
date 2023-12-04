@@ -66,30 +66,11 @@ def test_load_both_config(at_temp_dir):
     assert _load_db_after_setup("postgres")
 
 
-# test_fallback
-"""
-    uri: Optional[str] = None,
-    pool_size: int = 0,
-    folder: Optional[str | Path] = None,
-    db_codec: str = "UTF-8",
-    check_reserved: Optional[list[str]] = None,
-    migrate: bool = True,
-    fake_migrate: bool = False,
-    migrate_enabled: bool = True,
-    fake_migrate_all: bool = False,
-    decode_credentials: bool = False,
-    driver_args: Optional[dict[str, Any]] = None,
-    adapter_args: Optional[dict[str, Any]] = None,
-    attempts: int = 5,
-    auto_import: bool = False,
-    bigint_id: bool = False,
-    debug: bool = False,
-    lazy_tables: bool = False,
-    db_uid: Optional[str] = None,
-    after_connection: typing.Callable[..., Any] = None,
-    tables: Optional[list[str]] = None,
-    ignore_field_case: bool = True,
-    entity_quoting: bool = True,
-    table_hash: Optional[str] = None,
-    enable_typedal_caching: bool = True,
-"""
+def test_converting(at_temp_dir):
+    from edwh_migrate import Config as MigrateConfig
+    from pydal2sql.typer_support import Config as P2SConfig
+
+    config = load_config()
+
+    assert isinstance(config.to_migrate(), MigrateConfig)
+    assert isinstance(config.to_pydal2sql(), P2SConfig)
