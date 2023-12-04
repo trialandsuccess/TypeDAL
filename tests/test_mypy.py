@@ -3,7 +3,12 @@ import typing
 import pydal.objects
 import pytest
 
-from typedal import TypeDAL, TypedField, TypedRows, TypedTable  # fixme: why does src.typedal not work anymore?
+from typedal import (  # fixme: why does src.typedal not work anymore?
+    TypeDAL,
+    TypedField,
+    TypedRows,
+    TypedTable,
+)
 
 db = TypeDAL("sqlite:memory")
 

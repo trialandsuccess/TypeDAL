@@ -9,7 +9,7 @@ import psycopg2
 import pytest
 
 from src.typedal import TypeDAL
-from src.typedal.config import load_config, _load_dotenv, _load_toml
+from src.typedal.config import _load_dotenv, _load_toml, load_config
 
 
 @pytest.fixture
@@ -46,8 +46,6 @@ def test_load_toml(at_temp_dir):
 def test_load_dotenv(at_temp_dir):
     base = Path(".env")
     base.write_text("# empty")
-
-    data = {**os.environ}
 
     assert _load_dotenv(False)[0] == ""
     assert _load_dotenv(None)[0] == str(base.resolve().absolute())
