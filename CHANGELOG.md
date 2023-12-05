@@ -2,6 +2,21 @@
 
 <!--next-version-placeholder-->
 
+## v2.2.0 (2023-12-05)
+### Feature
+* **cli:** Started with `setup` cli command to initialize typedal config ([`a46a859`](https://github.com/trialandsuccess/TypeDAL/commit/a46a859216b02dc2841d75c9391d5b3f52036daf))
+* Start working on cli that unifies pydal2sql + edwh-migrate ([`180dbb1`](https://github.com/trialandsuccess/TypeDAL/commit/180dbb1dd5738e312fbadb8a6ebea445115d96f5))
+* **config:** TypeDAL will now by default look for config in pyproject.toml and env (.env and os environ) ([`6af3cae`](https://github.com/trialandsuccess/TypeDAL/commit/6af3cae3bc1910ea6b3e145b107765fe31a60897))
+
+### Fix
+* **install:** Typedal[all] should now include all dependencies ([`e46b3ce`](https://github.com/trialandsuccess/TypeDAL/commit/e46b3ceadba8d0196254c38b0a913e3fee09046a))
+* **setup:** Tomlkit uses custom types which broke setup ([`7a6eca1`](https://github.com/trialandsuccess/TypeDAL/commit/7a6eca1b7ead7ee1396e85a2df019788900941a0))
+* Improve cli + tests ([`978fea1`](https://github.com/trialandsuccess/TypeDAL/commit/978fea1c158b6b1df3f0e79e9ffcd872defac0d4))
+
+### Documentation
+* **migrations:** Included subsection about multiple connections ([`acc8922`](https://github.com/trialandsuccess/TypeDAL/commit/acc892246f6f4297c53f878dca1212e4c9530c2c))
+* Added section 6 on Migrations ([`2423ed8`](https://github.com/trialandsuccess/TypeDAL/commit/2423ed856d0fade11c4e42e8846a93aaa1f4d59f))
+
 ## v2.1.5 (2023-11-21)
 
 ### Feature
