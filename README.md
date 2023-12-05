@@ -16,10 +16,13 @@ the underlying `db.define_table` pydal Tables.
 - `TypeDAL` is the replacement class for DAL that manages the code on top of DAL.
 - `TypedTable` must be the parent class of any custom Tables you define (e.g. `class SomeTable(TypedTable)`)
 - `TypedField` can be used instead of Python native types when extra settings (such as `default`) are required (
-  e.g. `name = TypedField(str, default="John Doe")`). It can also be used in an annotation (`name: TypedField[str]`) to improve
+  e.g. `name = TypedField(str, default="John Doe")`). It can also be used in an annotation (`name: TypedField[str]`) to
+  improve
   editor support over only annotating with `str`.
-- `TypedRows`: can be used as the return type annotation of pydal's `.select()` and subscribed with the actual table class, so
-  e.g. `rows: TypedRows[SomeTable] = db(...).select()`. When using the QueryBuilder, a `TypedRows` instance is returned by `.collect()`.
+- `TypedRows`: can be used as the return type annotation of pydal's `.select()` and subscribed with the actual table
+  class, so
+  e.g. `rows: TypedRows[SomeTable] = db(...).select()`. When using the QueryBuilder, a `TypedRows` instance is returned
+  by `.collect()`.
 
 Version 2.0 also introduces more ORM-like funcionality.
 Most notably, a Typed Query Builder that sees your table classes as models with relationships to each other.
@@ -29,7 +32,7 @@ details.
 ## Quick Overview
 
 Below you'll find a quick overview of translation from pydal to TypeDAL. For more info,
-see [the docs](https://github.com/trialandsuccess/TypeDAL/tree/master/docs).
+see [the docs](https://typedal.readthedocs.io/en/latest/).
 
 ### Translations from pydal to typedal
 
@@ -207,16 +210,6 @@ row: TableName = db.table_name(id=1)
 ### All Types
 
 See [2. Defining Tables](docs/2_defining_tables.md)
-
-## Roadmap
-
-This section contains a non-exhaustive list of planned features for future feature releases:
-
-- 2.2
-    - Migrations: currently, you can use pydal's automatic migrations or disable those and manage them yourself, but
-      adding something like [`edwh-migrate`](https://github.com/educationwarehouse/migrate#readme)
-      with [`pydal2sql`](https://github.com/robinvandernoord/pydal2sql-core) as an option could make this project more
-      production-friendly.
 
 ## Caveats
 
