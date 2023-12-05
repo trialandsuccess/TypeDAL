@@ -28,6 +28,7 @@ class TypeDALConfig(TypedConfig):
     caching: bool = True
     pool_size: int = 0
     pyproject: str
+    connection: str = "default"
 
     # pydal2sql:
     input: str = ""  # noqa: A003
@@ -257,6 +258,7 @@ def load_config(
     combined = {k.replace("-", "_"): v for k, v in combined.items()}
 
     combined["pyproject"] = toml_path
+    combined["connection"] = connection_name
 
     for prop in TypeDALConfig.__annotations__:
         fill_defaults(combined, prop)
