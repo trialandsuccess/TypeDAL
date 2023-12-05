@@ -45,8 +45,11 @@ migrations = [
 all = [
     "py4web",
     "json-fix",
+    "typer",
     "pydal2sql[all]",
     "edwh-migrate",
+    "questionary",
+    "tomlkit",
 ]
 
 dev = [
