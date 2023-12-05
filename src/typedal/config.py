@@ -3,6 +3,7 @@ TypeDAL can be configured by a combination of pyproject.toml (static), env (dyna
 """
 import os
 import typing
+import warnings
 from pathlib import Path
 from typing import Any, Optional
 
@@ -154,7 +155,8 @@ def _load_toml(path: str | bool | None = True) -> tuple[str, dict[str, Any]]:
             data = tomli.load(f)
 
         return toml_path or "", typing.cast(dict[str, Any], data["tool"]["typedal"])
-    except Exception:
+    except Exception as e:
+        warnings.warn(f"Could not load typedal config toml: {e}", source=e)
         return toml_path or "", {}
 
 
