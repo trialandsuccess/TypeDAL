@@ -54,6 +54,7 @@ from .types import (
     Pagination,
     Query,
     Rows,
+    Validator,
     _Types,
 )
 
@@ -523,6 +524,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
                 relationships=typing.cast(dict[str, Relationship[Any]], relationships),
             )
             self._class_map[str(table)] = cls
+            cls.__on_define__(self)
         else:
             warnings.warn("db.define used without inheriting TypedTable. This could lead to strange problems!")
 
@@ -1165,6 +1167,8 @@ class TypedField(typing.Generic[T_Value]):  # pragma: no cover
     _type: T_annotation
     kwargs: Any
 
+    requires: Validator | typing.Iterable[Validator]
+
     def __init__(self, _type: typing.Type[T_Value] | types.UnionType = str, /, **settings: Any) -> None:  # type: ignore
         """
         A TypedFieldType should not be inited manually, but TypedField (from `fields.py`) should be used!
@@ -1380,6 +1384,15 @@ class TypedTable(metaclass=TableMeta):
         inst.__dict__.update(row)
         inst._setup_instance_methods()
         return inst
+
+    @classmethod
+    def __on_define__(cls, db: TypeDAL) -> None:
+        """
+        Method that can be implemented by tables to do an action after db.define is completed.
+
+        This can be useful if you need to add something like requires=IS_NOT_IN_DB(db, "table.field"),
+        where you need a reference to the current database, which may not exist yet when defining the model.
+        """
 
     def __iter__(self) -> typing.Generator[Any, None, None]:
         """

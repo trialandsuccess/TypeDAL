@@ -1,6 +1,7 @@
 """
 ONLY USE IN COMBINATION WITH PY4WEB!
 """
+import typing
 from datetime import datetime
 from typing import Any, Optional
 
@@ -8,8 +9,11 @@ import json_fix  # noqa: F401
 import threadsafevariable
 from py4web.core import ICECUBE
 from py4web.core import Fixture as _Fixture
+from pydal.validators import CRYPT, IS_EMAIL, IS_NOT_EMPTY, IS_NOT_IN_DB, IS_STRONG
 
-from .core import TypeDAL, TypedTable
+from .core import TypeDAL, TypedField, TypedTable
+from .fields import PasswordField
+from .types import Validator
 
 
 class Fixture(_Fixture):  # type: ignore
@@ -53,13 +57,23 @@ class AuthUser(TypedTable):
 
     # call db.define on this when ready
 
-    email: str
-    password: str
-    first_name: Optional[str]
-    last_name: Optional[str]
-    sso_id: Optional[str]
-    action_token: Optional[str]
-    last_password_change: Optional[datetime]
+    email: TypedField[str]
+    password = PasswordField(requires=[IS_STRONG(entropy=45), CRYPT()])
+    first_name: TypedField[Optional[str]]
+    last_name: TypedField[Optional[str]]
+    sso_id: TypedField[Optional[str]]
+    action_token: TypedField[Optional[str]]
+    last_password_change: TypedField[Optional[datetime]]
+
     # past_passwords_hash: Optional[str]
     # username: Optional[str]
     # phone_number: Optional[str]
+
+    @classmethod
+    def __on_define__(cls, db: TypeDAL) -> None:
+        """
+        Add some requires= to the auth_user fields.
+        """
+        cls.email.requires = typing.cast(tuple[Validator, ...], (IS_EMAIL(), IS_NOT_IN_DB(db, "auth_user.email")))
+        cls.first_name.requires = IS_NOT_EMPTY()
+        cls.last_name.requires = IS_NOT_EMPTY()

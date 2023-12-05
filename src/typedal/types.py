@@ -12,6 +12,7 @@ from pydal.objects import Field as _Field
 from pydal.objects import Query as _Query
 from pydal.objects import Rows as _Rows
 from pydal.objects import Set as _Set
+from pydal.validators import Validator as _Validator
 from typing_extensions import NotRequired
 
 
@@ -66,6 +67,14 @@ class Field(_Field):  # type: ignore
 class Rows(_Rows):  # type: ignore
     """
     Pydal Rows object.
+
+    Make mypy happy.
+    """
+
+
+class Validator(_Validator):  # type: ignore
+    """
+    Pydal Validator object.
 
     Make mypy happy.
     """
