@@ -58,6 +58,51 @@ them to your .env file (optionally prefixed with `TYPEDAL`_):
 TYPEDAL_DATABASE = "psql://user:password@host:5432/database"
 ```
 
+### Multiple Connections
+
+Thie configuration allows you to define multiple database connections and specify which one to use through environment
+variables.
+
+```toml
+[tool.typedal]
+default = "development"
+
+[tool.typedal.development]
+database = "sqlite://"
+dialect = "sqlite"
+migrate = true
+
+[tool.typedal.production]
+# database from .env
+dialect = "postgres"
+migrate = false
+```
+
+```env
+TYPEDAL_CONNECTION="production"
+TYPEDAL_DATABASE="psql://..."
+```
+
+In the pyproject.toml file, under` [tool.typedal]`, you can set a default connection key, which here is set to "
+development".
+This key corresponds to a section named `[tool.typedal.development]` where you define configuration details for the
+development environment, such as the database URL (database) and dialect.
+
+Similarly, another section `[tool.typedal.production]` holds configuration details for the production environment. In
+this
+example, the database parameter is fetched from the `.env` file using the environment variable `TYPEDAL_DATABASE`. The
+`dialect` specifies the type of database being used, and `migrate` is set to `false` here, disabling automatic
+migrations in the production environment.
+
+The .env file contains environment variables like `TYPEDAL_CONNECTION`, which dictates the current active connection 
+("production" in this case), and `TYPEDAL_DATABASE`, holding the database URI for the production environment.
+
+This setup allows you to easily switch between different database configurations by changing the `TYPEDAL_CONNECTION`
+variable in the `.env` file, enabling you to seamlessly manage different database settings for distinct environments like
+development, testing, and production while keeping every (non-secret) config setting documented.
+
+To see the currently active configuration settings, you can run `typedal --show-config`.
+
 ## Generate Migrations (pydal2sql)
 
 Assuming your configuration is properly set up, `typedal generate-migrations` should execute without additional
