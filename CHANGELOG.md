@@ -2,6 +2,16 @@
 
 <!--next-version-placeholder-->
 
+## v2.2.1 (2023-12-05)
+
+### Fix
+
+* **py4web:** Add proper requires= to pydal's auth_user model ([`00d6436`](https://github.com/trialandsuccess/TypeDAL/commit/00d643601c2ee90cad19951a7877163ef97b2b4e))
+
+### Documentation
+
+* **readme:** Removed roadmap and set new docs url ([`6045065`](https://github.com/trialandsuccess/TypeDAL/commit/6045065b76a2b7de47afdd6386fdeca204e58af2))
+
 ## v2.2.0 (2023-12-05)
 ### Feature
 * **cli:** Started with `setup` cli command to initialize typedal config ([`a46a859`](https://github.com/trialandsuccess/TypeDAL/commit/a46a859216b02dc2841d75c9391d5b3f52036daf))
