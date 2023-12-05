@@ -7,6 +7,7 @@ import warnings
 from pathlib import Path
 from typing import Optional
 
+import tomli
 from configuraptor import asdict
 from configuraptor.alias import is_alias
 from configuraptor.helpers import is_optional
@@ -122,7 +123,6 @@ def get_question(prop: str, annotation: typing.Type[T], default: T | None) -> Op
         default = typing.cast(T, str(default))
 
     response = questionary.unsafe_prompt([question], default=default)[prop]
-
     return typing.cast(T, response)
 
 
@@ -150,7 +150,8 @@ def setup(
         toml_path.touch()
 
     toml_contents = toml_path.read_text()
-    toml_obj: dict[str, typing.Any] = tomlkit.loads(toml_contents)
+    # tomli has native Python types, tomlkit doesn't but preserves comments
+    toml_obj: dict[str, typing.Any] = tomli.loads(toml_contents)
 
     if "[tool.typedal]" in toml_contents:
         section = toml_obj["tool"]["typedal"]
