@@ -1,0 +1,78 @@
+# 6. Migrations
+
+By default, pydal manages migrations in your database schema
+automatically ([See also: the web2py docs](http://www.web2py.com/books/default/chapter/29/06/the-database-abstraction-layer#Migrations)).
+This can however be problemantic in a more production environment.
+In some cases, you want to disable automatic table changes and manage these by hand.
+
+TypeDAL integrates with [`edwh-migrate`](https://pypi.org/project/edwh-migrate/) to make this easier.
+With this tool, you write migrations (`CREATE`, `ALTER`, `DROP` statements) in SQL and it keeps track of which actions
+have already been executed on your database.
+
+In order to make this process easier, TypeDAL also integrates
+with [`pydal2sql`](https://pypi.org/project/pydal2sql/), which can convert your pydal/TypeDAL table definitions
+into `CREATE` statements if it's a new table, or `ALTER` statements if it's an existing table.
+
+## Installation
+
+To enable the migrations functionality within TypeDAL, you'll need to install it with the specific migrations extra
+dependencies. Run the following command:
+
+```bash
+pip install typedal[migrations] # also included in typedal[all]
+```
+
+This extra option is necessary as it adds a few dependencies that aren't essential for the core functionality of
+TypeDAL. Enabling the migrations explicitly ensures that you have the additional tools and features available for
+managing migrations effectively.
+
+## Config
+
+TypeDAL's migration behavior and some other features can be customized using a section in your `pyproject.toml`.
+An example config can look like this:
+
+```toml
+[tool.typedal]
+database = "storage.sqlite"
+dialect = "sqlite"
+folder = "databases"
+caching = true
+pool_size = 1
+database_to_restore = "data/backup.sql"
+migrate_table = "typedal_implemented_features"
+flag_location = "databases/flags"
+create_flag_location = true
+schema = "public"
+migrate = false  # disable pydal's automatic migration behavior
+fake_migrate = false
+```
+
+To generate such a configuration interactively, use `typedal setup`. If you already have `[tool.pydal2sql]`
+and/or `[tool.migrate]` sections, setup will incorporate their settings as defaults. For only essential prompts, add
+`--minimal`; sensible defaults will fill in the rest.
+
+For dynamic properties or secrets (like a database in postgres with credentials), exclude them from the toml and add
+them to your .env file (optionally prefixed with `TYPEDAL`_):
+
+```env
+TYPEDAL_DATABASE = "psql://user:password@host:5432/database"
+```
+
+## Generate Migrations (pydal2sql)
+
+Assuming your configuration is properly set up, `typedal generate-migrations` should execute without additional
+arguments.
+You can however overwrite the behavior as defined in the config. See the following command for all options:
+
+```bash
+typedal generate-migrations --help
+```
+
+## Run Migrations (edwh-migrate)
+
+With a correctly configured setup, running `typedal run-migrations` should function without extra arguments.
+You can however overwrite the behavior as defined in the config. See the following command for all options:
+
+```bash
+typedal run-migrations --help
+```
