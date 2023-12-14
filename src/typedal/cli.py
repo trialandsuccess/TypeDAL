@@ -39,7 +39,7 @@ from pydal2sql_core import core_alter, core_create
 from typing_extensions import Never
 
 from .__about__ import __version__
-from .config import TypeDALConfig, fill_defaults, load_config, transform
+from .config import TypeDALConfig, _fill_defaults, load_config, transform
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -67,7 +67,7 @@ questionary_types: dict[typing.Hashable, Optional[dict[str, typing.Any]]] = {
         "type": "path",
         "message": "Database directory:",
         "only_directories": True,
-        "default": "",
+        # "default": "",
     },
     "input": {
         "type": "path",
@@ -80,15 +80,11 @@ questionary_types: dict[typing.Hashable, Optional[dict[str, typing.Any]]] = {
         "file_filter": lambda file: "." not in file or file.endswith(".py"),
     },
     # disabled props:
-    "pyproject": None,
-    "noop": None,
-    # bool: questionary.confirm,
-    # int: questionary.text,
-    # 'pyproject': None,
-    # 'input': questionary.text,
-    # 'output': questionary.text,
-    # 'tables': questionary.print,
-    # 'flag_location': questionary.path,  # directory
+    "pyproject": None,  # internal
+    "noop": None,  # only for debugging
+    "connection": None,  # internal
+    "migrate": None,  # will probably conflict
+    "fake_migrate": None,  # only enable via config if required
 }
 
 T = typing.TypeVar("T")
@@ -175,6 +171,7 @@ def setup(
 
     data = asdict(config, with_top_level_key=False)
     data["migrate"] = None  # determined based on existence of input/output file.
+
     for prop, annotation in TypeDALConfig.__annotations__.items():
         if is_alias(config.__class__, prop):
             # don't store aliases!
@@ -186,10 +183,12 @@ def setup(
             data[prop] = getattr(config, prop, None)
             continue
 
-        fill_defaults(data, prop)
-        # default_value = getattr(config, prop, None)
+        _fill_defaults(data, prop, data.get(prop))
         default_value = data.get(prop, None)
         answer: typing.Any = get_question(prop, annotation, default_value)
+
+        if isinstance(answer, str):
+            answer = answer.strip()
 
         if annotation == bool:
             answer = bool(answer)
@@ -209,6 +208,7 @@ def setup(
         old_contents["tool"] = {}
 
     data.pop("pyproject", None)
+    data.pop("connection", None)
 
     # ignore any None:
     old_contents["tool"]["typedal"] = {k: v for k, v in data.items() if v is not None}

@@ -9,7 +9,7 @@ import psycopg2
 import pytest
 
 from src.typedal import TypeDAL
-from src.typedal.config import _load_dotenv, _load_toml, load_config
+from src.typedal.config import _load_dotenv, _load_toml, load_config, expand_env_vars_into_toml_values
 
 
 @pytest.fixture
@@ -95,3 +95,36 @@ def test_converting(at_temp_dir):
 
     assert isinstance(config.to_migrate(), MigrateConfig)
     assert isinstance(config.to_pydal2sql(), P2SConfig)
+
+
+def test_expand_env_vars():
+    # str
+    input_str = "${MYVALUE:default}"
+    data = {"myvar": input_str}
+    expand_env_vars_into_toml_values(data, {})
+    assert data["myvar"] == input_str
+
+    expand_env_vars_into_toml_values(data, {"unrelated": "data"})
+    assert data["myvar"] == "default"
+
+    data = {"myvar": input_str}
+    expand_env_vars_into_toml_values(data, {"myvalue": "123"})
+
+    assert data["myvar"] == "123"
+
+    # list
+    data = {"myvar": [input_str, input_str]}
+    expand_env_vars_into_toml_values(data, {"myvalue": "456"})
+
+    assert data["myvar"] == ["456", "456"]
+
+    # dict
+    data = {"myvar": {"value": input_str}}
+    expand_env_vars_into_toml_values(data, {"myvalue": "789"})
+    assert data["myvar"]["value"] == "789"
+
+    # other - non-str
+    data = {"myvar": None, "mynumber": 123}
+    expand_env_vars_into_toml_values(data, {"myvalue": "789"})
+    assert data["myvar"] is None
+    assert data["mynumber"] == 123
