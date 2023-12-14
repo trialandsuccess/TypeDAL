@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v2.2.2 (2023-12-14)
+
+### Feature
+
+* Env vars are now filled into config toml settings ([`dfbca8f`](https://github.com/trialandsuccess/TypeDAL/commit/dfbca8fa316b44758ae13c51b54386649ff72979))
+
 ## v2.2.1 (2023-12-05)
 
 ### Fix
