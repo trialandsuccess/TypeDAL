@@ -10,3 +10,4 @@ coverage.json
 *.table
 *.db
 site/
+.env
