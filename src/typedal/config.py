@@ -163,7 +163,7 @@ def _load_toml(path: str | bool | None = True) -> tuple[str, dict[str, Any]]:
 
 
 def _load_dotenv(path: str | bool | None = True) -> tuple[str, dict[str, Any]]:
-    fallback_data = {**os.environ}
+    fallback_data = {k.lower().removeprefix("typedal_"): v for k, v in os.environ.items()}
     if path is False:
         dotenv_path = None
         fallback_data = {}

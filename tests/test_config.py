@@ -98,12 +98,11 @@ def test_converting(at_temp_dir):
     assert isinstance(config.to_pydal2sql(), P2SConfig)
 
 
-def test_dump():
-    config = load_config(False, False)
+def test_environ(at_temp_dir):
+    os.environ["DB_URI"] = "sqlite:///tmp/db.sqlite"
+    config = load_config(False, True)
 
-    print(asdict(config))
-
-    assert asdict(config)
+    assert config.database == "sqlite:///tmp/db.sqlite"
 
 
 def test_expand_env_vars():
