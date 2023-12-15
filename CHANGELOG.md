@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v2.2.3 (2023-12-15)
+
+### Fix
+
+* If no .env, still load os environ ([`983c5b4`](https://github.com/trialandsuccess/TypeDAL/commit/983c5b42fd2d654236e77578f21bd94d920992a0))
+
 ## v2.2.2 (2023-12-14)
 
 ### Feature
