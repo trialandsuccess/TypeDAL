@@ -163,8 +163,10 @@ def _load_toml(path: str | bool | None = True) -> tuple[str, dict[str, Any]]:
 
 
 def _load_dotenv(path: str | bool | None = True) -> tuple[str, dict[str, Any]]:
+    fallback_data = {**os.environ}
     if path is False:
         dotenv_path = None
+        fallback_data = {}
     elif path in (True, None):
         dotenv_path = find_dotenv(usecwd=True)
     elif Path(str(path)).is_file():
@@ -173,7 +175,7 @@ def _load_dotenv(path: str | bool | None = True) -> tuple[str, dict[str, Any]]:
         dotenv_path = str(Path(str(path)) / ".env")
 
     if not dotenv_path:
-        return "", {}
+        return "", fallback_data
 
     # 1. find everything with TYPEDAL_ prefix
     # 2. remove that prefix

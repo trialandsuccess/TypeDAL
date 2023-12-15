@@ -7,6 +7,7 @@ from pathlib import Path
 
 import psycopg2
 import pytest
+from configuraptor import asdict
 
 from src.typedal import TypeDAL
 from src.typedal.config import _load_dotenv, _load_toml, load_config, expand_env_vars_into_toml_values
@@ -95,6 +96,14 @@ def test_converting(at_temp_dir):
 
     assert isinstance(config.to_migrate(), MigrateConfig)
     assert isinstance(config.to_pydal2sql(), P2SConfig)
+
+
+def test_dump():
+    config = load_config(False, False)
+
+    print(asdict(config))
+
+    assert asdict(config)
 
 
 def test_expand_env_vars():
