@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v2.3.1 (2023-12-18)
+
+### Fix
+
+* Model classes can now have non-db properties and methods and pydal will not complain anymore. Config should all go via @define, not as class properties anymore ([`49db4df`](https://github.com/trialandsuccess/TypeDAL/commit/49db4df2ff4c7ad2e9dad6cb78fab7ca7034a7d0))
+
 ## v2.3.0 (2023-12-18)
 
 ### Feature
