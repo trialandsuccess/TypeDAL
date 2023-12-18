@@ -2,6 +2,17 @@
 
 <!--next-version-placeholder-->
 
+## v2.3.0 (2023-12-18)
+
+### Feature
+
+* Db._config exposes the config used by TypeDAL ([`276fd8e`](https://github.com/trialandsuccess/TypeDAL/commit/276fd8e426bb1923146d681cf71e4bd0b9a4c577))
+* .update and .delete on a TypedRows result (after .collect()) ([`813f008`](https://github.com/trialandsuccess/TypeDAL/commit/813f008fbb0cb5b82c1c321d058bace25b83a23c))
+
+### Fix
+
+* Cached items can now be dumped .to_json() ([`0eaacc5`](https://github.com/trialandsuccess/TypeDAL/commit/0eaacc5ebdcc3648231ff9fc5a10436e6ec9d853))
+
 ## v2.2.4 (2023-12-15)
 
 ### Fix
