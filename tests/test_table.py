@@ -193,6 +193,8 @@ def test_both_styles_for_class():
 
 
 def test_table_with_methods():
+    simulated_today = dateutil.parser.parse('2020-01-01 00:00').date()
+
     @db.define()
     class TableWithMethods(TypedTable):
         birthday: dt.date
@@ -219,9 +221,24 @@ def test_table_with_methods():
 
             return self.get_age(dob, today)
 
+        def _as_dict(self, **kwargs):
+            # custom as_dict behavior!
+            return super()._as_dict() | {"age": self.age(simulated_today)}
+
+        # as_json is required and not automatically inherited if you want to customize as_dict/as_json behavior!
+        def _as_json(self, **kwargs):
+            # custom as_json behavior!
+            return json.dumps(self._as_dict(), default=str)
+
     row = TableWithMethods.insert(birthday='2000-01-01')
 
-    simulated_today = dateutil.parser.parse('2020-01-01 00:00').date()
     assert row.age(simulated_today) == 20
 
     assert TableWithMethods.get_tablename() == "table_with_methods"
+
+    # test custom JSON dumping behavior:
+    assert row.as_dict()['age'] == 20
+
+    loaded = json.loads(row.as_json())
+    assert loaded['birthday']
+    assert loaded['age'] == 20
