@@ -23,7 +23,7 @@ from pydal.objects import Row
 from pydal.objects import Table as _Table
 from typing_extensions import Self
 
-from .config import load_config
+from .config import TypeDALConfig, load_config
 from .helpers import (
     DummyQuery,
     all_annotations,
@@ -337,6 +337,8 @@ class TypeDAL(pydal.DAL):  # type: ignore
     Drop-in replacement for pyDAL with layer to convert class-based table definitions to classical pydal define_tables.
     """
 
+    _config: TypeDALConfig
+
     def __init__(
         self,
         uri: Optional[str] = None,  # default from config or 'sqlite:memory'
@@ -381,6 +383,8 @@ class TypeDAL(pydal.DAL):  # type: ignore
             caching=enable_typedal_caching,
             pool_size=pool_size,
         )
+
+        self._config = config
 
         if config.folder:
             Path(config.folder).mkdir(exist_ok=True)
