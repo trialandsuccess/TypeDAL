@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v2.3.2 (2023-12-18)
+
+### Fix
+
+* Improved JSON dumping with custom logic instead of pydals logic ([`ab9c3f0`](https://github.com/trialandsuccess/TypeDAL/commit/ab9c3f0be637942a472f4ffdba3effafc62460f5))
+
 ## v2.3.1 (2023-12-18)
 
 ### Fix
