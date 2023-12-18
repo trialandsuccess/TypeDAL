@@ -1700,6 +1700,7 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
         super().__init__(rows.db, records, rows.colnames, rows.compact, rows.response, rows.fields)
         self.model = model
         self.metadata = metadata or {}
+        self.colnames = rows.colnames
 
     def __len__(self) -> int:
         """
@@ -1976,6 +1977,8 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
         return {
             "metadata": json.dumps(self.metadata, default=str),
             "records": self.records,
+            "model": str(self.model._table),
+            "colnames": self.colnames,
         }
 
     def __setstate__(self, state: dict[str, Any]) -> None:
@@ -1984,6 +1987,7 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
         """
         state["metadata"] = json.loads(state["metadata"])
         self.__dict__.update(state)
+        # db etc. set after undill by caching.py
 
 
 from .caching import (  # noqa: E402
@@ -2324,7 +2328,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         metadata["cache"]["expires_at"] = expires_at
         metadata["cache"]["key"] = key
 
-        return load_from_cache(key)
+        return load_from_cache(key, self._get_db())
 
     def collect(
         self, verbose: bool = False, _to: typing.Type["TypedRows[Any]"] = None, add_id: bool = True

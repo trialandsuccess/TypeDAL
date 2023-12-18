@@ -1,10 +1,10 @@
 """
 Helpers to facilitate db-based caching.
 """
-
 import contextlib
 import hashlib
 import json
+import typing
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Mapping, Optional, TypeVar
 
@@ -12,6 +12,9 @@ import dill  # nosec
 from pydal.objects import Field, Rows, Set
 
 from .core import TypedField, TypedRows, TypedTable
+
+if typing.TYPE_CHECKING:  # pragma: no cover
+    from .core import TypeDAL
 
 
 def get_now(tz: timezone = timezone.utc) -> datetime:
@@ -232,7 +235,7 @@ def save_to_cache(
     return instance
 
 
-def _load_from_cache(key: str) -> Any | None:
+def _load_from_cache(key: str, db: "TypeDAL") -> Any | None:
     if not (row := _TypedalCache.where(key=key).first()):
         return None
 
@@ -245,19 +248,24 @@ def _load_from_cache(key: str) -> Any | None:
         return None
 
     inst = dill.loads(row.data)  # nosec
+
     inst.metadata["cache"]["status"] = "cached"
     inst.metadata["cache"]["cached_at"] = row.cached_at
     inst.metadata["cache"]["expires_at"] = row.expires_at
+
+    inst.db = db
+    inst.model = db._class_map[inst.model]
+    inst.model._setup_instance_methods(inst.model)  # type: ignore
     return inst
 
 
-def load_from_cache(key: str) -> Any | None:
+def load_from_cache(key: str, db: "TypeDAL") -> Any | None:
     """
     If 'key' matches a non-expired row in the database, try to load the dill.
 
     If anything fails, return None.
     """
     with contextlib.suppress(Exception):
-        return _load_from_cache(key)
+        return _load_from_cache(key, db)
 
     return None  # pragma: no cover

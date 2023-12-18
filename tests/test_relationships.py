@@ -328,8 +328,10 @@ def test_caching():
     _setup_data()
 
     uncached = User.join().collect_or_fail()
-    cached = User.cache().join().collect_or_fail()
-    cached_user_only = User.join().cache(User.id).collect_or_fail()
+    cached = User.cache().join().collect_or_fail()  # not actually cached yet!
+    cached_user_only = User.join().cache(User.id).collect_or_fail()  # idem
+
+    assert uncached.as_json() == cached.as_json()
 
     assert not uncached.metadata.get("cache", {}).get("enabled")
     assert cached.metadata.get("cache", {}).get("enabled")
@@ -361,6 +363,9 @@ def test_caching():
         == len(cached_user_only2)
         == len(cached_user_only)
     )
+
+    print("---")
+    assert uncached.as_json() == uncached2.as_json() == cached.as_json() == cached2.as_json()
 
     assert cached.first().gid == cached2.first().gid
 
@@ -430,7 +435,7 @@ def test_caching():
     assert _TypedalCache.count()
     assert _TypedalCacheDependency.count()
 
-    time.sleep(3)
+    time.sleep(3) # for TTL
     data = User.cache(ttl=2).collect().metadata["cache"]
     assert data.get("status") == "fresh"
     assert not data.get("cached_at")
@@ -482,6 +487,5 @@ def test_caching_dependencies():
 
 def test_illegal():
     with pytest.raises(ValueError), pytest.warns(UserWarning):
-
         class HasRelationship:
             something = relationship("...", condition=lambda: 1, on=lambda: 2)
