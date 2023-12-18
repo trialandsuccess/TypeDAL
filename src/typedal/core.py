@@ -485,7 +485,9 @@ class TypeDAL(pydal.DAL):  # type: ignore
         # ! dont' use full_dict here:
         other_kwargs = kwargs | {
             k: v for k, v in cls.__dict__.items() if k not in annotations and not k.startswith("_")
-        }
+        }  # other_kwargs was previously used to pass kwargs to typedal, but use @define(**kwargs) for that.
+        #    now it's only used to extract relationships from the object.
+        #    other properties of the class (incl methods) should not be touched
 
         for key in typedfields.keys() - full_dict.keys():
             # typed fields that don't haven't been added to the object yet
@@ -512,9 +514,9 @@ class TypeDAL(pydal.DAL):  # type: ignore
             if k not in relationships and (new_relationship := to_relationship(cls, k, annotations[k]))
         }
 
-        cache_dependency = other_kwargs.pop("cache_dependency", True)
+        cache_dependency = kwargs.pop("cache_dependency", True)
 
-        table: Table = self.define_table(tablename, *fields.values(), **other_kwargs)
+        table: Table = self.define_table(tablename, *fields.values(), **kwargs)
 
         for name, typed_field in typedfields.items():
             field = fields[name]

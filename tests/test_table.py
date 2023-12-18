@@ -1,10 +1,12 @@
 """
 Test (Typed)Table public API.
 """
+import datetime as dt
 import io
 import json
 from textwrap import dedent
 
+import dateutil.parser
 import pydal
 import pytest
 from pydal.objects import Expression
@@ -188,3 +190,38 @@ def test_both_styles_for_class():
 
     with pytest.raises(Exception):
         NewStyle.drop()
+
+
+def test_table_with_methods():
+    @db.define()
+    class TableWithMethods(TypedTable):
+        birthday: dt.date
+
+        @property
+        def today(self):
+            return dt.date.today()
+
+        @staticmethod
+        def get_age(dob: dt.date, today: dt.date) -> int:
+            if today.month < dob.month or (today.month == dob.month and today.day < dob.day):
+                return today.year - dob.year - 1
+            else:
+                return today.year - dob.year
+
+        @classmethod
+        def get_tablename(cls):
+            return str(cls._table)
+
+        def age(self, today: dt.date = None):
+            # https://stackoverflow.com/questions/765797/convert-timedelta-to-years
+            today = today or self.today
+            dob = self.birthday
+
+            return self.get_age(dob, today)
+
+    row = TableWithMethods.insert(birthday='2000-01-01')
+
+    simulated_today = dateutil.parser.parse('2020-01-01 00:00').date()
+    assert row.age(simulated_today) == 20
+
+    assert TableWithMethods.get_tablename() == "table_with_methods"

@@ -10,7 +10,12 @@ import pytest
 from configuraptor import asdict
 
 from src.typedal import TypeDAL
-from src.typedal.config import _load_dotenv, _load_toml, load_config, expand_env_vars_into_toml_values
+from src.typedal.config import (
+    _load_dotenv,
+    _load_toml,
+    expand_env_vars_into_toml_values,
+    load_config,
+)
 
 
 @pytest.fixture
