@@ -39,6 +39,7 @@ from .helpers import (
     to_snake,
     unwrap_type,
 )
+from .serializers import as_json
 from .types import (
     AfterDeleteCallable,
     AfterInsertCallable,
@@ -1497,7 +1498,7 @@ class TypedTable(metaclass=TableMeta):
         return typing.cast(dict[str, Any], result)
 
     @classmethod
-    def as_json(cls, sanitize: bool = True) -> str:
+    def as_json(cls, sanitize: bool = True, indent: Optional[int] = None, **kwargs: Any) -> str:
         """
         Dump the object to json.
 
@@ -1505,8 +1506,8 @@ class TypedTable(metaclass=TableMeta):
         - dumps the table info if it's a class
         - dumps the row info if it's an instance (see _as_json)
         """
-        table = cls._ensure_table_defined()
-        return typing.cast(str, table.as_json(sanitize))
+        data = cls.as_dict(sanitize=sanitize)
+        return as_json.encode(data, indent=indent, **kwargs)
 
     @classmethod
     def as_xml(cls, sanitize: bool = True) -> str:  # pragma: no cover
@@ -1536,15 +1537,25 @@ class TypedTable(metaclass=TableMeta):
         self, datetime_to_str: bool = False, custom_types: typing.Iterable[type] | type | None = None
     ) -> dict[str, Any]:
         row = self._ensure_matching_row()
+
         result = row.as_dict(datetime_to_str=datetime_to_str, custom_types=custom_types)
+
+        def asdict_method(obj: Any) -> Any:  # pragma: no cover
+            if hasattr(obj, "_as_dict"):  # typedal
+                return obj._as_dict()
+            elif hasattr(obj, "as_dict"):  # pydal
+                return obj.as_dict()
+            else:  # something else??
+                return obj.__dict__
 
         if _with := getattr(self, "_with", None):
             for relationship in _with:
                 data = self.get(relationship)
+
                 if isinstance(data, list):
-                    data = [_.as_dict() if getattr(_, "as_dict", None) else _ for _ in data]
+                    data = [asdict_method(_) for _ in data]
                 elif data:
-                    data = data.as_dict()
+                    data = asdict_method(data)
 
                 result[relationship] = data
 
@@ -1552,14 +1563,12 @@ class TypedTable(metaclass=TableMeta):
 
     def _as_json(
         self,
-        mode: str = "object",
         default: typing.Callable[[Any], Any] = None,
-        colnames: list[str] = None,
-        serialize: bool = True,
+        indent: Optional[int] = None,
         **kwargs: Any,
     ) -> str:
-        row = self._ensure_matching_row()
-        return typing.cast(str, row.as_json(mode, default, colnames, serialize, *kwargs))
+        data = self._as_dict()
+        return as_json.encode(data, default=default, indent=indent, **kwargs)
 
     def _as_xml(self, sanitize: bool = True) -> str:  # pragma: no cover
         row = self._ensure_matching_row()
@@ -1637,14 +1646,6 @@ class TypedTable(metaclass=TableMeta):
     # __del__ is also called on the end of a scope so don't remove records on every del!!
 
     # pickling:
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        """
-        Used by dill when loading from a bytestring.
-        """
-        # as_dict also includes table info, so dump as json to only get the actual row data
-        # then create a new (more empty) row object:
-        state["_row"] = Row(json.loads(state["_row"]))
-        self.__dict__ |= state
 
     def __getstate__(self) -> dict[str, Any]:
         """
@@ -1657,6 +1658,7 @@ class TypedTable(metaclass=TableMeta):
         result: dict[str, Any] = row.as_dict()
 
         if _with := getattr(self, "_with", None):
+            result["_with"] = _with
             for relationship in _with:
                 data = self.get(relationship)
 
@@ -1664,6 +1666,15 @@ class TypedTable(metaclass=TableMeta):
 
         result["_row"] = self._row.as_json() if self._row else ""
         return result
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """
+        Used by dill when loading from a bytestring.
+        """
+        # as_dict also includes table info, so dump as json to only get the actual row data
+        # then create a new (more empty) row object:
+        state["_row"] = Row(json.loads(state["_row"]))
+        self.__dict__ |= state
 
 
 # backwards compat:
@@ -1864,17 +1875,19 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
 
         return {k: v.as_dict() for k, v in self.records.items()}
 
-    def as_json(self, mode: str = "object", default: typing.Callable[[Any], Any] = None) -> str:
+    def as_json(self, default: typing.Callable[[Any], Any] = None, indent: Optional[int] = None, **kwargs: Any) -> str:
         """
         Turn the data into a dict and then dump to JSON.
         """
-        return typing.cast(str, super().as_json(mode=mode, default=default))
+        data = self.as_list()
 
-    def json(self, mode: str = "object", default: typing.Callable[[Any], Any] = None) -> str:
+        return as_json.encode(data, default=default, indent=indent, **kwargs)
+
+    def json(self, default: typing.Callable[[Any], Any] = None, indent: Optional[int] = None, **kwargs: Any) -> str:
         """
         Turn the data into a dict and then dump to JSON.
         """
-        return typing.cast(str, super().as_json(mode=mode, default=default))
+        return self.as_json(default=default, indent=indent, **kwargs)
 
     def as_list(
         self,
@@ -1890,6 +1903,7 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
             return typing.cast(
                 list[dict[str, Any]], super().as_list(compact, storage_to_dict, datetime_to_str, custom_types)
             )
+
         return [_.as_dict() for _ in self.records.values()]
 
     def __getitem__(self, item: int) -> T_MetaInstance:

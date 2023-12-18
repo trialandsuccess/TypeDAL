@@ -226,9 +226,15 @@ def test_table_with_methods():
             return super()._as_dict() | {"age": self.age(simulated_today)}
 
         # as_json is required and not automatically inherited if you want to customize as_dict/as_json behavior!
-        def _as_json(self, **kwargs):
-            # custom as_json behavior!
-            return json.dumps(self._as_dict(), default=str)
+        def _as_json(self, mode: str = 'str', **kwargs):
+            # custom as_json behavior! Kinda tricky but this seems to work:
+            if mode == 'object':
+                # don't dump as string
+                return self._as_dict()
+            elif mode == 'str':
+                return json.dumps(self._as_dict(), default=kwargs.get('default', str))
+            else:
+                raise NotImplementedError(f"Invalid json mode {mode}")
 
     row = TableWithMethods.insert(birthday='2000-01-01')
 
@@ -242,3 +248,9 @@ def test_table_with_methods():
     loaded = json.loads(row.as_json())
     assert loaded['birthday']
     assert loaded['age'] == 20
+
+    # and from a level up:
+    dumped = TableWithMethods.all().as_json()
+
+    loaded = json.loads(dumped)
+    assert loaded[0]['age'] == 20
