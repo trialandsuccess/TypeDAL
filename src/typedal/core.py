@@ -740,7 +740,7 @@ class TableProtocol(typing.Protocol):  # pragma: no cover
     Make mypy happy.
     """
 
-    id: int  # noqa: A003
+    id: "TypedField[int]"  # noqa: A003
 
     def __getitem__(self, item: str) -> Field:
         """
@@ -1908,6 +1908,28 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
         """
         return self.records.get(item)
 
+    def update(self, **new_values: Any) -> bool:
+        """
+        Update the current rows in the database with new_values.
+        """
+        # cast to make mypy understand .id is a TypedField and not an int!
+        table = typing.cast(typing.Type[TypedTable], self.model._ensure_table_defined())
+
+        ids = set(self.column("id"))
+        query = table.id.belongs(ids)
+        return bool(self.db(query).update(**new_values))
+
+    def delete(self) -> bool:
+        """
+        Delete the currently selected rows from the database.
+        """
+        # cast to make mypy understand .id is a TypedField and not an int!
+        table = typing.cast(typing.Type[TypedTable], self.model._ensure_table_defined())
+
+        ids = set(self.column("id"))
+        query = table.id.belongs(ids)
+        return bool(self.db(query).delete())
+
     def join(
         self,
         field: "Field | TypedField[Any]",
@@ -2466,7 +2488,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         return query, select_args
 
     def _collect_with_relationships(
-        self, rows: Rows, metadata: Metadata, _to: typing.Type["TypedRows[Any]"] = None
+        self, rows: Rows, metadata: Metadata, _to: typing.Type["TypedRows[Any]"]
     ) -> "TypedRows[T_MetaInstance]":
         """
         Transform the raw rows into Typed Table model instances.

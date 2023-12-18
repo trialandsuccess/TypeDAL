@@ -364,7 +364,6 @@ def test_caching():
         == len(cached_user_only)
     )
 
-    print("---")
     assert uncached.as_json() == uncached2.as_json() == cached.as_json() == cached2.as_json()
 
     assert cached.first().gid == cached2.first().gid
@@ -435,7 +434,7 @@ def test_caching():
     assert _TypedalCache.count()
     assert _TypedalCacheDependency.count()
 
-    time.sleep(3) # for TTL
+    time.sleep(3)  # for TTL
     data = User.cache(ttl=2).collect().metadata["cache"]
     assert data.get("status") == "fresh"
     assert not data.get("cached_at")
@@ -448,6 +447,27 @@ def test_caching():
 
     assert not _TypedalCache.count()
     assert not _TypedalCacheDependency.count()
+
+    # test updating/deleting cached records:
+    User.cache().collect()
+    # should be cached:
+    users = User.cache().collect()
+
+    # .cache().collect() should have added cache entries:
+    assert _TypedalCache.count()
+    assert _TypedalCacheDependency.count()
+
+    users.update(name="Redacted")
+
+    # .update() should have deleted the cache entries:
+    assert not _TypedalCache.count()
+    assert not _TypedalCacheDependency.count()
+
+    assert set(User.cache().collect().column("name")) == {"Redacted"} == set(User.collect().column("name"))
+
+    users.delete()
+
+    assert not User.count()
 
 
 def test_caching_dependencies():
