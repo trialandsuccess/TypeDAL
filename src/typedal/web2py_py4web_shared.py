@@ -21,12 +21,12 @@ class AuthUser(TypedTable):
     last_name = TypedField(str, requires=IS_NOT_EMPTY())
     email = TypedField(str)
     password = PasswordField(requires=[IS_STRONG(entropy=45), CRYPT()])
-    sso_id = TypedField(str, readable=False, writable=False)
-    action_token = TypedField(str, readable=False, writable=False)
+    sso_id = TypedField(str, readable=False, writable=False, notnull=False)
+    action_token = TypedField(str, readable=False, writable=False, notnull=False)
     last_password_change = TypedField(dt.datetime, default=dt.datetime.now, readable=False, writable=False)
-    registration_key = TypedField(str, readable=False, writable=False)
-    reset_password_key = TypedField(str, readable=False, writable=False)
-    registration_id = TypedField(str, readable=False, writable=False)
+    registration_key = TypedField(str, readable=False, writable=False, notnull=False)
+    reset_password_key = TypedField(str, readable=False, writable=False, notnull=False)
+    registration_id = TypedField(str, readable=False, writable=False, notnull=False)
 
     @classmethod
     def __on_define__(cls, db: TypeDAL) -> None:
