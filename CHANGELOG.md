@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v2.3.5 (2023-12-19)
+
+### Fix
+
+* Some fields should not be nullable ([`4a3ebba`](https://github.com/trialandsuccess/TypeDAL/commit/4a3ebba31eea0da18e4f789644af44a099b1711d))
+
 ## v2.3.4 (2023-12-19)
 
 ### Fix
