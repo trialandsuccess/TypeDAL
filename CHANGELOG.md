@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v2.3.4 (2023-12-19)
+
+### Fix
+
+* Included web2py auth tables in for_web2py ([`b7c7213`](https://github.com/trialandsuccess/TypeDAL/commit/b7c7213c59a253bc2211ab3771be2e3fa7d9f7a3))
+
 ## v2.3.3 (2023-12-19)
 
 
