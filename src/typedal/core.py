@@ -853,20 +853,6 @@ class TableMeta(type):
         """
         return self.collect()
 
-    def __json__(self: typing.Type[T_MetaInstance], instance: T_MetaInstance | None = None) -> dict[str, Any]:
-        """
-        Convert to a json-dumpable dict.
-
-        as_dict is not fully json-dumpable, so use as_json and json.loads to ensure it is dumpable (and loadable).
-        todo: can this be optimized?
-
-        See Also:
-            https://github.com/jeff-hykin/json_fix
-        """
-        string = instance.as_json() if instance else self.as_json()
-
-        return typing.cast(dict[str, Any], json.loads(string))
-
     def get_relationships(self) -> dict[str, Relationship[Any]]:
         """
         Return the registered relationships of the current model.
@@ -2005,12 +1991,6 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
         Internal method to convert a Rows object to a TypedRows.
         """
         return cls(rows, model, metadata=metadata)
-
-    def __json__(self) -> dict[str, Any]:
-        """
-        For json-fix.
-        """
-        return typing.cast(dict[str, Any], self.as_dict())
 
     def __getstate__(self) -> dict[str, Any]:
         """

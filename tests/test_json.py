@@ -22,12 +22,9 @@ encoder = SerializedJson()
 def test_set():
     dumped = encode({1, 2, 3})
     loaded: list = json.loads(dumped)
+    loaded.sort()  # set order not guaranteed
 
-    converted: list = encoder.default({1, 2, 3})
-    converted.sort()  # set order is not guaranteed
-    loaded.sort()
-
-    assert converted == [1, 2, 3] == loaded
+    assert loaded == [1, 2, 3]
 
 
 def test_datetime():

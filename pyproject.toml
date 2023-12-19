@@ -26,12 +26,12 @@ dependencies = [
     "pydal", # core
     "dill", # caching
     "configuraptor >= 1.24.0", # config
+    "Configurable-JSON", # json dumping
 ]
 
 [project.optional-dependencies]
 py4web = [
     "py4web",
-    "json-fix",
 ]
 
 migrations = [
@@ -44,7 +44,6 @@ migrations = [
 
 all = [
     "py4web",
-    "json-fix",
     "typer",
     "pydal2sql[all]",
     "edwh-migrate",

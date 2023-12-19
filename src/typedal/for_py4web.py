@@ -5,7 +5,6 @@ import typing
 from datetime import datetime
 from typing import Any, Optional
 
-import json_fix  # noqa: F401
 import threadsafevariable
 from py4web.core import ICECUBE
 from py4web.core import Fixture as _Fixture
@@ -52,8 +51,10 @@ class AuthUser(TypedTable):
     Class for db.auth_user in py4web (probably not w2p).
     """
 
+    # fixme: these settings are probably not passed anymore!
     redefine = True
     migrate = False
+    # /fixme
 
     # call db.define on this when ready
 

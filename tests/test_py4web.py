@@ -1,9 +1,11 @@
 import json
 
+import pytest
 from pydal.validators import IS_EMAIL, IS_NOT_IN_DB
 
 from src.typedal import TypedTable
 from src.typedal.for_py4web import DAL, AuthUser
+from src.typedal.serializers import as_json
 
 db = DAL("sqlite:memory")
 
@@ -20,14 +22,14 @@ def test_serialize():
 
     row = JsonTable.insert(field="Hey")
 
-    l = json.loads(json.dumps(JsonTable))
+    l = json.loads(as_json.encode(JsonTable))
     assert l
     assert isinstance(l, dict)
-    l = json.loads(json.dumps(row))
+    l = json.loads(as_json.encode(row))
     assert isinstance(l, dict)
     assert l
 
-    l = json.loads(json.dumps(JsonTable.paginate(limit=1)))
+    l = json.loads(as_json.encode(JsonTable.paginate(limit=1)))
 
     assert l["pagination"]
     assert l["data"]

@@ -13,6 +13,7 @@ from pydal.objects import Expression
 
 from src.typedal import TypeDAL, TypedField, TypedTable
 from src.typedal.fields import IntegerField
+from src.typedal.serializers import as_json
 
 db = TypeDAL("sqlite:memory")
 
@@ -35,6 +36,8 @@ def test_both_styles_for_class():
     assert NewStyle.as_dict().keys() == old_style.as_dict().keys()
 
     assert json.loads(NewStyle.as_json()).keys() == json.loads(old_style.as_json()).keys()
+
+    assert as_json.encode(NewStyle) == NewStyle.as_json()
 
     # assert old_style.as_xml()
     # assert NewStyle.as_xml()

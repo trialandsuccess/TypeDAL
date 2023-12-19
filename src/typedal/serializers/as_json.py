@@ -2,27 +2,35 @@
 Replacement for pydal's json serializer.
 """
 
-import datetime as dt
 import json
-from json import JSONEncoder
+import typing
 from typing import Any
 
+from configurablejson import ConfigurableJsonEncoder, JSONRule
 
-class SerializedJson(JSONEncoder):
+
+class SerializedJson(ConfigurableJsonEncoder):
     """
     Custom encoder class with slightly improved defaults.
     """
 
-    def default(self, o: Any) -> Any:
-        """
-        If no logic exists for a type yet, it is processed by this method.
-
-        It supports sets (turned into list), __json__ methods and will just str() otherwise.
-        """
-        if isinstance(o, set):
-            return list(o)
-        elif isinstance(o, dt.date):
-            return str(o)
+    def _default(self, o: Any) -> Any:  # pragma: no cover
+        if hasattr(o, "as_dict"):
+            return o.as_dict()
+        elif hasattr(o, "asdict"):
+            return o.asdict()
+        elif hasattr(o, "_asdict"):
+            return o._asdict()
+        elif hasattr(o, "_as_dict"):
+            return o._as_dict()
+        elif hasattr(o, "to_dict"):
+            return o.to_dict()
+        elif hasattr(o, "todict"):
+            return o.todict()
+        elif hasattr(o, "_todict"):
+            return o._todict()
+        elif hasattr(o, "_to_dict"):
+            return o._to_dict()
         elif hasattr(o, "__json__"):
             if callable(o.__json__):
                 return o.__json__()
@@ -30,9 +38,34 @@ class SerializedJson(JSONEncoder):
                 return o.__json__
         elif hasattr(o, "__dict__"):
             return o.__dict__
-        else:
-            # warnings.warn(f"Unkown type {type(o)}")
-            return str(o)
+
+        return str(o)
+
+    @typing.overload
+    def rules(self, o: Any, with_default: typing.Literal[False]) -> JSONRule | None:
+        """
+        If you pass with_default=False, you could get a None result.
+        """
+
+    @typing.overload
+    def rules(self, o: Any, with_default: typing.Literal[True] = True) -> JSONRule:
+        """
+        If you don't pass with_default=False, you will always get a JSONRule result.
+        """
+
+    def rules(self, o: Any, with_default: bool = True) -> JSONRule | None:
+        """
+        Custom rules, such as set to list and as_dict/__json__ etc. lookups.
+        """
+        _type = type(o)
+
+        _rules: dict[type[Any], JSONRule] = {
+            # convert set to list
+            set: JSONRule(preprocess=lambda o: list(o)),
+        }
+
+        # other rules:
+        return _rules.get(_type, JSONRule(transform=self._default) if with_default else None)
 
 
 def encode(something: Any, indent: int = None, **kw: Any) -> str:
