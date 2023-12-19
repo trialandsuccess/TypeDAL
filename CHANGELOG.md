@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v2.3.3-beta.1 (2023-12-19)
+
+### Fix
+
+* Remove json-fix magic, just use the custom json serializer instead! ([`6f5b687`](https://github.com/trialandsuccess/TypeDAL/commit/6f5b68751b97d7e69f914563c8ccbf282cab9527))
+
 ## v2.3.2 (2023-12-18)
 
 ### Fix
