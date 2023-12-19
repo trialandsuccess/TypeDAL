@@ -1,10 +1,9 @@
 import json
 
-import pytest
 from pydal.validators import IS_EMAIL, IS_NOT_IN_DB
 
 from src.typedal import TypedTable
-from src.typedal.for_py4web import DAL, AuthUser
+from src.typedal.for_py4web import DAL, AuthUser, setup_py4web_tables
 from src.typedal.serializers import as_json
 
 db = DAL("sqlite:memory")
@@ -36,7 +35,7 @@ def test_serialize():
 
 
 def test_auth_user():
-    db.define(AuthUser)
+    setup_py4web_tables(db)
     requirements = AuthUser.email.requires
 
     assert requirements

@@ -1,18 +1,14 @@
 """
 ONLY USE IN COMBINATION WITH PY4WEB!
 """
-import typing
-from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 import threadsafevariable
 from py4web.core import ICECUBE
 from py4web.core import Fixture as _Fixture
-from pydal.validators import CRYPT, IS_EMAIL, IS_NOT_EMPTY, IS_NOT_IN_DB, IS_STRONG
 
-from .core import TypeDAL, TypedField, TypedTable
-from .fields import PasswordField
-from .types import Validator
+from .core import TypeDAL
+from .web2py_py4web_shared import AuthUser
 
 
 class Fixture(_Fixture):  # type: ignore
@@ -46,35 +42,16 @@ class DAL(TypeDAL, Fixture):  # pragma: no cover
         self.recycle_connection_in_pool_or_close("commit")
 
 
-class AuthUser(TypedTable):
+def setup_py4web_tables(db: TypeDAL) -> None:
     """
-    Class for db.auth_user in py4web (probably not w2p).
+    Setup all the (default) required auth table.
     """
+    db.define(AuthUser, migrate=False, redefine=True)
 
-    # fixme: these settings are probably not passed anymore!
-    redefine = True
-    migrate = False
-    # /fixme
 
-    # call db.define on this when ready
-
-    email: TypedField[str]
-    password = PasswordField(requires=[IS_STRONG(entropy=45), CRYPT()])
-    first_name: TypedField[Optional[str]]
-    last_name: TypedField[Optional[str]]
-    sso_id: TypedField[Optional[str]]
-    action_token: TypedField[Optional[str]]
-    last_password_change: TypedField[Optional[datetime]]
-
-    # past_passwords_hash: Optional[str]
-    # username: Optional[str]
-    # phone_number: Optional[str]
-
-    @classmethod
-    def __on_define__(cls, db: TypeDAL) -> None:
-        """
-        Add some requires= to the auth_user fields.
-        """
-        cls.email.requires = typing.cast(tuple[Validator, ...], (IS_EMAIL(), IS_NOT_IN_DB(db, "auth_user.email")))
-        cls.first_name.requires = IS_NOT_EMPTY()
-        cls.last_name.requires = IS_NOT_EMPTY()
+__all__ = [
+    "AuthUser",
+    "Fixture",
+    "DAL",
+    "setup_py4web_tables",
+]
