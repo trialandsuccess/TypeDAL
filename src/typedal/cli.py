@@ -19,6 +19,7 @@ try:
     import rich
     import tomlkit
     import typer
+    from tabulate import tabulate
 except ImportError as e:  # pragma: no cover
     # ImportWarning is hidden by default
     warnings.warn(
@@ -38,8 +39,10 @@ from pydal2sql.types import (
 from pydal2sql_core import core_alter, core_create
 from typing_extensions import Never
 
+from . import caching
 from .__about__ import __version__
 from .config import TypeDALConfig, _fill_defaults, load_config, transform
+from .core import TypeDAL
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -219,9 +222,10 @@ def setup(
     rich.print(f"[green]Wrote updated config to {toml_path}![/green]")
 
 
-@app.command()
+@app.command(name="migrations.generate")
 @with_exit_code(hide_tb=IS_DEBUG)
 def generate_migrations(
+    connection: typing.Annotated[str, typer.Option("--connection", "-c")] = None,
     filename_before: OptionalArgument[str] = None,
     filename_after: OptionalArgument[str] = None,
     dialect: DBType_Option = None,
@@ -238,7 +242,7 @@ def generate_migrations(
     """
     # 1. choose CREATE or ALTER based on whether 'output' exists?
     # 2. pass right args based on 'config' to function chosen in 1.
-    generic_config = load_config()
+    generic_config = load_config(connection)
     pydal2sql_config = generic_config.to_pydal2sql()
     pydal2sql_config.update(
         magic=magic,
@@ -288,9 +292,10 @@ def generate_migrations(
             )
 
 
-@app.command()
+@app.command(name="migrations.run")
 @with_exit_code(hide_tb=IS_DEBUG)
 def run_migrations(
+    connection: typing.Annotated[str, typer.Option("--connection", "-c")] = None,
     migrations_file: OptionalArgument[str] = None,
     db_uri: Optional[str] = None,
     db_folder: Optional[str] = None,
@@ -310,7 +315,7 @@ def run_migrations(
     # 1. build migrate Config from TypeDAL config
     # 2. import right file
     # 3. `activate_migrations`
-    generic_config = load_config()
+    generic_config = load_config(connection)
     migrate_config = generic_config.to_migrate()
 
     migrate_config.update(
@@ -332,6 +337,73 @@ def run_migrations(
     else:  # pragma: no cover
         edwh_migrate.console_hook([], config=migrate_config)
     return True
+
+
+def tabulate_data(data):
+    flattened_data = []
+    for key, inner_dict in data.items():
+        temp_dict = {"": key}
+        temp_dict.update(inner_dict)
+        flattened_data.append(temp_dict)
+
+    # Display the tabulated data from the transposed dictionary
+    print(tabulate(flattened_data, headers="keys"))
+
+
+@app.command(name="cache.stats")
+@with_exit_code(hide_tb=IS_DEBUG)
+def cache_stats(
+    identifier: typing.Annotated[str, typer.Argument()] = "",
+    connection: typing.Annotated[str, typer.Option("--connection", "-c")] = None,
+):
+    """
+    Examples:
+        typedal cache.stats
+        typedal cache.statsuser
+        typedal cache.stats user.3
+    """
+
+    config = load_config(connection)
+    db = TypeDAL(config=config, migrate=False, fake_migrate=False)
+
+    parts = identifier.split(".")
+    match parts:
+        case [] | [""]:
+            # generic stats
+            tabulate_data(caching.calculate_stats(db))
+        case [table]:
+            # table stats
+            tabulate_data(caching.table_stats(db, table))
+        case [table, row_id]:
+            # row stats
+            tabulate_data(caching.row_stats(db, table, row_id))
+        case _:
+            raise ValueError("Please use the format `table` or `table.id` for this command.")
+
+    # todo:
+    #  - sort by most dependencies
+    #  - sort by biggest data
+    #  - include size for table_stats, row_stats
+    #  - group by table
+
+
+@app.command(name="cache.clear")
+@with_exit_code(hide_tb=IS_DEBUG)
+def cache_clear(
+    connection: typing.Annotated[str, typer.Option("--connection", "-c")] = None,
+    purge: typing.Annotated[bool, typer.Option("--all", "--purge", "-p")] = False,
+):
+    config = load_config(connection)
+    db = TypeDAL(config=config, migrate=False, fake_migrate=False)
+
+    if purge:
+        caching.clear_cache()
+        print("Emptied cache")
+    else:
+        n = caching.clear_expired()
+        print(f"Removed {n} expired from cache")
+
+    db.commit()
 
 
 def version_callback() -> Never:

@@ -331,7 +331,10 @@ def expand_env_vars_into_toml_values(toml: dict[str, Any], env: dict[str, Any]) 
 
 
 def load_config(
-    _use_pyproject: bool | str | None = True, _use_env: bool | str | None = True, **fallback: Any
+    connection_name: Optional[str] = None,
+    _use_pyproject: bool | str | None = True,
+    _use_env: bool | str | None = True,
+    **fallback: Any,
 ) -> TypeDALConfig:
     """
     Combines multiple sources of config into one config instance.
@@ -345,7 +348,7 @@ def load_config(
 
     expand_env_vars_into_toml_values(toml, dotenv)
 
-    connection_name = dotenv.get("connection", "") or toml.get("default", "")
+    connection_name = connection_name or dotenv.get("connection", "") or toml.get("default", "")
     connection: dict[str, Any] = (toml.get(connection_name) if connection_name else toml) or {}
 
     combined = connection | dotenv | fallback

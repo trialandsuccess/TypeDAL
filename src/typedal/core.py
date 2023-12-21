@@ -368,13 +368,15 @@ class TypeDAL(pydal.DAL):  # type: ignore
         enable_typedal_caching: bool = None,
         use_pyproject: bool | str = True,
         use_env: bool | str = True,
+        connection: Optional[str] = None,
+        config: Optional[TypeDALConfig] = None,
     ) -> None:
         """
         Adds some internal tables after calling pydal's default init.
 
         Set enable_typedal_caching to False to disable this behavior.
         """
-        config = load_config(_use_pyproject=use_pyproject, _use_env=use_env)
+        config = config or load_config(connection, _use_pyproject=use_pyproject, _use_env=use_env)
         config.update(
             database=uri,
             dialect=uri.split(":")[0] if uri and ":" in uri else None,

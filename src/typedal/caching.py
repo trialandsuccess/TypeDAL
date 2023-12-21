@@ -12,6 +12,7 @@ import dill  # nosec
 from pydal.objects import Field, Rows, Set
 
 from .core import TypedField, TypedRows, TypedTable
+from .types import Query
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     from .core import TypeDAL
@@ -171,7 +172,7 @@ def clear_expired() -> int:
     By default, expired items are only removed when trying to access them.
     """
     now = get_now()
-    return len(_TypedalCache.where(_TypedalCache.expires_at > now).delete())
+    return len(_TypedalCache.where(_TypedalCache.expires_at != None).where(_TypedalCache.expires_at < now).delete())
 
 
 def _remove_cache(s: Set, tablename: str) -> None:
@@ -269,3 +270,92 @@ def load_from_cache(key: str, db: "TypeDAL") -> Any | None:
         return _load_from_cache(key, db)
 
     return None  # pragma: no cover
+
+
+def humanize_bytes(size: int) -> str:
+    if not size:
+        return "0"
+
+    suffixes = ["B", "KB", "MB", "GB", "TB", "PB"]  # List of suffixes for different magnitudes
+    suffix_index = 0
+
+    while size > 1024 and suffix_index < len(suffixes) - 1:
+        suffix_index += 1
+        size /= 1024.0
+
+    return f"{size:.2f} {suffixes[suffix_index]}"
+
+
+def _expired_and_valid_query():
+    expired_items = (
+        _TypedalCache.where(lambda row: (row.expires_at < get_now()) & (row.expires_at != None))
+        .select(_TypedalCache.id)
+        .to_sql()
+    )
+
+    valid_items = _TypedalCache.where(~_TypedalCache.id.belongs(expired_items)).select(_TypedalCache.id).to_sql()
+
+    return expired_items, valid_items
+
+
+def _row_stats(db: "TypeDAL", table: str, query: Query) -> dict:
+    count_field = _TypedalCacheDependency.entry.count()
+    stats = db(query & (_TypedalCacheDependency.table == table)).select(
+        _TypedalCacheDependency.entry, count_field, groupby=_TypedalCacheDependency.entry
+    )
+    return {
+        "Dependent Cache Entries": len(stats),
+    }
+
+
+def row_stats(db: "TypeDAL", table: str, row_id: str):
+    expired_items, valid_items = _expired_and_valid_query()
+
+    query = _TypedalCacheDependency.idx == row_id
+
+    return {
+        "total": _row_stats(db, table, query),
+        "valid": _row_stats(db, table, _TypedalCacheDependency.entry.belongs(valid_items) & query),
+        "expired": _row_stats(db, table, _TypedalCacheDependency.entry.belongs(expired_items) & query),
+    }
+
+
+def _table_stats(db: "TypeDAL", table: str, query: Query) -> dict:
+    count_field = _TypedalCacheDependency.entry.count()
+    stats = db(query & (_TypedalCacheDependency.table == table)).select(
+        _TypedalCacheDependency.entry, count_field, groupby=_TypedalCacheDependency.entry
+    )
+    return {
+        "Dependent Cache Entries": len(stats),
+        "Associated Table IDs": sum(stats.column(count_field)),
+    }
+
+
+def table_stats(db: "TypeDAL", table: str):
+    expired_items, valid_items = _expired_and_valid_query()
+
+    return {
+        "total": _table_stats(db, table, _TypedalCacheDependency.id > 0),
+        "valid": _table_stats(db, table, _TypedalCacheDependency.entry.belongs(valid_items)),
+        "expired": _table_stats(db, table, _TypedalCacheDependency.entry.belongs(expired_items)),
+    }
+
+
+def _calculate_stats(db: "TypeDAL", query: Query) -> dict:
+    sum_len_field = _TypedalCache.data.len().sum()
+
+    return {
+        "entries": _TypedalCache.where(query).count(),
+        "dependencies": db(_TypedalCacheDependency.entry.belongs(query)).count(),
+        "size": humanize_bytes(db(query).select(sum_len_field).first()[sum_len_field]),
+    }
+
+
+def calculate_stats(db: "TypeDAL") -> dict:
+    expired_items, valid_items = _expired_and_valid_query()
+
+    return {
+        "total": _calculate_stats(db, _TypedalCache.id > 0),
+        "valid": _calculate_stats(db, _TypedalCache.id.belongs(valid_items)),
+        "expired": _calculate_stats(db, _TypedalCache.id.belongs(expired_items)),
+    }
