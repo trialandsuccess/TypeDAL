@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v2.3.6 (2024-01-01)
+
+### Fix
+
+* Passing folder=Path() to TypeDAL() shouldn't crash config ([`7bcf96d`](https://github.com/trialandsuccess/TypeDAL/commit/7bcf96d48ca34faaa4ad3355ce699be62aaf7e94))
+
 ## v2.3.5 (2023-12-19)
 
 ### Fix
