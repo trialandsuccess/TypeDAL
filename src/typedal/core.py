@@ -380,7 +380,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
         config.update(
             database=uri,
             dialect=uri.split(":")[0] if uri and ":" in uri else None,
-            folder=folder,
+            folder=str(folder) if folder is not None else None,
             migrate=migrate,
             fake_migrate=fake_migrate,
             caching=enable_typedal_caching,
