@@ -1,9 +1,11 @@
+import json
 import tempfile
 
+import pytest
 from typer.testing import CliRunner
 
 from src.typedal.__about__ import __version__
-from src.typedal.cli import app
+from src.typedal.cli import app, get_output_format
 
 # by default, click's cli runner mixes stdout and stderr for some reason...
 runner = CliRunner(mix_stderr=False)
@@ -46,3 +48,35 @@ def test_show_config():
     assert result.exit_code == 0
     assert not result.stderr
     assert result.stdout.strip().startswith("<TypeDAL")
+
+
+def test_get_output_format(capsys):
+    import json, tomli, yaml
+
+    with pytest.raises(ValueError):
+        assert not get_output_format("bleepbloop")
+
+    get_output_format("json")({"some": {"nested": "data"}})
+    captured = capsys.readouterr()
+    result = json.loads(captured.out)
+    assert result
+    assert result["some"]["nested"] == "data"
+
+    get_output_format("yaml")({"some": {"nested": "data"}})
+    captured = capsys.readouterr()
+    result = yaml.load(captured.out, yaml.Loader)
+    assert result
+    assert result["some"]["nested"] == "data"
+
+    get_output_format("toml")({"some": {"nested": "data"}})
+    captured = capsys.readouterr()
+    result = tomli.loads(captured.out)
+    assert result
+    assert result["some"]["nested"] == "data"
+
+    plaintext = get_output_format("plaintext")
+    assert plaintext
+    plaintext({"some": {"nested": "data"}})
+    captured = capsys.readouterr()
+    assert captured.out
+    assert not captured.err

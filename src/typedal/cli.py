@@ -342,7 +342,10 @@ def run_migrations(
     return True
 
 
-def tabulate_data(data: AnyDict) -> None:
+AnyNestedDict: typing.TypeAlias = dict[str, AnyDict]
+
+
+def tabulate_data(data: AnyNestedDict) -> None:
     """
     Print a nested dict of data in a nice, human-readable table.
     """
@@ -359,7 +362,7 @@ def tabulate_data(data: AnyDict) -> None:
 FormatOptions: typing.TypeAlias = typing.Literal["plaintext", "json", "yaml", "toml"]
 
 
-def get_output_format(fmt: FormatOptions) -> typing.Callable[[AnyDict], None]:
+def get_output_format(fmt: FormatOptions) -> typing.Callable[[AnyNestedDict], None]:
     """
     This function takes a format option as input and \
         returns a function that can be used to output data in the specified format.
@@ -369,21 +372,21 @@ def get_output_format(fmt: FormatOptions) -> typing.Callable[[AnyDict], None]:
             output = tabulate_data
         case "json":
 
-            def output(_data: AnyDict) -> None:
+            def output(_data: AnyDict | AnyNestedDict) -> None:
                 import json
 
                 print(json.dumps(_data, indent=2))
 
         case "yaml":
 
-            def output(_data: AnyDict) -> None:
+            def output(_data: AnyDict | AnyNestedDict) -> None:
                 import yaml
 
                 print(yaml.dump(_data))
 
         case "toml":
 
-            def output(_data: AnyDict) -> None:
+            def output(_data: AnyDict | AnyNestedDict) -> None:
                 import tomli_w
 
                 print(tomli_w.dumps(_data))
@@ -439,7 +442,6 @@ def cache_stats(
     #  - sort by biggest data
     #  - include size for table_stats, row_stats
     #  - group by table
-    #  - output format (e.g. json)
 
 
 @app.command(name="cache.clear")
