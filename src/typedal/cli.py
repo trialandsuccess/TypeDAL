@@ -343,6 +343,9 @@ def run_migrations(
 
 
 def tabulate_data(data: AnyDict) -> None:
+    """
+    Print a nested dict of data in a nice, human-readable table.
+    """
     flattened_data = []
     for key, inner_dict in data.items():
         temp_dict = {"": key}
@@ -353,21 +356,66 @@ def tabulate_data(data: AnyDict) -> None:
     print(tabulate(flattened_data, headers="keys"))
 
 
+FormatOptions: typing.TypeAlias = typing.Literal["plaintext", "json", "yaml", "toml"]
+
+
+def get_output_format(fmt: FormatOptions) -> typing.Callable[[AnyDict], None]:
+    """
+    This function takes a format option as input and \
+        returns a function that can be used to output data in the specified format.
+    """
+    match fmt:
+        case "plaintext":
+            output = tabulate_data
+        case "json":
+
+            def output(_data: AnyDict) -> None:
+                import json
+
+                print(json.dumps(_data, indent=2))
+
+        case "yaml":
+
+            def output(_data: AnyDict) -> None:
+                import yaml
+
+                print(yaml.dump(_data))
+
+        case "toml":
+
+            def output(_data: AnyDict) -> None:
+                import tomli_w
+
+                print(tomli_w.dumps(_data))
+
+        case _:
+            options = typing.get_args(FormatOptions)
+            raise ValueError(f"Invalid format '{fmt}'. Please choose one of {options}.")
+
+    return output
+
+
 @app.command(name="cache.stats")
 @with_exit_code(hide_tb=IS_DEBUG)
 def cache_stats(
     identifier: typing.Annotated[str, typer.Argument()] = "",
     connection: typing.Annotated[str, typer.Option("--connection", "-c")] = None,
+    fmt: typing.Annotated[
+        str, typer.Option("--format", "--fmt", "-f", help="plaintext (default) or json")
+    ] = "plaintext",
 ) -> None:
     """
+    Collect caching stats.
+
     Examples:
         typedal cache.stats
-        typedal cache.statsuser
+        typedal cache.stats user
         typedal cache.stats user.3
     """
-
     config = load_config(connection)
     db = TypeDAL(config=config, migrate=False, fake_migrate=False)
+
+    output = get_output_format(typing.cast(FormatOptions, fmt))
 
     data: AnyDict
     parts = identifier.split(".")
@@ -384,13 +432,14 @@ def cache_stats(
         case _:
             raise ValueError("Please use the format `table` or `table.id` for this command.")
 
-    tabulate_data(data)
+    output(data)
 
     # todo:
     #  - sort by most dependencies
     #  - sort by biggest data
     #  - include size for table_stats, row_stats
     #  - group by table
+    #  - output format (e.g. json)
 
 
 @app.command(name="cache.clear")
@@ -399,6 +448,13 @@ def cache_clear(
     connection: typing.Annotated[str, typer.Option("--connection", "-c")] = None,
     purge: typing.Annotated[bool, typer.Option("--all", "--purge", "-p")] = False,
 ) -> None:
+    """
+    Clear (expired) items from the cache.
+
+    Args:
+        connection (optional): [tool.typedal.<connection>]
+        purge (default: no): remove all items, not only expired
+    """
     config = load_config(connection)
     db = TypeDAL(config=config, migrate=False, fake_migrate=False)
 

@@ -274,6 +274,9 @@ def load_from_cache(key: str, db: "TypeDAL") -> Any | None:
 
 
 def humanize_bytes(size: int | float) -> str:
+    """
+    Turn a number of bytes into a human-readable version (e.g. 124 GB).
+    """
     if not size:
         return "0"
 
@@ -321,6 +324,9 @@ def _row_stats(db: "TypeDAL", table: str, query: Query) -> RowStats:
 
 
 def row_stats(db: "TypeDAL", table: str, row_id: str) -> Stats[RowStats]:
+    """
+    Collect caching stats for a specific table row (by ID).
+    """
     expired_items, valid_items = _expired_and_valid_query()
 
     query = _TypedalCacheDependency.idx == row_id
@@ -353,6 +359,9 @@ def _table_stats(db: "TypeDAL", table: str, query: Query) -> TableStats:
 
 
 def table_stats(db: "TypeDAL", table: str) -> Stats[TableStats]:
+    """
+    Collect caching stats for a table.
+    """
     expired_items, valid_items = _expired_and_valid_query()
 
     return {
@@ -386,6 +395,9 @@ def _calculate_stats(db: "TypeDAL", query: Query) -> GenericStats:
 
 
 def calculate_stats(db: "TypeDAL") -> Stats[GenericStats]:
+    """
+    Collect generic caching stats.
+    """
     expired_items, valid_items = _expired_and_valid_query()
 
     return {

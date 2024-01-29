@@ -61,6 +61,7 @@ dev = [
     "python-semantic-release < 8",
     "pytest-mypy-testing",
     "types-tabulate",
+    "types-PyYAML",
     # docs:
     'mkdocs',
     'mkdocs-dracula-theme',
