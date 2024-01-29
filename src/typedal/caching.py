@@ -1,6 +1,7 @@
 """
 Helpers to facilitate db-based caching.
 """
+
 import contextlib
 import hashlib
 import json
@@ -272,7 +273,7 @@ def load_from_cache(key: str, db: "TypeDAL") -> Any | None:
     return None  # pragma: no cover
 
 
-def humanize_bytes(size: int) -> str:
+def humanize_bytes(size: int | float) -> str:
     if not size:
         return "0"
 
@@ -286,7 +287,7 @@ def humanize_bytes(size: int) -> str:
     return f"{size:.2f} {suffixes[suffix_index]}"
 
 
-def _expired_and_valid_query():
+def _expired_and_valid_query() -> tuple[str, str]:
     expired_items = (
         _TypedalCache.where(lambda row: (row.expires_at < get_now()) & (row.expires_at != None))
         .select(_TypedalCache.id)
@@ -298,9 +299,20 @@ def _expired_and_valid_query():
     return expired_items, valid_items
 
 
-def _row_stats(db: "TypeDAL", table: str, query: Query) -> dict:
+T = typing.TypeVar("T")
+Stats = typing.TypedDict("Stats", {"total": T, "valid": T, "expired": T})
+
+RowStats = typing.TypedDict(
+    "RowStats",
+    {
+        "Dependent Cache Entries": int,
+    },
+)
+
+
+def _row_stats(db: "TypeDAL", table: str, query: Query) -> RowStats:
     count_field = _TypedalCacheDependency.entry.count()
-    stats = db(query & (_TypedalCacheDependency.table == table)).select(
+    stats: TypedRows[_TypedalCacheDependency] = db(query & (_TypedalCacheDependency.table == table)).select(
         _TypedalCacheDependency.entry, count_field, groupby=_TypedalCacheDependency.entry
     )
     return {
@@ -308,7 +320,7 @@ def _row_stats(db: "TypeDAL", table: str, query: Query) -> dict:
     }
 
 
-def row_stats(db: "TypeDAL", table: str, row_id: str):
+def row_stats(db: "TypeDAL", table: str, row_id: str) -> Stats[RowStats]:
     expired_items, valid_items = _expired_and_valid_query()
 
     query = _TypedalCacheDependency.idx == row_id
@@ -320,9 +332,18 @@ def row_stats(db: "TypeDAL", table: str, row_id: str):
     }
 
 
-def _table_stats(db: "TypeDAL", table: str, query: Query) -> dict:
+TableStats = typing.TypedDict(
+    "TableStats",
+    {
+        "Dependent Cache Entries": int,
+        "Associated Table IDs": int,
+    },
+)
+
+
+def _table_stats(db: "TypeDAL", table: str, query: Query) -> TableStats:
     count_field = _TypedalCacheDependency.entry.count()
-    stats = db(query & (_TypedalCacheDependency.table == table)).select(
+    stats: TypedRows[_TypedalCacheDependency] = db(query & (_TypedalCacheDependency.table == table)).select(
         _TypedalCacheDependency.entry, count_field, groupby=_TypedalCacheDependency.entry
     )
     return {
@@ -331,7 +352,7 @@ def _table_stats(db: "TypeDAL", table: str, query: Query) -> dict:
     }
 
 
-def table_stats(db: "TypeDAL", table: str):
+def table_stats(db: "TypeDAL", table: str) -> Stats[TableStats]:
     expired_items, valid_items = _expired_and_valid_query()
 
     return {
@@ -341,17 +362,30 @@ def table_stats(db: "TypeDAL", table: str):
     }
 
 
-def _calculate_stats(db: "TypeDAL", query: Query) -> dict:
+GenericStats = typing.TypedDict(
+    "GenericStats",
+    {
+        "entries": int,
+        "dependencies": int,
+        "size": str,
+    },
+)
+
+
+def _calculate_stats(db: "TypeDAL", query: Query) -> GenericStats:
     sum_len_field = _TypedalCache.data.len().sum()
+    size_row = db(query).select(sum_len_field).first()
+
+    size = size_row[sum_len_field] if size_row else 0  # type: ignore
 
     return {
         "entries": _TypedalCache.where(query).count(),
         "dependencies": db(_TypedalCacheDependency.entry.belongs(query)).count(),
-        "size": humanize_bytes(db(query).select(sum_len_field).first()[sum_len_field]),
+        "size": humanize_bytes(size),
     }
 
 
-def calculate_stats(db: "TypeDAL") -> dict:
+def calculate_stats(db: "TypeDAL") -> Stats[GenericStats]:
     expired_items, valid_items = _expired_and_valid_query()
 
     return {

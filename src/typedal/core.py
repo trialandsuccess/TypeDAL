@@ -1,6 +1,7 @@
 """
 Core functionality of TypeDAL.
 """
+
 import contextlib
 import csv
 import datetime as dt
@@ -44,6 +45,7 @@ from .types import (
     AfterDeleteCallable,
     AfterInsertCallable,
     AfterUpdateCallable,
+    AnyDict,
     BeforeDeleteCallable,
     BeforeInsertCallable,
     BeforeUpdateCallable,
@@ -352,8 +354,8 @@ class TypeDAL(pydal.DAL):  # type: ignore
         migrate_enabled: bool = True,
         fake_migrate_all: bool = False,
         decode_credentials: bool = False,
-        driver_args: Optional[dict[str, Any]] = None,
-        adapter_args: Optional[dict[str, Any]] = None,
+        driver_args: Optional[AnyDict] = None,
+        adapter_args: Optional[AnyDict] = None,
         attempts: int = 5,
         auto_import: bool = False,
         bigint_id: bool = False,
@@ -440,7 +442,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
             # try again:
             return self.define(model, migrate=True, fake_migrate=True, redefine=True)
 
-    default_kwargs: typing.ClassVar[typing.Dict[str, Any]] = {
+    default_kwargs: typing.ClassVar[AnyDict] = {
         # fields are 'required' (notnull) by default:
         "notnull": True,
     }
@@ -749,7 +751,7 @@ class TableProtocol(typing.Protocol):  # pragma: no cover
     Make mypy happy.
     """
 
-    id: "TypedField[int]"  # noqa: A003
+    id: "TypedField[int]"
 
     def __getitem__(self, item: str) -> Field:
         """
@@ -849,7 +851,7 @@ class TableMeta(type):
         """
         return self(row)
 
-    def all(self: typing.Type[T_MetaInstance]) -> "TypedRows[T_MetaInstance]":  # noqa: A003
+    def all(self: typing.Type[T_MetaInstance]) -> "TypedRows[T_MetaInstance]":
         """
         Return all rows for this model.
         """
@@ -888,7 +890,7 @@ class TableMeta(type):
 
         return str(table._insert(**fields))
 
-    def bulk_insert(self: typing.Type[T_MetaInstance], items: list[dict[str, Any]]) -> "TypedRows[T_MetaInstance]":
+    def bulk_insert(self: typing.Type[T_MetaInstance], items: list[AnyDict]) -> "TypedRows[T_MetaInstance]":
         """
         Insert multiple rows, returns a TypedRows set of new instances.
         """
@@ -897,7 +899,7 @@ class TableMeta(type):
         return self.where(lambda row: row.id.belongs(result)).collect()
 
     def update_or_insert(
-        self: typing.Type[T_MetaInstance], query: T_Query | dict[str, Any] = DEFAULT, **values: Any
+        self: typing.Type[T_MetaInstance], query: T_Query | AnyDict = DEFAULT, **values: Any
     ) -> T_MetaInstance:
         """
         Update a row if query matches, else insert a new one.
@@ -1325,7 +1327,7 @@ class TypedTable(metaclass=TableMeta):
 
     _with: list[str]
 
-    id: "TypedField[int]"  # noqa: A003
+    id: "TypedField[int]"
 
     _before_insert: list[BeforeInsertCallable]
     _after_insert: list[AfterInsertCallable]
@@ -1473,7 +1475,7 @@ class TypedTable(metaclass=TableMeta):
     # underscore variants work for class instances (set up by _setup_instance_methods)
 
     @classmethod
-    def as_dict(cls, flat: bool = False, sanitize: bool = True) -> dict[str, Any]:
+    def as_dict(cls, flat: bool = False, sanitize: bool = True) -> AnyDict:
         """
         Dump the object to a plain dict.
 
@@ -1483,7 +1485,7 @@ class TypedTable(metaclass=TableMeta):
         """
         table = cls._ensure_table_defined()
         result = table.as_dict(flat, sanitize)
-        return typing.cast(dict[str, Any], result)
+        return typing.cast(AnyDict, result)
 
     @classmethod
     def as_json(cls, sanitize: bool = True, indent: Optional[int] = None, **kwargs: Any) -> str:
@@ -1523,7 +1525,7 @@ class TypedTable(metaclass=TableMeta):
 
     def _as_dict(
         self, datetime_to_str: bool = False, custom_types: typing.Iterable[type] | type | None = None
-    ) -> dict[str, Any]:
+    ) -> AnyDict:
         row = self._ensure_matching_row()
 
         result = row.as_dict(datetime_to_str=datetime_to_str, custom_types=custom_types)
@@ -1547,7 +1549,7 @@ class TypedTable(metaclass=TableMeta):
 
                 result[relationship] = data
 
-        return typing.cast(dict[str, Any], result)
+        return typing.cast(AnyDict, result)
 
     def _as_json(
         self,
@@ -1635,7 +1637,7 @@ class TypedTable(metaclass=TableMeta):
 
     # pickling:
 
-    def __getstate__(self) -> dict[str, Any]:
+    def __getstate__(self) -> AnyDict:
         """
         State to save when pickling.
 
@@ -1643,7 +1645,7 @@ class TypedTable(metaclass=TableMeta):
         Similar to as_dict but without changing the data of the relationships (dill does that recursively)
         """
         row = self._ensure_matching_row()
-        result: dict[str, Any] = row.as_dict()
+        result: AnyDict = row.as_dict()
 
         if _with := getattr(self, "_with", None):
             result["_with"] = _with
@@ -1655,7 +1657,7 @@ class TypedTable(metaclass=TableMeta):
         result["_row"] = self._row.as_json() if self._row else ""
         return result
 
-    def __setstate__(self, state: dict[str, Any]) -> None:
+    def __setstate__(self, state: AnyDict) -> None:
         """
         Used by dill when loading from a bytestring.
         """
@@ -1844,14 +1846,14 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
         storage_to_dict: bool = False,
         datetime_to_str: bool = False,
         custom_types: list[type] = None,
-    ) -> dict[int, dict[str, Any]]:
+    ) -> dict[int, AnyDict]:
         """
         Get the data in a dict of dicts.
         """
         if any([key, compact, storage_to_dict, datetime_to_str, custom_types]):
             # functionality not guaranteed
             return typing.cast(
-                dict[int, dict[str, Any]],
+                dict[int, AnyDict],
                 super().as_dict(
                     key or "id",
                     compact,
@@ -1883,14 +1885,12 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
         storage_to_dict: bool = False,
         datetime_to_str: bool = False,
         custom_types: list[type] = None,
-    ) -> list[dict[str, Any]]:
+    ) -> list[AnyDict]:
         """
         Get the data in a list of dicts.
         """
         if any([compact, storage_to_dict, datetime_to_str, custom_types]):
-            return typing.cast(
-                list[dict[str, Any]], super().as_list(compact, storage_to_dict, datetime_to_str, custom_types)
-            )
+            return typing.cast(list[AnyDict], super().as_list(compact, storage_to_dict, datetime_to_str, custom_types))
 
         return [_.as_dict() for _ in self.records.values()]
 
@@ -1994,7 +1994,7 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
         """
         return cls(rows, model, metadata=metadata)
 
-    def __getstate__(self) -> dict[str, Any]:
+    def __getstate__(self) -> AnyDict:
         """
         Used by dill to dump to bytes (exclude db connection etc).
         """
@@ -2005,7 +2005,7 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
             "colnames": self.colnames,
         }
 
-    def __setstate__(self, state: dict[str, Any]) -> None:
+    def __setstate__(self, state: AnyDict) -> None:
         """
         Used by dill when loading from a bytestring.
         """
@@ -2033,7 +2033,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
     model: typing.Type[T_MetaInstance]
     query: Query
     select_args: list[Any]
-    select_kwargs: dict[str, Any]
+    select_kwargs: AnyDict
     relationships: dict[str, Relationship[Any]]
     metadata: Metadata
 
@@ -2042,7 +2042,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         model: typing.Type[T_MetaInstance],
         add_query: Optional[Query] = None,
         select_args: Optional[list[Any]] = None,
-        select_kwargs: Optional[dict[str, Any]] = None,
+        select_kwargs: Optional[AnyDict] = None,
         relationships: dict[str, Relationship[Any]] = None,
         metadata: Metadata = None,
     ):
@@ -2092,7 +2092,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         add_query: Optional[Query] = None,
         overwrite_query: Optional[Query] = None,
         select_args: Optional[list[Any]] = None,
-        select_kwargs: Optional[dict[str, Any]] = None,
+        select_kwargs: Optional[AnyDict] = None,
         relationships: dict[str, Relationship[Any]] = None,
         metadata: Metadata = None,
     ) -> "QueryBuilder[T_MetaInstance]":
@@ -2294,7 +2294,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         db = self._get_db()
         return str(db(self.query)._update(**fields))
 
-    def _before_query(self, mut_metadata: Metadata, add_id: bool = True) -> tuple[Query, list[Any], dict[str, Any]]:
+    def _before_query(self, mut_metadata: Metadata, add_id: bool = True) -> tuple[Query, list[Any], AnyDict]:
         select_args = [self._select_arg_convert(_) for _ in self.select_args] or [self.model.ALL]
         select_kwargs = self.select_kwargs.copy()
         query = self.query
@@ -2402,7 +2402,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         self,
         query: Query,
         select_args: list[Any],
-        select_kwargs: dict[str, Any],
+        select_kwargs: AnyDict,
         metadata: Metadata,
     ) -> tuple[Query, list[Any]]:
         db = self._get_db()
@@ -2720,7 +2720,7 @@ class PaginatedRows(TypedRows[T_MetaInstance]):
             "prev_page": pagination_data["current_page"] - 1 if has_prev_page else None,
         }
 
-    def next(self) -> Self:  # noqa: A003
+    def next(self) -> Self:
         """
         Get the next page.
         """
@@ -2756,7 +2756,7 @@ class TypedSet(pydal.objects.Set):  # type: ignore # pragma: no cover
     This class is not actually used, only 'cast' by TypeDAL.__call__
     """
 
-    def count(self, distinct: bool = None, cache: dict[str, Any] = None) -> int:
+    def count(self, distinct: bool = None, cache: AnyDict = None) -> int:
         """
         Count returns an int.
         """

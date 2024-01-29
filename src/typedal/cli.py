@@ -1,6 +1,7 @@
 """
 Typer CLI for TypeDAL.
 """
+
 import sys
 import typing
 import warnings
@@ -11,6 +12,8 @@ import tomli
 from configuraptor import asdict
 from configuraptor.alias import is_alias
 from configuraptor.helpers import is_optional
+
+from .types import AnyDict
 
 try:
     import edwh_migrate
@@ -48,7 +51,7 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
-questionary_types: dict[typing.Hashable, Optional[dict[str, typing.Any]]] = {
+questionary_types: dict[typing.Hashable, Optional[AnyDict]] = {
     str: {
         "type": "text",
         "validate": lambda text: True if len(text) > 0 else "Please enter a value",
@@ -95,7 +98,7 @@ T = typing.TypeVar("T")
 notfound = object()
 
 
-def _get_question(prop: str, annotation: typing.Type[T]) -> Optional[dict[str, typing.Any]]:  # pragma: no cover
+def _get_question(prop: str, annotation: typing.Type[T]) -> Optional[AnyDict]:  # pragma: no cover
     question = questionary_types.get(prop, notfound)
     if question is notfound:
         # None means skip the question, notfound means use the type default!
@@ -150,7 +153,7 @@ def setup(
 
     toml_contents = toml_path.read_text()
     # tomli has native Python types, tomlkit doesn't but preserves comments
-    toml_obj: dict[str, typing.Any] = tomli.loads(toml_contents)
+    toml_obj: AnyDict = tomli.loads(toml_contents)
 
     if "[tool.typedal]" in toml_contents:
         section = toml_obj["tool"]["typedal"]
@@ -205,7 +208,7 @@ def setup(
         transform(data, prop)
 
     with toml_path.open("r") as f:
-        old_contents: dict[str, typing.Any] = tomlkit.load(f)
+        old_contents: AnyDict = tomlkit.load(f)
 
     if "tool" not in old_contents:
         old_contents["tool"] = {}
@@ -339,7 +342,7 @@ def run_migrations(
     return True
 
 
-def tabulate_data(data):
+def tabulate_data(data: AnyDict) -> None:
     flattened_data = []
     for key, inner_dict in data.items():
         temp_dict = {"": key}
@@ -355,7 +358,7 @@ def tabulate_data(data):
 def cache_stats(
     identifier: typing.Annotated[str, typer.Argument()] = "",
     connection: typing.Annotated[str, typer.Option("--connection", "-c")] = None,
-):
+) -> None:
     """
     Examples:
         typedal cache.stats
@@ -366,19 +369,22 @@ def cache_stats(
     config = load_config(connection)
     db = TypeDAL(config=config, migrate=False, fake_migrate=False)
 
+    data: AnyDict
     parts = identifier.split(".")
     match parts:
         case [] | [""]:
             # generic stats
-            tabulate_data(caching.calculate_stats(db))
+            data = caching.calculate_stats(db)  # type: ignore
         case [table]:
             # table stats
-            tabulate_data(caching.table_stats(db, table))
+            data = caching.table_stats(db, table)  # type: ignore
         case [table, row_id]:
             # row stats
-            tabulate_data(caching.row_stats(db, table, row_id))
+            data = caching.row_stats(db, table, row_id)  # type: ignore
         case _:
             raise ValueError("Please use the format `table` or `table.id` for this command.")
+
+    tabulate_data(data)
 
     # todo:
     #  - sort by most dependencies
@@ -392,7 +398,7 @@ def cache_stats(
 def cache_clear(
     connection: typing.Annotated[str, typer.Option("--connection", "-c")] = None,
     purge: typing.Annotated[bool, typer.Option("--all", "--purge", "-p")] = False,
-):
+) -> None:
     config = load_config(connection)
     db = TypeDAL(config=config, migrate=False, fake_migrate=False)
 

@@ -1,6 +1,7 @@
 """
 TypeDAL can be configured by a combination of pyproject.toml (static), env (dynamic) and code (programmic).
 """
+
 import os
 import re
 import typing
@@ -13,6 +14,8 @@ import black.files
 import tomli
 from configuraptor import TypedConfig, alias
 from dotenv import dotenv_values, find_dotenv
+
+from .types import AnyDict
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     from edwh_migrate import Config as MigrateConfig
@@ -34,7 +37,7 @@ class TypeDALConfig(TypedConfig):
     connection: str = "default"
 
     # pydal2sql:
-    input: str = ""  # noqa: A003
+    input: str = ""
     output: str = ""
     noop: bool = False
     magic: bool = True
@@ -61,11 +64,7 @@ class TypeDALConfig(TypedConfig):
     db_type: str = alias("dialect")
     db_folder: str = alias("folder")
 
-    def __repr__(self) -> str:
-        """
-        Dump the config to a (fancy) string.
-        """
-        return f"<TypeDAL {self.__dict__}>"
+    # repr set by @beautify (by inheriting from TypedConfig)
 
     def to_pydal2sql(self) -> "P2SConfig":
         """
@@ -130,7 +129,7 @@ def find_pyproject_toml(directory: str | None = None) -> typing.Optional[str]:
     return black.files.find_pyproject_toml((directory or os.getcwd(),))
 
 
-def _load_toml(path: str | bool | None = True) -> tuple[str, dict[str, Any]]:
+def _load_toml(path: str | bool | None = True) -> tuple[str, AnyDict]:
     """
     Path can be a file, a directory, a bool or None.
 
@@ -156,13 +155,13 @@ def _load_toml(path: str | bool | None = True) -> tuple[str, dict[str, Any]]:
         with open(toml_path, "rb") as f:
             data = tomli.load(f)
 
-        return toml_path or "", typing.cast(dict[str, Any], data["tool"]["typedal"])
+        return toml_path or "", typing.cast(AnyDict, data["tool"]["typedal"])
     except Exception as e:
         warnings.warn(f"Could not load typedal config toml: {e}", source=e)
         return toml_path or "", {}
 
 
-def _load_dotenv(path: str | bool | None = True) -> tuple[str, dict[str, Any]]:
+def _load_dotenv(path: str | bool | None = True) -> tuple[str, AnyDict]:
     fallback_data = {k.lower().removeprefix("typedal_"): v for k, v in os.environ.items()}
     if path is False:
         dotenv_path = None
@@ -202,28 +201,28 @@ def get_db_for_alias(db_name: str) -> str:
     return DB_ALIASES.get(db_name, db_name)
 
 
-DEFAULTS: dict[str, Any | typing.Callable[[dict[str, Any]], Any]] = {
+DEFAULTS: dict[str, Any | typing.Callable[[AnyDict], Any]] = {
     "database": lambda data: data.get("db_uri") or "sqlite:memory",
-    "dialect": lambda data: get_db_for_alias(data["database"].split(":")[0])
-    if ":" in data["database"]
-    else data.get("db_type"),
+    "dialect": lambda data: (
+        get_db_for_alias(data["database"].split(":")[0]) if ":" in data["database"] else data.get("db_type")
+    ),
     "migrate": lambda data: not (data.get("input") or data.get("output")),
     "folder": lambda data: data.get("db_folder"),
-    "flag_location": lambda data: f"{db_folder}/flags"
-    if (db_folder := (data.get("folder") or data.get("db_folder")))
-    else "/flags",
+    "flag_location": lambda data: (
+        f"{db_folder}/flags" if (db_folder := (data.get("folder") or data.get("db_folder"))) else "/flags"
+    ),
     "pool_size": lambda data: 1 if data.get("dialect", "sqlite") == "sqlite" else 3,
 }
 
 
-def _fill_defaults(data: dict[str, Any], prop: str, fallback: Any = None) -> None:
+def _fill_defaults(data: AnyDict, prop: str, fallback: Any = None) -> None:
     default = DEFAULTS.get(prop, fallback)
     if callable(default):
         default = default(data)
     data[prop] = default
 
 
-def fill_defaults(data: dict[str, Any], prop: str) -> None:
+def fill_defaults(data: AnyDict, prop: str) -> None:
     """
     Fill missing property defaults with (calculated) sane defaults.
     """
@@ -231,14 +230,16 @@ def fill_defaults(data: dict[str, Any], prop: str) -> None:
         _fill_defaults(data, prop)
 
 
-TRANSFORMS: dict[str, typing.Callable[[dict[str, Any]], Any]] = {
-    "database": lambda data: data["database"]
-    if (":" in data["database"] or not data.get("dialect"))
-    else (data["dialect"] + "://" + data["database"])
+TRANSFORMS: dict[str, typing.Callable[[AnyDict], Any]] = {
+    "database": lambda data: (
+        data["database"]
+        if (":" in data["database"] or not data.get("dialect"))
+        else (data["dialect"] + "://" + data["database"])
+    )
 }
 
 
-def transform(data: dict[str, Any], prop: str) -> bool:
+def transform(data: AnyDict, prop: str) -> bool:
     """
     After the user has chosen a value, possibly transform it.
     """
@@ -278,7 +279,7 @@ def expand_posix_vars(posix_expr: str, context: dict[str, str]) -> str:
     return re.sub(pattern, replace_var, posix_expr)
 
 
-def expand_env_vars_into_toml_values(toml: dict[str, Any], env: dict[str, Any]) -> None:
+def expand_env_vars_into_toml_values(toml: AnyDict, env: AnyDict) -> None:
     """
     Recursively expands POSIX/Docker Compose-like environment variables in a TOML dictionary.
 
@@ -349,7 +350,7 @@ def load_config(
     expand_env_vars_into_toml_values(toml, dotenv)
 
     connection_name = connection_name or dotenv.get("connection", "") or toml.get("default", "")
-    connection: dict[str, Any] = (toml.get(connection_name) if connection_name else toml) or {}
+    connection: AnyDict = (toml.get(connection_name) if connection_name else toml) or {}
 
     combined = connection | dotenv | fallback
     combined = {k.replace("-", "_"): v for k, v in combined.items()}

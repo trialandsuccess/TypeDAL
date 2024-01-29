@@ -442,6 +442,8 @@ def test_caching():
     assert _TypedalCache.count()
     assert _TypedalCacheDependency.count()
 
+    time.sleep(3)  # for TTL
+
     assert clear_expired()
     assert not clear_expired()
 

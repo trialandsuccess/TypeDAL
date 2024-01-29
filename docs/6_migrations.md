@@ -105,19 +105,19 @@ To see the currently active configuration settings, you can run `typedal --show-
 
 ## Generate Migrations (pydal2sql)
 
-Assuming your configuration is properly set up, `typedal generate-migrations` should execute without additional
+Assuming your configuration is properly set up, `typedal migrations.generate` should execute without additional
 arguments.
 You can however overwrite the behavior as defined in the config. See the following command for all options:
 
 ```bash
-typedal generate-migrations --help
+typedal migrations.generate --help
 ```
 
 ## Run Migrations (edwh-migrate)
 
-With a correctly configured setup, running `typedal run-migrations` should function without extra arguments.
+With a correctly configured setup, running `typedal migrations.run` should function without extra arguments.
 You can however overwrite the behavior as defined in the config. See the following command for all options:
 
 ```bash
-typedal run-migrations --help
+typedal migrations.run --help
 ```

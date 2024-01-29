@@ -1,11 +1,14 @@
 """
 Helpers that work independently of core.
 """
+
 import io
 import types
 import typing
 from collections import ChainMap
 from typing import Any
+
+from .types import AnyDict
 
 T = typing.TypeVar("T")
 
@@ -29,7 +32,7 @@ def _all_annotations(cls: type) -> ChainMap[str, type]:
     return ChainMap(*(c.__annotations__ for c in getattr(cls, "__mro__", []) if "__annotations__" in c.__dict__))
 
 
-def all_dict(cls: type) -> dict[str, Any]:
+def all_dict(cls: type) -> AnyDict:
     """
     Get the internal data of a class and all it's parents.
     """

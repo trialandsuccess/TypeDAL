@@ -1,6 +1,7 @@
 """
 Stuff to make mypy happy.
 """
+
 import typing
 from datetime import datetime
 from typing import Any, Optional, TypedDict
@@ -14,6 +15,8 @@ from pydal.objects import Rows as _Rows
 from pydal.objects import Set as _Set
 from pydal.validators import Validator as _Validator
 from typing_extensions import NotRequired
+
+AnyDict: typing.TypeAlias = dict[str, Any]
 
 
 class Query(_Query):  # type: ignore
@@ -116,7 +119,7 @@ class PaginateDict(TypedDict):
     Result of PaginatedRows.as_dict().
     """
 
-    data: dict[int, dict[str, Any]]
+    data: dict[int, AnyDict]
     pagination: Pagination
 
 
@@ -158,7 +161,7 @@ class Metadata(TypedDict):
 
     final_query: NotRequired[Query | str | None]
     final_args: NotRequired[list[Any]]
-    final_kwargs: NotRequired[dict[str, Any]]
+    final_kwargs: NotRequired[AnyDict]
     relationships: NotRequired[set[str]]
 
     sql: NotRequired[str]

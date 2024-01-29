@@ -25,7 +25,7 @@ classifiers = [
 dependencies = [
     "pydal", # core
     "dill", # caching
-    "configuraptor >= 1.24.0", # config
+    "configuraptor >= 1.26.0", # config
     "Configurable-JSON", # json dumping
 ]
 
@@ -60,6 +60,7 @@ dev = [
     "su6[all]",
     "python-semantic-release < 8",
     "pytest-mypy-testing",
+    "types-tabulate",
     # docs:
     'mkdocs',
     'mkdocs-dracula-theme',

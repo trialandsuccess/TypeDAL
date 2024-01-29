@@ -16,7 +16,7 @@ def test_version():
 
 
 def test_generate_dry():
-    result = runner.invoke(app, ["generate-migrations", "--dry-run"])
+    result = runner.invoke(app, ["migrations.generate", "--dry-run"])
     assert result.exit_code == 0
 
     assert "would run" in result.stderr.lower()
@@ -25,14 +25,14 @@ def test_generate_dry():
     with tempfile.NamedTemporaryFile() as f:
         f.write(b"...")
 
-        result = runner.invoke(app, ["generate-migrations", "--dry-run", "--output-file", f.name])
+        result = runner.invoke(app, ["migrations.generate", "--dry-run", "--output-file", f.name])
         assert result.exit_code == 0
         assert "would run" in result.stderr.lower()
         assert "alter" in result.stderr
 
 
 def test_run_dry():
-    result = runner.invoke(app, ["run-migrations", "--dry-run"])
+    result = runner.invoke(app, ["migrations.run", "--dry-run"])
     assert result.exit_code == 0
 
     print(result.stdout)
