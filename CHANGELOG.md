@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v2.4.0 (2024-02-26)
+
+### Feature
+
+* **querybuilder:** New .execute() to execute a query from the builder raw, without any postprocessing ([`68d631c`](https://github.com/trialandsuccess/TypeDAL/commit/68d631c0d6afb4fa6895b282adc8a863b901c3fd))
+
 ## v2.3.6 (2024-01-01)
 
 ### Fix
