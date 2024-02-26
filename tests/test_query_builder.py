@@ -373,3 +373,20 @@ def test_reprs_and_bool():
 
     assert repr(TestQueryTable.where(id=1))
     assert str(TestQueryTable.where(id=1))
+
+
+def test_execute():
+    _setup_data()
+
+    raw_execute = TestRelationship.select(
+        TestRelationship.querytable.with_alias("query_table"),
+        TestRelationship.querytable.count().with_alias("count"),
+        groupby=TestRelationship.querytable,
+    ).execute()  # ! no proper typing
+
+    # 2 x 4:
+
+    assert len(raw_execute) == 2
+
+    for row in raw_execute:
+        assert row['count'] == 4

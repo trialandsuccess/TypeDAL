@@ -1,6 +1,7 @@
 """
 Core functionality of TypeDAL.
 """
+
 import contextlib
 import csv
 import datetime as dt
@@ -747,7 +748,7 @@ class TableProtocol(typing.Protocol):  # pragma: no cover
     Make mypy happy.
     """
 
-    id: "TypedField[int]"  # noqa: A003
+    id: "TypedField[int]"
 
     def __getitem__(self, item: str) -> Field:
         """
@@ -847,7 +848,7 @@ class TableMeta(type):
         """
         return self(row)
 
-    def all(self: typing.Type[T_MetaInstance]) -> "TypedRows[T_MetaInstance]":  # noqa: A003
+    def all(self: typing.Type[T_MetaInstance]) -> "TypedRows[T_MetaInstance]":
         """
         Return all rows for this model.
         """
@@ -1323,7 +1324,7 @@ class TypedTable(metaclass=TableMeta):
 
     _with: list[str]
 
-    id: "TypedField[int]"  # noqa: A003
+    id: "TypedField[int]"
 
     _before_insert: list[BeforeInsertCallable]
     _after_insert: list[AfterInsertCallable]
@@ -2352,6 +2353,17 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
         return load_from_cache(key, self._get_db())
 
+    def execute(self, add_id: bool = False) -> Rows:
+        """
+        Raw version of .collect which only executes the SQL, without performing any magic afterwards.
+        """
+        db = self._get_db()
+        metadata = typing.cast(Metadata, self.metadata.copy())
+
+        query, select_args, select_kwargs = self._before_query(metadata, add_id=add_id)
+
+        return db(query).select(*select_args, **select_kwargs)
+
     def collect(
         self, verbose: bool = False, _to: typing.Type["TypedRows[Any]"] = None, add_id: bool = True
     ) -> "TypedRows[T_MetaInstance]":
@@ -2718,7 +2730,7 @@ class PaginatedRows(TypedRows[T_MetaInstance]):
             "prev_page": pagination_data["current_page"] - 1 if has_prev_page else None,
         }
 
-    def next(self) -> Self:  # noqa: A003
+    def next(self) -> Self:
         """
         Get the next page.
         """

@@ -1,6 +1,7 @@
 """
 TypeDAL can be configured by a combination of pyproject.toml (static), env (dynamic) and code (programmic).
 """
+
 import os
 import re
 import typing
@@ -34,7 +35,7 @@ class TypeDALConfig(TypedConfig):
     connection: str = "default"
 
     # pydal2sql:
-    input: str = ""  # noqa: A003
+    input: str = ""
     output: str = ""
     noop: bool = False
     magic: bool = True
@@ -204,14 +205,14 @@ def get_db_for_alias(db_name: str) -> str:
 
 DEFAULTS: dict[str, Any | typing.Callable[[dict[str, Any]], Any]] = {
     "database": lambda data: data.get("db_uri") or "sqlite:memory",
-    "dialect": lambda data: get_db_for_alias(data["database"].split(":")[0])
-    if ":" in data["database"]
-    else data.get("db_type"),
+    "dialect": lambda data: (
+        get_db_for_alias(data["database"].split(":")[0]) if ":" in data["database"] else data.get("db_type")
+    ),
     "migrate": lambda data: not (data.get("input") or data.get("output")),
     "folder": lambda data: data.get("db_folder"),
-    "flag_location": lambda data: f"{db_folder}/flags"
-    if (db_folder := (data.get("folder") or data.get("db_folder")))
-    else "/flags",
+    "flag_location": lambda data: (
+        f"{db_folder}/flags" if (db_folder := (data.get("folder") or data.get("db_folder"))) else "/flags"
+    ),
     "pool_size": lambda data: 1 if data.get("dialect", "sqlite") == "sqlite" else 3,
 }
 
@@ -232,9 +233,11 @@ def fill_defaults(data: dict[str, Any], prop: str) -> None:
 
 
 TRANSFORMS: dict[str, typing.Callable[[dict[str, Any]], Any]] = {
-    "database": lambda data: data["database"]
-    if (":" in data["database"] or not data.get("dialect"))
-    else (data["dialect"] + "://" + data["database"])
+    "database": lambda data: (
+        data["database"]
+        if (":" in data["database"] or not data.get("dialect"))
+        else (data["dialect"] + "://" + data["database"])
+    )
 }
 
 

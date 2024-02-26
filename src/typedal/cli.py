@@ -1,6 +1,7 @@
 """
 Typer CLI for TypeDAL.
 """
+
 import sys
 import typing
 import warnings

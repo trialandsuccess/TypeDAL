@@ -1,6 +1,7 @@
 """
 ONLY USE IN COMBINATION WITH PY4WEB!
 """
+
 from typing import Any
 
 import threadsafevariable
