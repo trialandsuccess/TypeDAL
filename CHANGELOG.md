@@ -2,6 +2,18 @@
 
 <!--next-version-placeholder-->
 
+## v3.0.0-beta.1 (2024-03-20)
+
+### Feature
+
+* Added `migrations.fake` subcommand to mark edwh-migrate migrations as done in the db ([`1a39409`](https://github.com/trialandsuccess/TypeDAL/commit/1a39409efec775f15405ab9789a50c91a8801338))
+* Allow --format/--fmt/-f for cache stats to output as machine-readable + more docstrings ([`8cd2771`](https://github.com/trialandsuccess/TypeDAL/commit/8cd27713e351ac846ca11944dfba36783724c2c6))
+* Initial basic statistics via cli (typedal cache.stats) ([`5822763`](https://github.com/trialandsuccess/TypeDAL/commit/58227631ff1c2290aab90d40418c80bc4e4e278d))
+
+### Fix
+
+* Make pytest work again and other su6 tests happier ([`ab4061e`](https://github.com/trialandsuccess/TypeDAL/commit/ab4061eb796d21d90502fe8e9b88ca36e1c7613c))
+
 ## v2.4.0 (2024-02-26)
 
 ### Feature
