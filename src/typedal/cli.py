@@ -156,10 +156,6 @@ def setup(
     # tomli has native Python types, tomlkit doesn't but preserves comments
     toml_obj: AnyDict = tomli.loads(toml_contents)
 
-    if "[tool.typedal]" in toml_contents:
-        section = toml_obj["tool"]["typedal"]
-        config.update(**section, _overwrite=True)
-
     if "[tool.pydal2sql]" in toml_contents:
         mapping = {"": ""}  # <- placeholder
 
@@ -175,6 +171,10 @@ def setup(
         extra_config = {mapping.get(k, k): v for k, v in extra_config.items()}
 
         config.update(**extra_config)
+
+    if "[tool.typedal]" in toml_contents:
+        section = toml_obj["tool"]["typedal"]
+        config.update(**section, _overwrite=True)
 
     data = asdict(config, with_top_level_key=False)
     data["migrate"] = None  # determined based on existence of input/output file.
@@ -257,6 +257,7 @@ def generate_migrations(
         format=output_format,
         input=filename_before,
         output=output_file,
+        _skip_none=True,
     )
 
     if pydal2sql_config.output and Path(pydal2sql_config.output).exists():
@@ -334,6 +335,7 @@ def run_migrations(
         create_flag_location=create_flag_location,
         db_folder=db_folder,
         migrations_file=migrations_file,
+        _skip_none=True,
     )
 
     if dry_run:
@@ -386,6 +388,7 @@ def fake_migrations(
         migrate_table=migrate_table,
         db_folder=db_folder,
         migrations_file=migrations_file,
+        _skip_none=True,
     )
 
     migrations = edwh_migrate.list_migrations(migrate_config)
