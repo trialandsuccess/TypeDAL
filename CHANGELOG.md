@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.0.0-beta.4 (2024-03-20)
+
+### Fix
+
+* Bump pydal2sql dependency ([`33ba73e`](https://github.com/trialandsuccess/TypeDAL/commit/33ba73edbba4d0cf807a9a99846fb0b79d608262))
+
 ## v3.0.0-beta.3 (2024-03-20)
 
 ### Fix
