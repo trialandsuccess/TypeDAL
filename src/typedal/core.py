@@ -2354,6 +2354,17 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
         return load_from_cache(key, self._get_db())
 
+    def execute(self, add_id: bool = False) -> Rows:
+        """
+        Raw version of .collect which only executes the SQL, without performing any magic afterwards.
+        """
+        db = self._get_db()
+        metadata = typing.cast(Metadata, self.metadata.copy())
+
+        query, select_args, select_kwargs = self._before_query(metadata, add_id=add_id)
+
+        return db(query).select(*select_args, **select_kwargs)
+
     def collect(
         self, verbose: bool = False, _to: typing.Type["TypedRows[Any]"] = None, add_id: bool = True
     ) -> "TypedRows[T_MetaInstance]":

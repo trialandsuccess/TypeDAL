@@ -3,8 +3,8 @@ ONLY USE IN COMBINATION WITH PY4WEB!
 """
 
 import threadsafevariable
-from py4web.core import ICECUBE
 from py4web.core import Fixture as _Fixture
+from py4web.core import ICECUBE
 
 from .core import TypeDAL
 from .types import AnyDict
