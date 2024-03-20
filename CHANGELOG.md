@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.0.0-beta.3 (2024-03-20)
+
+### Fix
+
+* Swap out black's implementation of find_pyproject_toml to configuraptor's ([`82676cc`](https://github.com/trialandsuccess/TypeDAL/commit/82676cc41f8734bc4e317b8f2b17f749024884ac))
+
 ## v3.0.0-beta.2 (2024-03-20)
 
 ### Fix
