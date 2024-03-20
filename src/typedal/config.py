@@ -10,9 +10,9 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Optional
 
-import black.files
 import tomli
 from configuraptor import TypedConfig, alias
+from configuraptor.helpers import find_pyproject_toml
 from dotenv import dotenv_values, find_dotenv
 
 from .types import AnyDict
@@ -122,12 +122,6 @@ class TypeDALConfig(TypedConfig):
         )
 
 
-def find_pyproject_toml(directory: str | None = None) -> typing.Optional[str]:
-    """
-    Find the project's config toml, looks up until it finds the project root (black's logic).
-    """
-    return black.files.find_pyproject_toml((directory or os.getcwd(),))
-
 
 def _load_toml(path: str | bool | None = True) -> tuple[str, AnyDict]:
     """
@@ -145,7 +139,7 @@ def _load_toml(path: str | bool | None = True) -> tuple[str, AnyDict]:
     elif Path(str(path)).is_file():
         toml_path = str(path)
     else:
-        toml_path = find_pyproject_toml(str(path))
+        toml_path = find_pyproject_toml(path)
 
     if not toml_path:
         # nothing to load
@@ -155,10 +149,10 @@ def _load_toml(path: str | bool | None = True) -> tuple[str, AnyDict]:
         with open(toml_path, "rb") as f:
             data = tomli.load(f)
 
-        return toml_path or "", typing.cast(AnyDict, data["tool"]["typedal"])
+        return str(toml_path) or "", typing.cast(AnyDict, data["tool"]["typedal"])
     except Exception as e:
         warnings.warn(f"Could not load typedal config toml: {e}", source=e)
-        return toml_path or "", {}
+        return str(toml_path) or "", {}
 
 
 def _load_dotenv(path: str | bool | None = True) -> tuple[str, AnyDict]:
