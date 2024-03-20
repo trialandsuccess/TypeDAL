@@ -2,6 +2,7 @@
 Typer CLI for TypeDAL.
 """
 
+import fnmatch
 import sys
 import typing
 import warnings
@@ -340,6 +341,91 @@ def run_migrations(
     else:  # pragma: no cover
         edwh_migrate.console_hook([], config=migrate_config)
     return True
+
+
+def match_strings(patterns: list[str] | str, string_list: list[str]) -> list[str]:
+    """
+    Glob but on a list of strings.
+    """
+    if isinstance(patterns, str):
+        patterns = [patterns]
+
+    matches = []
+    for pattern in patterns:
+        matches.extend([s for s in string_list if fnmatch.fnmatch(s, pattern)])
+
+    return matches
+
+
+@app.command(name="migrations.fake")
+@with_exit_code(hide_tb=IS_DEBUG)
+def fake_migrations(
+    names: typing.Annotated[list[str], typer.Argument()] = None,
+    all: bool = False,  # noqa: A002
+    connection: typing.Annotated[str, typer.Option("--connection", "-c")] = None,
+    migrations_file: Optional[str] = None,
+    db_uri: Optional[str] = None,
+    db_folder: Optional[str] = None,
+    migrate_table: Optional[str] = None,
+    dry_run: bool = False,
+) -> int:
+    """
+    Mark one or more migrations as completed in the database, without executing the SQL code.
+
+    glob is supported in 'names'
+    """
+    if not (names or all):
+        rich.print("Please provide one or more migration names, or pass --all to fake all.")
+        return 1
+
+    generic_config = load_config(connection)
+    migrate_config = generic_config.to_migrate()
+
+    migrate_config.update(
+        migrate_uri=db_uri,
+        migrate_table=migrate_table,
+        db_folder=db_folder,
+        migrations_file=migrations_file,
+    )
+
+    migrations = edwh_migrate.list_migrations(migrate_config)
+
+    migration_names = list(migrations.keys())
+
+    to_fake = migration_names if all else match_strings(names or [], migration_names)
+
+    try:
+        db = edwh_migrate.setup_db(config=migrate_config)
+    except edwh_migrate.migrate.DatabaseNotYetInitialized:
+        db = edwh_migrate.setup_db(
+            config=migrate_config, migrate=True, migrate_enabled=True, remove_migrate_tablefile=True
+        )
+
+    previously_migrated = (
+        db(
+            db.ewh_implemented_features.name.belongs(to_fake)
+            & (db.ewh_implemented_features.installed == True)  # noqa E712
+        )
+        .select(db.ewh_implemented_features.name)
+        .column("name")
+    )
+
+    if dry_run:
+        rich.print("Would migrate these:", [_ for _ in to_fake if _ not in previously_migrated])
+        return 0
+
+    n = len(to_fake)
+    print(f"{len(previously_migrated)} / {n} were already installed.")
+
+    for name in to_fake:
+        if name in previously_migrated:
+            continue
+
+        edwh_migrate.mark_migration(db, name=name, installed=True)
+
+    db.commit()
+    rich.print(f"Faked {n} new migrations.")
+    return 0
 
 
 AnyNestedDict: typing.TypeAlias = dict[str, AnyDict]
