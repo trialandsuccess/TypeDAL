@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.0.0-beta.2 (2024-03-20)
+
+### Fix
+
+* Use skip_none for configuraptor.update to prevent setting optional fields to None ([`b05caf8`](https://github.com/trialandsuccess/TypeDAL/commit/b05caf8bf5492a58fb4173b3a265f573b3dd0f94))
+
 ## v3.0.0-beta.1 (2024-03-20)
 
 ### Feature
