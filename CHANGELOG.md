@@ -2,6 +2,10 @@
 
 <!--next-version-placeholder-->
 
+## v3.0.0 (2024-04-02)
+
+
+
 ## v3.0.0-beta.4 (2024-03-20)
 
 ### Fix
