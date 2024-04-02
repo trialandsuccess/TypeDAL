@@ -15,7 +15,7 @@ from src.typedal.helpers import (
     mktable,
     origin_is_subclass,
     to_snake,
-    unwrap_type,
+    unwrap_type, match_strings,
 )
 
 
@@ -145,3 +145,33 @@ def test_get_expire():
 
     with pytest.raises(ValueError):
         get_expire(expires_at=now, ttl=3)
+
+
+def test_match_strings():
+    # Test single pattern
+    patterns = "*.txt"
+    string_list = ["file1.txt", "file2.jpg", "file3.txt", "file4.png"]
+    expected_matches = ["file1.txt", "file3.txt"]
+    assert sorted(match_strings(patterns, string_list)) == sorted(expected_matches)
+
+    # Test multiple patterns
+    patterns = ["*.txt", "*.jpg"]
+    expected_matches = ["file1.txt", "file2.jpg", "file3.txt"]
+    assert sorted(match_strings(patterns, string_list)) == sorted(expected_matches)
+
+    # Test no matches
+    patterns = "*.doc"
+    expected_matches = []
+    assert sorted(match_strings(patterns, string_list)) == sorted(expected_matches)
+
+    # Test empty list
+    patterns = "*.txt"
+    string_list = []
+    expected_matches = []
+    assert sorted(match_strings(patterns, string_list)) == sorted(expected_matches)
+
+    # Test empty patterns
+    patterns = []
+    string_list = ["file1.txt", "file2.jpg", "file3.txt", "file4.png"]
+    expected_matches = []
+    assert sorted(match_strings(patterns, string_list)) == sorted(expected_matches)

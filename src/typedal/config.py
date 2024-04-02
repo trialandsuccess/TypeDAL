@@ -122,8 +122,7 @@ class TypeDALConfig(TypedConfig):
         )
 
 
-
-def _load_toml(path: str | bool | None = True) -> tuple[str, AnyDict]:
+def _load_toml(path: str | bool | Path | None = True) -> tuple[str, AnyDict]:
     """
     Path can be a file, a directory, a bool or None.
 
@@ -136,10 +135,10 @@ def _load_toml(path: str | bool | None = True) -> tuple[str, AnyDict]:
         toml_path = None
     elif path in (True, None):
         toml_path = find_pyproject_toml()
-    elif Path(str(path)).is_file():
-        toml_path = str(path)
+    elif (_p := Path(str(path))) and _p.is_file():
+        toml_path = _p
     else:
-        toml_path = find_pyproject_toml(path)
+        toml_path = find_pyproject_toml(str(path))
 
     if not toml_path:
         # nothing to load

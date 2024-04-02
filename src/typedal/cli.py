@@ -2,7 +2,6 @@
 Typer CLI for TypeDAL.
 """
 
-import fnmatch
 import sys
 import typing
 import warnings
@@ -14,6 +13,7 @@ from configuraptor import asdict
 from configuraptor.alias import is_alias
 from configuraptor.helpers import is_optional
 
+from .helpers import match_strings
 from .types import AnyDict
 
 try:
@@ -240,7 +240,7 @@ def generate_migrations(
     output_format: OutputFormat_Option = None,
     output_file: Optional[str] = None,
     dry_run: bool = False,
-) -> bool:
+) -> bool:  # pragma: no cover
     """
     Run pydal2sql based on the typedal config.
     """
@@ -313,7 +313,7 @@ def run_migrations(
     schema: Optional[str] = None,
     create_flag_location: Optional[bool] = None,
     dry_run: bool = False,
-) -> bool:
+) -> bool:  # pragma: no cover
     """
     Run edwh-migrate based on the typedal config.
     """
@@ -345,20 +345,6 @@ def run_migrations(
     return True
 
 
-def match_strings(patterns: list[str] | str, string_list: list[str]) -> list[str]:
-    """
-    Glob but on a list of strings.
-    """
-    if isinstance(patterns, str):
-        patterns = [patterns]
-
-    matches = []
-    for pattern in patterns:
-        matches.extend([s for s in string_list if fnmatch.fnmatch(s, pattern)])
-
-    return matches
-
-
 @app.command(name="migrations.fake")
 @with_exit_code(hide_tb=IS_DEBUG)
 def fake_migrations(
@@ -370,7 +356,7 @@ def fake_migrations(
     db_folder: Optional[str] = None,
     migrate_table: Optional[str] = None,
     dry_run: bool = False,
-) -> int:
+) -> int:  # pragma: no cover
     """
     Mark one or more migrations as completed in the database, without executing the SQL code.
 
@@ -495,7 +481,7 @@ def cache_stats(
     fmt: typing.Annotated[
         str, typer.Option("--format", "--fmt", "-f", help="plaintext (default) or json")
     ] = "plaintext",
-) -> None:
+) -> None:  # pragma: no cover
     """
     Collect caching stats.
 
@@ -538,7 +524,7 @@ def cache_stats(
 def cache_clear(
     connection: typing.Annotated[str, typer.Option("--connection", "-c")] = None,
     purge: typing.Annotated[bool, typer.Option("--all", "--purge", "-p")] = False,
-) -> None:
+) -> None:  # pragma: no cover
     """
     Clear (expired) items from the cache.
 

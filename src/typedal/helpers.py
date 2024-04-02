@@ -2,6 +2,7 @@
 Helpers that work independently of core.
 """
 
+import fnmatch
 import io
 import types
 import typing
@@ -241,3 +242,17 @@ def as_lambda(value: T) -> typing.Callable[..., T]:
     Wrap value in a callable.
     """
     return lambda *_, **__: value
+
+
+def match_strings(patterns: list[str] | str, string_list: list[str]) -> list[str]:
+    """
+    Glob but on a list of strings.
+    """
+    if isinstance(patterns, str):
+        patterns = [patterns]
+
+    matches = []
+    for pattern in patterns:
+        matches.extend([s for s in string_list if fnmatch.fnmatch(s, pattern)])
+
+    return matches
