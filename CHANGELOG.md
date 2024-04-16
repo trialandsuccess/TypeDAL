@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.0.1 (2024-04-16)
+
+### Fix
+
+* Don't add before_update/before_delete hooks if caching is disabled ([`2c15bf2`](https://github.com/trialandsuccess/TypeDAL/commit/2c15bf226281b39e8c0533c441eaab3d7142f6e6))
+
 ## v3.0.0 (2024-04-02)
 
 
