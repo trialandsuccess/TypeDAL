@@ -1,4 +1,4 @@
-## Mixins
+# 7. Mixins
 
 Mixins allow you to encapsulate reusable fields and behaviors that can be easily
 added to your database models. On this page, we'll walk through the usage
@@ -6,7 +6,7 @@ of two example mixins provided by TypeDAL: `TimestampsMixin` for automatic times
 URL-friendly slugs. Additionally, we'll demonstrate how you can create your own custom mixins to tailor functionality to
 your app's specific needs.
 
-### Using `TimestampsMixin`
+## Using `TimestampsMixin`
 
 The `TimestampsMixin` adds automatic timestamping functionality to your models. It includes two fields: `created_at`
 and `updated_at`, which record the creation and last update times respectively.
@@ -26,7 +26,7 @@ class MyTable(TypedTable, TimestampsMixin):
 # Now, whenever you create or update a record in MyTable, the 'created_at' and 'updated_at' timestamps will be automatically managed.
 ```
 
-### Using `SlugMixin`
+## Using `SlugMixin`
 
 The `SlugMixin` adds a "slug" field to your models, which is a URL-friendly version of another field's value. This is
 typically used for SEO-friendly URLs. To prevent duplicates, some random bytes are appended at the end of the slug.
@@ -47,7 +47,7 @@ class MyTable(TypedTable, SlugMixin, slug_field="title"): # optionally add `slug
 # Now, whenever you insert a record into MyTable, the 'slug' field will be automatically generated based on the 'title' field.
 ```
 
-### Creating Custom Mixins
+## Creating Custom Mixins
 
 To create your own mixins for additional functionality, follow these steps:
 

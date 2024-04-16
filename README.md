@@ -10,7 +10,7 @@
 Typing support for [PyDAL](http://web2py.com/books/default/chapter/29/6).
 This package aims to improve the typing support for PyDAL. By using classes instead of the define_table method,
 type hinting the result of queries can improve the experience while developing. In the background, the queries are still
-generated and executed by pydal itself, this package only proves some logic to properly pass calls from class methods to
+generated and executed by pydal itself, this package only provides some logic to properly pass calls from class methods to
 the underlying `db.define_table` pydal Tables.
 
 - `TypeDAL` is the replacement class for DAL that manages the code on top of DAL.
@@ -26,13 +26,49 @@ the underlying `db.define_table` pydal Tables.
 
 Version 2.0 also introduces more ORM-like funcionality.
 Most notably, a Typed Query Builder that sees your table classes as models with relationships to each other.
-See [3. Building Queries](https://github.com/trialandsuccess/TypeDAL/blob/master/docs/3_building_queries.md) for more
+See [3. Building Queries](https://typedal.readthedocs.io/en/stable/3_building_queries/) for more
 details.
 
-## Quick Overview
+## CLI
+The Typedal CLI provides a convenient interface for generating SQL migrations for [edwh-migrate](https://github.com/educationwarehouse/migrate#readme)
+from PyDAL or TypeDAL configurations using [pydal2sql](https://github.com/robinvandernoord/pydal2sql). 
+It offers various commands to streamline database management tasks.
 
-Below you'll find a quick overview of translation from pydal to TypeDAL. For more info,
-see [the docs](https://typedal.readthedocs.io/en/latest/).
+### Usage
+
+```bash
+typedal --help
+```
+
+## Options
+
+- `--show-config`: Toggle to show configuration details. Default is `no-show-config`.
+- `--version`: Toggle to display version information. Default is `no-version`.
+- `--install-completion`: Install completion for the current shell.
+- `--show-completion`: Show completion for the current shell, for copying or customization.
+- `--help`: Display help message and exit.
+
+## Commands
+
+- `cache.clear`: Clear expired items from the cache.
+- `cache.stats`: Show caching statistics.
+- `migrations.fake`: Mark one or more migrations as completed in the database without executing the SQL code.
+- `migrations.generate`: Run `pydal2sql` based on the TypeDAL configuration.
+- `migrations.run`: Run `edwh-migrate` based on the TypeDAL configuration.
+- `setup`: Interactively setup a `[tool.typedal]` entry in the local `pyproject.toml`.
+
+### Configuration
+
+TypeDAL and its CLI can be configured via `pyproject.toml`.  
+See [6. Migrations](https://typedal.readthedocs.io/en/stable/6_migrations/) for more information about configuration.
+
+
+## TypeDAL for PyDAL users - Quick Overview
+
+Below you'll find a quick overview of translation from pydal to TypeDAL.  
+For more info, see **[the docs](https://typedal.readthedocs.io/en/latest/)**.
+
+---
 
 ### Translations from pydal to typedal
 
@@ -209,7 +245,7 @@ row: TableName = db.table_name(id=1)
 
 ### All Types
 
-See [2. Defining Tables](docs/2_defining_tables.md)
+See [2. Defining Tables](https://typedal.readthedocs.io/en/stable/2_defining_tables/)
 
 ## Caveats
 

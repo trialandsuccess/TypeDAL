@@ -58,9 +58,11 @@ them to your .env file (optionally prefixed with `TYPEDAL`_):
 TYPEDAL_DATABASE = "psql://user:password@host:5432/database"
 ```
 
+Settings passed directly to `TypeDAL()` will overwrite config values.
+
 ### Multiple Connections
 
-Thie configuration allows you to define multiple database connections and specify which one to use through environment
+Thie configuration allows you to define multiple database connections and specify which one `TypeDAL()` will use through environment
 variables.
 
 ```toml
