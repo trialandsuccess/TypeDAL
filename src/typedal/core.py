@@ -519,7 +519,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
             if k not in relationships and (new_relationship := to_relationship(cls, k, annotations[k]))
         }
 
-        cache_dependency = kwargs.pop("cache_dependency", True)
+        cache_dependency = self._config.caching and kwargs.pop("cache_dependency", True)
 
         table: Table = self.define_table(tablename, *fields.values(), **kwargs)
 
