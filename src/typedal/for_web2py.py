@@ -24,6 +24,8 @@ class AuthGroup(TypedTable):
         """
         When we have access to 'db', set the NOT IN DB requirement to make the role unique.
         """
+        super().__on_define__(db)
+
         cls.role.requires = IS_NOT_IN_DB(db, "w2p_auth_group.role")
 
 

@@ -25,19 +25,28 @@ def is_union(some_type: type | types.UnionType) -> bool:
     return typing.get_origin(some_type) in (types.UnionType, typing.Union)
 
 
+def reversed_mro(cls: type) -> typing.Iterable[type]:
+    """
+    Get the Method Resolution Order (mro) for a class, in reverse order to be used with ChainMap.
+    """
+    return reversed(getattr(cls, "__mro__", []))
+
+
 def _all_annotations(cls: type) -> ChainMap[str, type]:
     """
     Returns a dictionary-like ChainMap that includes annotations for all \
     attributes defined in cls or inherited from superclasses.
     """
-    return ChainMap(*(c.__annotations__ for c in getattr(cls, "__mro__", []) if "__annotations__" in c.__dict__))
+    # chainmap reverses the iterable, so reverse again beforehand to keep order normally:
+
+    return ChainMap(*(c.__annotations__ for c in reversed_mro(cls) if "__annotations__" in c.__dict__))
 
 
 def all_dict(cls: type) -> AnyDict:
     """
     Get the internal data of a class and all it's parents.
     """
-    return dict(ChainMap(*(c.__dict__ for c in getattr(cls, "__mro__", []))))
+    return dict(ChainMap(*(c.__dict__ for c in reversed_mro(cls))))  # type: ignore
 
 
 def all_annotations(cls: type, _except: typing.Iterable[str] = None) -> dict[str, type]:

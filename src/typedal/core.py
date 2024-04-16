@@ -1317,15 +1317,16 @@ class TypedField(typing.Generic[T_Value]):  # pragma: no cover
         return typing.cast(Expression, ~self._field)
 
 
-class TypedTable(metaclass=TableMeta):
+class _TypedTable:
     """
-    Enhanded modeling system on top of pydal's Table that adds typing and additional functionality.
+    This class is a final shared parent between TypedTable and Mixins.
+
+    This needs to exist because otherwise the __on_define__ of Mixins are not executed.
+    Notably, this class exists at a level ABOVE the `metaclass=TableMeta`,
+        because otherwise typing gets confused when Mixins are used and multiple types could satisfy
+            generic 'T subclass of TypedTable'
+        -> Setting 'TypedTable' as the parent for Mixin does not work at runtime (and works semi at type check time)
     """
-
-    # set up by 'new':
-    _row: Row | None = None
-
-    _with: list[str]
 
     id: "TypedField[int]"
 
@@ -1335,6 +1336,26 @@ class TypedTable(metaclass=TableMeta):
     _after_update: list[AfterUpdateCallable]
     _before_delete: list[BeforeDeleteCallable]
     _after_delete: list[AfterDeleteCallable]
+
+    @classmethod
+    def __on_define__(cls, db: TypeDAL) -> None:
+        """
+        Method that can be implemented by tables to do an action after db.define is completed.
+
+        This can be useful if you need to add something like requires=IS_NOT_IN_DB(db, "table.field"),
+        where you need a reference to the current database, which may not exist yet when defining the model.
+        """
+
+
+class TypedTable(_TypedTable, metaclass=TableMeta):
+    """
+    Enhanded modeling system on top of pydal's Table that adds typing and additional functionality.
+    """
+
+    # set up by 'new':
+    _row: Row | None = None
+
+    _with: list[str]
 
     def _setup_instance_methods(self) -> None:
         self.as_dict = self._as_dict  # type: ignore
@@ -1381,15 +1402,6 @@ class TypedTable(metaclass=TableMeta):
         inst.__dict__.update(row)
         inst._setup_instance_methods()
         return inst
-
-    @classmethod
-    def __on_define__(cls, db: TypeDAL) -> None:
-        """
-        Method that can be implemented by tables to do an action after db.define is completed.
-
-        This can be useful if you need to add something like requires=IS_NOT_IN_DB(db, "table.field"),
-        where you need a reference to the current database, which may not exist yet when defining the model.
-        """
 
     def __iter__(self) -> typing.Generator[Any, None, None]:
         """

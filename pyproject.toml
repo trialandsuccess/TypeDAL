@@ -27,6 +27,7 @@ dependencies = [
     "dill", # caching
     "configuraptor >= 1.26.2", # config
     "Configurable-JSON", # json dumping
+    "python-slugify",
 ]
 
 [project.optional-dependencies]

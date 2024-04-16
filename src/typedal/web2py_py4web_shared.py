@@ -33,6 +33,8 @@ class AuthUser(TypedTable):
         """
         When we have access to 'db', set the IS_NOT_IN_DB requirement.
         """
+        super().__on_define__(db)
+
         cls.email.requires = (
             IS_EMAIL(),
             IS_NOT_IN_DB(

@@ -5,4 +5,5 @@
 3. [Building Queries](3_building_queries.md)
 4. [Relationships](4_relationships.md)
 5. [py4web & web2py](./5_py4web.md)
-6. [migrations](./6_migrations.md)
+6. [Migrations](./6_migrations.md)
+7. [Mixins](./7_mixins.md)
