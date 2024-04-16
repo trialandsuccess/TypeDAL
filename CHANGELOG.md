@@ -2,6 +2,16 @@
 
 <!--next-version-placeholder-->
 
+## v3.1.0 (2024-04-16)
+
+### Feature
+
+* Added `Mixins` ([`75d69da`](https://github.com/trialandsuccess/TypeDAL/commit/75d69da1bb0ea73fa208dfda2328ca09719c4cc9))
+
+### Fix
+
+* **deps:** Edwh-migrate 0.8 is release so don't depend on alpha version anymore ([`4b324ec`](https://github.com/trialandsuccess/TypeDAL/commit/4b324ec399786675636872850a616553911468c5))
+
 ## v3.0.1 (2024-04-16)
 
 ### Fix
