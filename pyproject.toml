@@ -38,7 +38,7 @@ migrations = [
     "typer",
     "tabulate",
     "pydal2sql>=1.1.3",
-    "edwh-migrate>=0.8.0b1",
+    "edwh-migrate>=0.8.0",
     "questionary",
     "tomlkit",
 ]
@@ -48,7 +48,7 @@ all = [
     "typer",
     "tabulate",
     "pydal2sql[all]>=1.1.3",
-    "edwh-migrate>=0.8.0b1",
+    "edwh-migrate>=0.8.0",
     "questionary",
     "tomlkit",
 ]
