@@ -9,6 +9,9 @@ nav:
   - 5. py4web: 5_py4web.md
   - 6. Migrations: 6_migrations.md
   - 7. Mixins: 7_mixins.md
+extra:
+  version:
+    default: stable
 
 #markdown_extensions:
 #  - pymdownx.highlight:
