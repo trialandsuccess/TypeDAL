@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.1.1 (2024-04-16)
+
+### Documentation
+
+* More info about configuration and the cli ([`950295d`](https://github.com/trialandsuccess/TypeDAL/commit/950295d1003a053ffa9590292a8678435a379490))
+
 ## v3.1.0 (2024-04-16)
 
 ### Feature
