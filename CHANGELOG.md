@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.1.2 (2024-04-17)
+
+### Fix
+
+* Bump `pydal2sql` for better CREATE statements (when a callable 'default' value is used) ([`28370f3`](https://github.com/trialandsuccess/TypeDAL/commit/28370f32828b1e7c6def039f109e2e8770a1a074))
+
 ## v3.1.1 (2024-04-16)
 
 ### Documentation
