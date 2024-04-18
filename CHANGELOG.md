@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.1.3 (2024-04-18)
+
+### Fix
+
+* **SlugMixin:** Field should not be manually writable ([`4254b77`](https://github.com/trialandsuccess/TypeDAL/commit/4254b77bb39a426a02d96e7a95c598662e6db744))
+
 ## v3.1.2 (2024-04-17)
 
 ### Fix
