@@ -85,7 +85,7 @@ class SlugMixin(Mixin):
     """
 
     # pub:
-    slug = StringField(unique=True)
+    slug = StringField(unique=True, writable=False)
     # priv:
     __settings__: typing.TypedDict(  # type: ignore
         "SlugFieldSettings",
