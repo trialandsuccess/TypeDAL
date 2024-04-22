@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.1.4 (2024-04-22)
+
+### Fix
+
+* Re-used fields are now all bound separately ([`1b7f80b`](https://github.com/trialandsuccess/TypeDAL/commit/1b7f80b2013b6d55059df5a6700ec4327a96a5d6))
+
 ## v3.1.3 (2024-04-18)
 
 ### Fix
