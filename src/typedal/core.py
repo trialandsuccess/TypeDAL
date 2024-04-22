@@ -12,6 +12,7 @@ import types
 import typing
 import warnings
 from collections import defaultdict
+from copy import copy
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Optional
@@ -494,9 +495,15 @@ class TypeDAL(pydal.DAL):  # type: ignore
         #    now it's only used to extract relationships from the object.
         #    other properties of the class (incl methods) should not be touched
 
-        for key in typedfields.keys() - full_dict.keys():
-            # typed fields that don't haven't been added to the object yet
-            setattr(cls, key, typedfields[key])
+        # for key in typedfields.keys() - full_dict.keys():
+        #     # typed fields that don't haven't been added to the object yet
+        #     setattr(cls, key, typedfields[key])
+
+        for key, field in typedfields.items():
+            # clone every property so it can be re-used across mixins:
+            clone = copy(field)
+            setattr(cls, key, clone)
+            typedfields[key] = clone
 
         # start with base classes and overwrite with current class:
         relationships = filter_out(full_dict, Relationship) | relationships | filter_out(other_kwargs, Relationship)

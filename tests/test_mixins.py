@@ -8,6 +8,10 @@ from src.typedal import TypedTable, TypeDAL
 from src.typedal.mixins import SlugMixin, TimestampsMixin
 
 
+class AllMixins(TypedTable, SlugMixin, TimestampsMixin, slug_field="name"):
+    name: str
+
+
 class TableWithMixins(TypedTable, SlugMixin, slug_field="name", slug_suffix=1):
     name: str
     number: Optional[int]
@@ -27,6 +31,7 @@ def test_invalid_slug_initialization():
 def db():
     _db = TypeDAL("sqlite:memory")
 
+    _db.define(AllMixins)
     _db.define(TableWithMixins)
     _db.define(TableWithTimestamps)
     yield _db
@@ -62,3 +67,15 @@ def test_timestamps(db):
     updated_row = TableWithTimestamps(id=row.id)
 
     assert updated_row.updated_at > updated_row.created_at
+
+
+def test_reusing(db):
+    assert str(AllMixins.created_at) == "all_mixins.created_at"
+    assert str(AllMixins.slug) == "all_mixins.slug"
+    assert str(AllMixins.name) == "all_mixins.name"
+
+    assert str(TableWithMixins.slug) == "table_with_mixins.slug"
+    assert str(TableWithMixins.name) == "table_with_mixins.name"
+
+    assert str(TableWithTimestamps.created_at) == "table_with_timestamps.created_at"
+    assert str(TableWithTimestamps.unrelated) == "table_with_timestamps.unrelated"
