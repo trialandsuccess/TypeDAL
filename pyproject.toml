@@ -61,6 +61,7 @@ dev = [
     "su6[all]",
     "python-semantic-release < 8",
     "pytest-mypy-testing",
+    "testcontainers",
     "types-tabulate",
     "types-PyYAML",
     # docs:

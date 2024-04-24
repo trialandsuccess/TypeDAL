@@ -1,13 +1,11 @@
 import os
 import shutil
 import tempfile
-import warnings
 from contextlib import chdir
 from pathlib import Path
 
-import psycopg2
 import pytest
-from configuraptor import asdict
+from testcontainers.postgres import PostgresContainer
 
 from src.typedal import TypeDAL
 from src.typedal.config import (
@@ -16,6 +14,22 @@ from src.typedal.config import (
     expand_env_vars_into_toml_values,
     load_config,
 )
+
+postgres = PostgresContainer(
+    dbname="postgres",
+    username="someuser",
+    password="somepass",
+)
+
+
+@pytest.fixture(scope="module", autouse=True)
+def psql(request):
+    postgres.ports = {
+        5432: 9631,  # as set in valid.env
+    }
+
+    request.addfinalizer(postgres.stop)
+    postgres.start()
 
 
 @pytest.fixture
@@ -27,12 +41,8 @@ def at_temp_dir():
 
 def _load_db_after_setup(dialect: str):
     config = load_config()
-    try:
-        db = TypeDAL(attempts=1)
-        assert db._uri == config.database
-    except (psycopg2.OperationalError, RuntimeError) as e:
-        # postgres not running
-        warnings.warn("Postgres is not running!", source=e)
+    db = TypeDAL(attempts=1)
+    assert db._uri == config.database
 
     assert f"'dialect': '{dialect}'" in repr(config)
 
