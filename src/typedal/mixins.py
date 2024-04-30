@@ -7,13 +7,20 @@ Mixins can add reusable fields and behavior (optimally both, otherwise it doesn'
 import base64
 import os
 import typing
+import warnings
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
 from slugify import slugify
 
-from .core import TypedTable  # noqa F401 - used by example in docstring
-from .core import TypeDAL, _TypedTable
+from .core import (  # noqa F401 - used by example in docstring
+    QueryBuilder,
+    T_MetaInstance,
+    TableMeta,
+    TypeDAL,
+    TypedTable,
+    _TypedTable,
+)
 from .fields import DatetimeField, StringField
 from .types import OpRow, Set
 
@@ -79,7 +86,7 @@ class SlugMixin(Mixin):
     Some random bytes are added at the end to prevent duplicates.
 
     Example:
-        >>> class MyTable(TypedTable, SlugMixin, slug_field="some_name"):
+        >>> class MyTable(TypedTable, SlugMixin, slug_field="some_name", slug_suffix_length=8):
         >>>    some_name: str
         >>>    ...
     """
@@ -95,11 +102,11 @@ class SlugMixin(Mixin):
         },
     )  # set via init subclass
 
-    def __init_subclass__(cls, slug_field: str = None, slug_suffix: int = 8, **kw: Any) -> None:
+    def __init_subclass__(cls, slug_field: str = None, slug_suffix_length: int = 0, **kw: Any) -> None:
         """
         Bind 'slug field' option to be used later (on_define).
 
-        You can control the length of the random suffix with the `slug_suffix` option (0 is no suffix).
+        You can control the length of the random suffix with the `slug_suffix_length` option (0 is no suffix).
         """
         # unfortunately, PyCharm and mypy do not recognize/autocomplete/typecheck init subclass (keyword) arguments.
         if slug_field is None:
@@ -107,6 +114,14 @@ class SlugMixin(Mixin):
                 "SlugMixin requires a valid slug_field setting: "
                 "e.g. `class MyClass(TypedTable, SlugMixin, slug_field='title'): ...`"
             )
+
+        if "slug_suffix" in kw:
+            warnings.warn(
+                "The 'slug_suffix' option is deprecated, use 'slug_suffix_length' instead.",
+                DeprecationWarning,
+            )
+
+        slug_suffix = slug_suffix_length or kw.get("slug_suffix", 0)
 
         cls.__settings__ = {
             "slug_field": slug_field,
@@ -133,3 +148,25 @@ class SlugMixin(Mixin):
             row["slug"] = slugify(generated_slug)
 
         cls._before_insert.append(generate_slug_before_insert)
+
+    @classmethod
+    def from_slug(cls: typing.Type[T_MetaInstance], slug: str, join: bool = True) -> Optional[T_MetaInstance]:
+        """
+        Find a row by its slug.
+        """
+        builder = cls.where(slug=slug)
+        if join:
+            builder = builder.join()
+
+        return builder.first()
+
+    @classmethod
+    def from_slug_or_fail(cls: typing.Type[T_MetaInstance], slug: str, join: bool = True) -> T_MetaInstance:
+        """
+        Find a row by its slug, or raise an error if it doesn't exist.
+        """
+        builder = cls.where(slug=slug)
+        if join:
+            builder = builder.join()
+
+        return builder.first_or_fail()

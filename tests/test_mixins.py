@@ -12,9 +12,15 @@ class AllMixins(TypedTable, SlugMixin, TimestampsMixin, slug_field="name"):
     name: str
 
 
-class TableWithMixins(TypedTable, SlugMixin, slug_field="name", slug_suffix=1):
+class TableWithMixins(TypedTable, SlugMixin, slug_field="name", slug_suffix_length=1):
     name: str
     number: Optional[int]
+
+
+with pytest.warns(DeprecationWarning):
+    class TableWithMixinsWarns(TypedTable, SlugMixin, slug_field="name", slug_suffix=1):
+        name: str
+        number: Optional[int]
 
 
 class TableWithTimestamps(TypedTable, TimestampsMixin):
@@ -53,6 +59,14 @@ def test_slug(db):
 
     assert row.name == "Two Words"
     assert row.slug.startswith("two-words")
+
+    assert TableWithMixins.from_slug(row.slug)
+    assert TableWithMixins.from_slug("missing") is None
+
+    assert TableWithMixins.from_slug_or_fail(row.slug)
+
+    with pytest.raises(ValueError):
+        TableWithMixins.from_slug_or_fail("missing")
 
 
 def test_timestamps(db):
