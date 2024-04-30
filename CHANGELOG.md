@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.2.0 (2024-04-30)
+
+### Feature
+
+* Add .from_slug to SlugMixin ([`bacf416`](https://github.com/trialandsuccess/TypeDAL/commit/bacf4165b60e9a89dc0e5fc5d1801d499c1ffc6f))
+
 ## v3.1.4 (2024-04-22)
 
 ### Fix
