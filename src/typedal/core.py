@@ -953,10 +953,7 @@ class TableMeta(type):
         """
         table = self._ensure_table_defined()
 
-        try:
-            result = table.validate_and_update(query, **fields)
-        except Exception as e:
-            result = {"errors": {"exception": str(e)}}
+        result = table.validate_and_update(query, **fields)
 
         if errors := result.get("errors"):
             return None, errors

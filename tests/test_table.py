@@ -142,17 +142,25 @@ def test_both_styles_for_class():
     assert old_style.validate_and_update(old_style.id == 1, string_field=123, int_field="abc")["errors"]
     assert old_style.validate_and_update(old_style.id == 1, string_field="123", int_field=123)["id"]
 
+    # errors - int field is a string
     instance, errors = NewStyle.validate_and_update(NewStyle.id == 1, string_field=123, int_field="abc")
     assert not instance
     assert errors
 
+    # errors - required field is None
+    instance, errors = NewStyle.validate_and_update(NewStyle.id == 1, string_field=None, int_field=None)
+    assert not instance
+    assert errors
+
+    # success - types match
     instance, errors = NewStyle.validate_and_update(NewStyle.id == 1, string_field="123", int_field=123)
     assert instance
     assert not errors
 
+    # no instance because id 99 doesn't exist, but also no errors because types match:
     instance, errors = NewStyle.validate_and_update(NewStyle.id == 99, string_field="123", int_field=123)
     assert not instance
-    assert errors
+    assert not errors
 
     assert old_style.validate_and_update_or_insert(old_style.id == 1, string_field=123, int_field="abc")["errors"]
     assert old_style.validate_and_update_or_insert(old_style.id == 101, string_field=123, int_field="abc")["errors"]
