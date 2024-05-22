@@ -14,5 +14,5 @@ jobs:
           python-version: '3.11'
           cache: 'pip' # caching pip dependencies
       - uses: yezz123/setup-uv@v4
-      - run: uv pip install su6[all] .[dev,all]
+      - run: uv venv && uv pip install su6[all] .[dev,all]
       - run: su6 all --coverage 100
