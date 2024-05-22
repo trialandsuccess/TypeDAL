@@ -30,7 +30,7 @@ jobs:
           cache: 'pip' # caching pip dependencies
       - uses: yezz123/setup-uv@v4
       - run: >
-          uv venv --python 3.13 --seed &&
+          uv venv --python 3.12 --seed &&
           source .venv/bin/activate &&
           uv pip install su6[all] .[dev,all] &&
           su6 all --coverage 100
