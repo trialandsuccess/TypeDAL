@@ -58,7 +58,7 @@ dev = [
     # build:
     "hatch",
     # test:
-    "su6[all]",
+    "su6[all]>=1.9.0",
     "python-semantic-release < 8",
     "pytest-mypy-testing",
     "contextlib-chdir",
