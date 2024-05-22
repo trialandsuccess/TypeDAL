@@ -2,6 +2,16 @@
 
 <!--next-version-placeholder-->
 
+## v3.3.0 (2024-05-22)
+
+### Feature
+
+* Improved type hinting ([`84e701d`](https://github.com/trialandsuccess/TypeDAL/commit/84e701d04938ae42955bbc898544e58bed302271))
+
+### Fix
+
+* Validate_and_update does not raise an exception anymore, simplify function + make tests pass again ([`e7a33f6`](https://github.com/trialandsuccess/TypeDAL/commit/e7a33f684e08deacb51a50a088b1db42e9bf3a6b))
+
 ## v3.2.0 (2024-04-30)
 
 ### Feature
