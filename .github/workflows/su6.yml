@@ -15,4 +15,4 @@ jobs:
           cache: 'pip' # caching pip dependencies
       - uses: yezz123/setup-uv@v4
       - run: uv venv && uv pip install su6[all] .[dev,all]
-      - run: su6 all --coverage 100
+      - run: .venv/bin/su6 all --coverage 100
