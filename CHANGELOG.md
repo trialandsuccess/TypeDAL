@@ -7,6 +7,7 @@
 ### Feature
 
 * Improved type hinting ([`84e701d`](https://github.com/trialandsuccess/TypeDAL/commit/84e701d04938ae42955bbc898544e58bed302271))
+* Improved limitby + orderby (or other select kwargs) combination, so sorting is done BEFORE limiting + tests to validate this behavior ([`84e701d`](https://github.com/trialandsuccess/TypeDAL/commit/84e701d04938ae42955bbc898544e58bed302271))
 
 ### Fix
 
