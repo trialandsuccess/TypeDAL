@@ -4,21 +4,31 @@ on:
     branches-ignore:
       - master
 jobs:
-  check:
-    name: Check with `su6 all`
+#  check_min:
+#    name: Check with `su6 all` on lowest Python
+#    runs-on: ubuntu-latest
+#    steps:
+#      - uses: actions/checkout@v3
+#      - uses: actions/setup-python@v4
+#        with:
+#          python-version: '3.10'
+#          cache: 'pip' # caching pip dependencies
+#      - uses: yezz123/setup-uv@v4
+#      - run: >
+#          uv venv --python 3.10 --seed &&
+#          source .venv/bin/activate &&
+#          uv pip install su6[all] .[dev,all] &&
+#          su6 all --coverage 100
+  check_max:
+    name: Check with `su6 all` on highest Python
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
+          python-version: '3.13'
           cache: 'pip' # caching pip dependencies
       - uses: yezz123/setup-uv@v4
-      - run: >
-          uv venv --python 3.10 --seed &&
-          source .venv/bin/activate &&
-          uv pip install su6[all] .[dev,all] &&
-          su6 all --coverage 100
       - run: >
           uv venv --python 3.13 --seed &&
           source .venv/bin/activate &&
