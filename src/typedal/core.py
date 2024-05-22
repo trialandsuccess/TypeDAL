@@ -1374,7 +1374,7 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
 
     def __new__(
         cls, row_or_id: typing.Union[Row, Query, pydal.objects.Set, int, str, None, "TypedTable"] = None, **filters: Any
-    ) -> typing.Self:
+    ) -> Self:
         """
         Create a Typed Rows model instance from an existing row, ID or query.
 
@@ -2802,7 +2802,7 @@ class TypedSet(pydal.objects.Set):  # type: ignore # pragma: no cover
             result: TypedRows[MyTable] = db(MyTable.id > 0).select()
 
             for row in result:
-                typing.reveal_type(row)  # MyTable
+                reveal_type(row)  # MyTable
         """
         rows = super().select(*fields, **attributes)
         return typing.cast(TypedRows[T_MetaInstance], rows)

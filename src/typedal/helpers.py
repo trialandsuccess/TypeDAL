@@ -2,6 +2,7 @@
 Helpers that work independently of core.
 """
 
+import datetime as dt
 import fnmatch
 import io
 import types
@@ -265,3 +266,11 @@ def match_strings(patterns: list[str] | str, string_list: list[str]) -> list[str
         matches.extend([s for s in string_list if fnmatch.fnmatch(s, pattern)])
 
     return matches
+
+
+def utcnow() -> dt.datetime:
+    """
+    Replacement of datetime.utcnow.
+    """
+    # return dt.datetime.now(dt.UTC)
+    return dt.datetime.now(dt.timezone.utc)

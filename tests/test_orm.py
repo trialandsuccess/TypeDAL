@@ -1,6 +1,7 @@
 import typing
 import uuid
 from collections import ChainMap
+from typing_extensions import reveal_type
 
 from src.typedal.core import TypeDAL, TypedField, TypedTable
 
@@ -110,17 +111,17 @@ class Tagged(TypedTable):
 
 def test_types() -> None:
     user = User.insert(name="Steve")
-    typing.reveal_type(User.id)
-    typing.reveal_type(user.id)
+    reveal_type(User.id)
+    reveal_type(user.id)
 
-    typing.reveal_type(User.name)
-    typing.reveal_type(user.name)
+    reveal_type(User.name)
+    reveal_type(user.name)
 
-    typing.reveal_type(User.gid)
-    typing.reveal_type(user.gid)
+    reveal_type(User.gid)
+    reveal_type(user.gid)
 
-    typing.reveal_type(User.age)
-    typing.reveal_type(user.age)
+    reveal_type(User.age)
+    reveal_type(user.age)
 
     user.delete_record()
 

@@ -2,6 +2,7 @@ import json
 import datetime as dt
 
 from src.typedal.serializers.as_json import SerializedJson, encode
+from typedal.helpers import utcnow
 
 
 class CustomClass:
@@ -28,7 +29,7 @@ def test_set():
 
 
 def test_datetime():
-    now = dt.datetime.utcnow()
+    now = utcnow()
     today = dt.date.today()
     time = now.time()
 

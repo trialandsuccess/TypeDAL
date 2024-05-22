@@ -61,9 +61,14 @@ dev = [
     "su6[all]",
     "python-semantic-release < 8",
     "pytest-mypy-testing",
+    "contextlib-chdir",
     "testcontainers",
+    # depends on ->
+    "requests<2.32",
+    # mypy:
     "types-tabulate",
     "types-PyYAML",
+    "types-requests",
     # docs:
     'mkdocs',
     'mkdocs-dracula-theme',

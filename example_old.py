@@ -2,6 +2,8 @@ import datetime
 
 from pydal import DAL, Field
 
+from typedal.helpers import utcnow
+
 db = DAL("sqlite:memory")
 
 ### basic examples
@@ -60,7 +62,7 @@ db.define_table("all_fields",
                 # The big-id and, big-reference are only supported by some of the database engines and are experimental.
                 )
 
-now = datetime.datetime.utcnow()
+now = utcnow()
 
 db.other_table.insert()
 db.other_table.insert()

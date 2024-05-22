@@ -5,20 +5,19 @@ from decimal import Decimal
 import datetime as dt
 
 from src.typedal.fields import TextField
+from typedal.helpers import utcnow
 
 db = TypeDAL("sqlite:memory")
 
 
 ### basic examples
 
-@db.define
+@db.define(format="%(name)s")
 class Person(TypedTable):
     name: TypedField[str]
 
     age = TypedField(int, default=18)
     nicknames: list[str]
-
-    format = "%(name)s"
 
 
 assert db.person._format == "%(name)s"
@@ -162,7 +161,7 @@ class AllFieldsExplicit(TypedTable):
     bigint = fields.BigintField()
 
 
-now = dt.datetime.utcnow()
+now = utcnow()
 
 db.other_table.insert()
 db.other_table.insert()
