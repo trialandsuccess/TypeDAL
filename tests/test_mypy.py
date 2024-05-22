@@ -3,12 +3,13 @@ import typing
 import pydal.objects
 import pytest
 
-from typedal import (  # fixme: why does src.typedal not work anymore?
+from typedal import (  # todo: why does src.typedal not work anymore?
     TypeDAL,
     TypedField,
     TypedRows,
     TypedTable,
 )
+from typedal.types import CacheFn, CacheTuple, Rows
 
 db = TypeDAL("sqlite:memory")
 
@@ -48,6 +49,9 @@ def mypy_test_typedal_define() -> None:
     typing.reveal_type(MyTable.options)  # R: typedal.core.TypedField[builtins.str]
     typing.reveal_type(MyTable().options)  # R: builtins.str
 
+    typing.reveal_type(MyTable.fancy.lower())  # R: typedal.types.Expression
+    typing.reveal_type(MyTable().fancy.lower())  # R: builtins.str
+
 
 @pytest.mark.mypy_testing
 def test_update() -> None:
@@ -78,7 +82,7 @@ def mypy_test_typedset() -> None:
     typing.reveal_type(counted3)  # R: builtins.int
     typing.reveal_type(counted4)  # R: builtins.int
 
-    select1 = db(MyTable).select()  # E: Need type annotation for "select1"
+    select1 = db(MyTable).select()  # E: [var-annotated]
     select2: TypedRows[MyTable] = db(MyTable).select()
     select3 = MyTable.select().collect()
 
@@ -114,3 +118,16 @@ def mypy_test_query() -> None:
     MyTable.update_or_insert(MyTable)
     MyTable.update_or_insert(my_query)
     MyTable.update_or_insert(db.my_table.id > 3)
+
+
+@pytest.mark.mypy_testing
+def mypy_test_cachefn() -> None:
+    def cache_model(key: str, fn: CacheFn, expire: int) -> Rows:
+        return fn()
+
+    cache_valid: CacheTuple = (cache_model, 3000)
+
+    def invalid_cache_model(key: str, fn: typing.Callable[..., list[str]], _: int = None) -> list[str]:
+        return fn()
+
+    cache_invalid: CacheTuple = (invalid_cache_model, 3000)  # E: [assignment]

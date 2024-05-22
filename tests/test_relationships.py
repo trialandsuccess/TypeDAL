@@ -83,6 +83,11 @@ class Tagged(TypedTable):  # pivot table
     tag: Tag
 
 
+@db.define()
+class Empty(TypedTable):
+    ...
+
+
 def _setup_data():
     # clean up
     for table in db.tables:
@@ -171,6 +176,9 @@ def test_pydal_way():
 def test_typedal_way():
     _setup_data()
 
+    with pytest.raises(ValueError):
+        Empty.first_or_fail()
+
     # user through article: 1 - many
 
     all_articles = Article.join().collect().as_dict()
@@ -180,6 +188,8 @@ def test_typedal_way():
 
     assert all_articles[1]["secondary_author"] is None
     assert all_articles[2]["final_editor"] is None
+
+    assert Article.first_or_fail()
 
     article1 = Article.where(title="Article 1").first_or_fail()
     article2 = Article.where(title="Article 2").first_or_fail()

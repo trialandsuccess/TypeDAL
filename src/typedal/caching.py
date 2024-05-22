@@ -15,7 +15,7 @@ from pydal.objects import Field, Rows, Set
 from .core import TypedField, TypedRows, TypedTable
 from .types import Query
 
-if typing.TYPE_CHECKING:  # pragma: no cover
+if typing.TYPE_CHECKING:
     from .core import TypeDAL
 
 

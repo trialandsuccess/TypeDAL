@@ -23,7 +23,7 @@ from pydal.objects import Field as _Field
 from pydal.objects import Query as _Query
 from pydal.objects import Row
 from pydal.objects import Table as _Table
-from typing_extensions import Self
+from typing_extensions import Self, Unpack
 
 from .config import TypeDALConfig, load_config
 from .helpers import (
@@ -58,6 +58,8 @@ from .types import (
     Pagination,
     Query,
     Rows,
+    SelectKwargs,
+    Table,
     Validator,
     _Types,
 )
@@ -753,25 +755,6 @@ class TypeDAL(pydal.DAL):  # type: ignore
         return to_snake(camel)
 
 
-class TableProtocol(typing.Protocol):  # pragma: no cover
-    """
-    Make mypy happy.
-    """
-
-    id: "TypedField[int]"
-
-    def __getitem__(self, item: str) -> Field:
-        """
-        Tell mypy a Table supports dictionary notation for columns.
-        """
-
-
-class Table(_Table, TableProtocol):  # type: ignore
-    """
-    Make mypy happy.
-    """
-
-
 class TableMeta(type):
     """
     This metaclass contains functionality on table classes, that doesn't exist on its instances.
@@ -1026,6 +1009,12 @@ class TableMeta(type):
         """
         return QueryBuilder(self).first()
 
+    def first_or_fail(self: typing.Type[T_MetaInstance]) -> T_MetaInstance:
+        """
+        See QueryBuilder.first_or_fail!
+        """
+        return QueryBuilder(self).first_or_fail()
+
     def join(
         self: typing.Type[T_MetaInstance],
         *fields: str | typing.Type["TypedTable"],
@@ -1153,7 +1142,7 @@ class TableMeta(type):
     # @typing.dataclass_transform()
 
 
-class TypedField(typing.Generic[T_Value]):  # pragma: no cover
+class TypedField(Expression, typing.Generic[T_Value]):  # pragma: no cover
     """
     Typed version of pydal.Field, which will be converted to a normal Field in the background.
     """
@@ -1176,7 +1165,7 @@ class TypedField(typing.Generic[T_Value]):  # pragma: no cover
         """
         self._type = _type
         self.kwargs = settings
-        super().__init__()
+        # super().__init__()
 
     @typing.overload
     def __get__(self, instance: T_MetaInstance, owner: typing.Type[T_MetaInstance]) -> T_Value:  # pragma: no cover
@@ -1320,6 +1309,17 @@ class TypedField(typing.Generic[T_Value]):  # pragma: no cover
 
         return typing.cast(Expression, ~self._field)
 
+    def lower(self) -> Expression:
+        """
+        For string-fields: compare lowercased values.
+        """
+        if not self._field:  # pragma: no cover
+            raise ValueError("Unbound Field can not be lowered!")
+
+        return typing.cast(Expression, self._field.lower())
+
+    # ... etc
+
 
 class _TypedTable:
     """
@@ -1374,7 +1374,7 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
 
     def __new__(
         cls, row_or_id: typing.Union[Row, Query, pydal.objects.Set, int, str, None, "TypedTable"] = None, **filters: Any
-    ) -> "TypedTable":
+    ) -> typing.Self:
         """
         Create a Typed Rows model instance from an existing row, ID or query.
 
@@ -1388,7 +1388,8 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
 
         if isinstance(row_or_id, TypedTable):
             # existing typed table instance!
-            return row_or_id
+            return typing.cast(Self, row_or_id)
+
         elif isinstance(row_or_id, pydal.objects.Row):
             row = row_or_id
         elif row_or_id is not None:
@@ -2049,7 +2050,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
     model: typing.Type[T_MetaInstance]
     query: Query
     select_args: list[Any]
-    select_kwargs: AnyDict
+    select_kwargs: SelectKwargs
     relationships: dict[str, Relationship[Any]]
     metadata: Metadata
 
@@ -2058,7 +2059,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         model: typing.Type[T_MetaInstance],
         add_query: Optional[Query] = None,
         select_args: Optional[list[Any]] = None,
-        select_kwargs: Optional[AnyDict] = None,
+        select_kwargs: Optional[SelectKwargs] = None,
         relationships: dict[str, Relationship[Any]] = None,
         metadata: Metadata = None,
     ):
@@ -2108,7 +2109,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         add_query: Optional[Query] = None,
         overwrite_query: Optional[Query] = None,
         select_args: Optional[list[Any]] = None,
-        select_kwargs: Optional[AnyDict] = None,
+        select_kwargs: Optional[SelectKwargs] = None,
         relationships: dict[str, Relationship[Any]] = None,
         metadata: Metadata = None,
     ) -> "QueryBuilder[T_MetaInstance]":
@@ -2121,7 +2122,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
             (self.metadata | (metadata or {})) if metadata else self.metadata,
         )
 
-    def select(self, *fields: Any, **options: Any) -> "QueryBuilder[T_MetaInstance]":
+    def select(self, *fields: Any, **options: Unpack[SelectKwargs]) -> "QueryBuilder[T_MetaInstance]":
         """
         Fields: database columns by name ('id'), by field reference (table.id) or other (e.g. table.ALL).
 
@@ -2310,7 +2311,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         db = self._get_db()
         return str(db(self.query)._update(**fields))
 
-    def _before_query(self, mut_metadata: Metadata, add_id: bool = True) -> tuple[Query, list[Any], AnyDict]:
+    def _before_query(self, mut_metadata: Metadata, add_id: bool = True) -> tuple[Query, list[Any], SelectKwargs]:
         select_args = [self._select_arg_convert(_) for _ in self.select_args] or [self.model.ALL]
         select_kwargs = self.select_kwargs.copy()
         query = self.query
@@ -2429,7 +2430,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         self,
         query: Query,
         select_args: list[Any],
-        select_kwargs: AnyDict,
+        select_kwargs: SelectKwargs,
         metadata: Metadata,
     ) -> tuple[Query, list[Any]]:
         db = self._get_db()
@@ -2447,13 +2448,16 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
             other = other.with_alias(f"{key}_{hash(relation)}")
             join.append(other.on(relation.condition(model, other)))
 
-        if limitby := select_kwargs.pop("limitby", None):
+        if limitby := select_kwargs.pop("limitby", ()):
+
             # if limitby + relationships:
             # 1. get IDs of main table entries that match 'query'
             # 2. change query to .belongs(id)
             # 3. add joins etc
 
-            kwargs = {"limitby": limitby}
+            kwargs: SelectKwargs = select_kwargs | {"limitby": limitby}
+            # if orderby := select_kwargs.get("orderby"):
+            #     kwargs["orderby"] = orderby
 
             if join:
                 kwargs["join"] = join

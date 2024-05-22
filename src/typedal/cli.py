@@ -24,7 +24,7 @@ try:
     import tomlkit
     import typer
     from tabulate import tabulate
-except ImportError as e:  # pragma: no cover
+except ImportError as e:
     # ImportWarning is hidden by default
     warnings.warn(
         "`migrations` extra not installed. Please run `pip install typedal[migrations]` to fix this.",

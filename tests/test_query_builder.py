@@ -1,7 +1,11 @@
+import inspect
+import typing
+
 import pytest
 from pydal.objects import Query
 
 from src.typedal import TypeDAL, TypedField, TypedTable, relationship
+from typedal.types import CacheModel, CacheTuple, CacheFn, Rows
 
 db = TypeDAL("sqlite:memory")
 
@@ -12,7 +16,8 @@ class TestQueryTable(TypedTable):
     other = TypedField(str, default="Something")
     yet_another = TypedField(list[str], default=["something", "and", "other", "things"])
 
-    relations = relationship(list["TestRelationship"], condition=lambda self, other: self.id == other.querytable)
+    relations = relationship(list["TestRelationship"], condition=lambda self, other: self.id == other.querytable,
+                             join="left")
 
 
 @db.define()
@@ -38,6 +43,25 @@ def test_query_type():
     assert isinstance(TestQueryTable.number < 3, Query)
     assert isinstance(TestQueryTable.number <= 3, Query)
     assert isinstance(TestQueryTable.number != 3, Query)
+
+
+"""
+SELECT "test_query_table"."id",
+       "test_query_table"."number",
+       "relations_8106139955393"."id",
+       "relations_8106139955393"."name",
+       "relations_8106139955393"."value",
+       "relations_8106139955393"."querytable"
+FROM "test_query_table"
+         LEFT JOIN "test_relationship" AS "relations_8106139955393"
+                   ON ("relations_8106139955393"."querytable" = "test_query_table"."id")
+WHERE ("test_query_table"."id" IN (SELECT "test_query_table"."id"
+                                   FROM "test_query_table"
+                                   WHERE ("test_query_table"."id" > 0)
+                                   ORDER BY "test_query_table"."id"
+                                   LIMIT 3 OFFSET 0))
+ORDER BY "test_query_table"."number" DESC;
+"""
 
 
 def _setup_data():
@@ -373,6 +397,46 @@ def test_reprs_and_bool():
 
     assert repr(TestQueryTable.where(id=1))
     assert str(TestQueryTable.where(id=1))
+
+
+def test_orderby():
+    _setup_data()
+
+    base_qt = TestQueryTable.select(TestQueryTable.id, TestQueryTable.number)
+
+    assert base_qt.count() == 5
+
+    rows1 = base_qt.select(orderby=TestQueryTable.id).paginate(limit=3, page=1)
+    rows2 = base_qt.select(orderby=TestQueryTable.id, limitby=(0, 3)).collect()
+    assert [_.id for _ in rows1] == [_.id for _ in rows2] == [1, 2, 3]
+
+    rows1 = base_qt.select(orderby=TestQueryTable.number).paginate(limit=3, page=1)
+    rows2 = base_qt.select(orderby=TestQueryTable.number, limitby=(0, 3)).collect()
+    assert [_.number for _ in rows1] == [_.number for _ in rows2] == [0, 1, 2]
+
+    rows1 = base_qt.select(orderby=~TestQueryTable.number).paginate(limit=3, page=1)
+    rows2 = base_qt.select(orderby=~TestQueryTable.number, limitby=(0, 3)).collect()
+    assert [_.number for _ in rows1] == [_.number for _ in rows2] == [4, 3, 2]
+
+    joined_qt = base_qt.join()
+
+    assert joined_qt.count() == 5  # left join shouldn't change count
+
+    rows1 = joined_qt.select(orderby=TestQueryTable.id).paginate(limit=3, page=1)
+    rows2 = joined_qt.select(orderby=TestQueryTable.id, limitby=(0, 3)).collect()
+    assert [_.id for _ in rows1] == [_.id for _ in rows2] == [1, 2, 3]
+
+    rows1 = joined_qt.select(orderby=TestQueryTable.number).paginate(limit=3, page=1)
+    rows2 = joined_qt.select(orderby=TestQueryTable.number, limitby=(0, 3)).collect()
+    assert [_.number for _ in rows1] == [_.number for _ in rows2] == [0, 1, 2]
+
+    rows1 = joined_qt.select(orderby=~TestQueryTable.number).paginate(limit=3, page=1)
+    rows2 = joined_qt.select(orderby=~TestQueryTable.number, limitby=(0, 3)).collect()
+    assert [_.number for _ in rows1] == [_.number for _ in rows2] == [4, 3, 2]
+
+    rows1 = joined_qt.select(orderby=~TestQueryTable.number).paginate(limit=100, page=1)
+    rows2 = joined_qt.select(orderby=~TestQueryTable.number, limitby=(0, 100)).collect()
+    assert [_.number for _ in rows1] == [_.number for _ in rows2] == [4, 3, 2, 1, 0]
 
 
 def test_execute():

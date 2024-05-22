@@ -17,7 +17,7 @@ from dotenv import dotenv_values, find_dotenv
 
 from .types import AnyDict
 
-if typing.TYPE_CHECKING:  # pragma: no cover
+if typing.TYPE_CHECKING:
     from edwh_migrate import Config as MigrateConfig
     from pydal2sql.typer_support import Config as P2SConfig
 

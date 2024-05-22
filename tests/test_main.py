@@ -7,6 +7,7 @@ import pytest
 from src.typedal import *
 from src.typedal.__about__ import __version__
 from src.typedal.fields import *
+from typedal.types import Expression
 
 
 def test_about():
@@ -166,7 +167,6 @@ def test_mixed_defines(capsys):
 
     assert SecondNewSyntax(1).location == "Rotterdam"
 
-
 def test_dont_allow_bool_in_query():
     with pytest.raises(ValueError):
         db(True)
@@ -266,7 +266,7 @@ def test_typedfield_to_field_type():
 
 
 def test_fields():
-    @db.define
+    @db.define()
     class SomeNewTable(TypedTable):
         name: str
         name_alt = TypedField(str)
@@ -329,6 +329,9 @@ def test_fields():
         OtherNewTable.name == "Hendrik",
         name="Hendrik 2",
     )
+
+    assert isinstance(SomeNewTable.name_alt.lower(), pydal.objects.Expression)
+    assert isinstance(SomeNewTable(1).name_alt.lower(), str)
 
     assert db(SomeNewTable.name == "Hendrik").count() == 0
     assert db(SomeNewTable.name == "Hendrik 2").count() == 1

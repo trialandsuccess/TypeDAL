@@ -6,6 +6,7 @@ import typing
 from datetime import datetime
 from typing import Any, Optional, TypedDict
 
+from pydal.adapters.base import BaseAdapter
 from pydal.helpers.classes import OpRow as _OpRow
 from pydal.helpers.classes import Reference as _Reference
 from pydal.objects import Expression as _Expression
@@ -13,8 +14,12 @@ from pydal.objects import Field as _Field
 from pydal.objects import Query as _Query
 from pydal.objects import Rows as _Rows
 from pydal.objects import Set as _Set
+from pydal.objects import Table as _Table
 from pydal.validators import Validator as _Validator
 from typing_extensions import NotRequired
+
+if typing.TYPE_CHECKING:
+    from .core import TypedField
 
 AnyDict: typing.TypeAlias = dict[str, Any]
 
@@ -148,6 +153,62 @@ class PaginationMetadata(TypedDict):
     min_max: tuple[int, int]
 
 
+class TableProtocol(typing.Protocol):  # pragma: no cover
+    """
+    Make mypy happy.
+    """
+
+    id: "TypedField[int]"
+
+    def __getitem__(self, item: str) -> Field:
+        """
+        Tell mypy a Table supports dictionary notation for columns.
+        """
+
+
+class Table(_Table, TableProtocol):  # type: ignore
+    """
+    Make mypy happy.
+    """
+
+
+class CacheFn(typing.Protocol):
+    """
+    The cache model (e.g. cache.ram) accepts these parameters (all filled by dfeault).
+    """
+
+    def __call__(
+        self: BaseAdapter,
+        sql: str = "",
+        fields: typing.Iterable[str] = (),
+        attributes: typing.Iterable[str] = (),
+        colnames: typing.Iterable[str] = (),
+    ) -> Rows:
+        """
+        Only used for type-hinting.
+        """
+
+
+# CacheFn = typing.Callable[[], Rows]
+CacheModel = typing.Callable[[str, CacheFn, int], Rows]
+CacheTuple = tuple[CacheModel, int]
+
+
+class SelectKwargs(typing.TypedDict, total=False):
+    """
+    Possible keyword arguments for .select().
+    """
+
+    join: Optional[list[Expression]]
+    left: Optional[list[Expression]]
+    orderby: Optional[Expression | str | Table]
+    limitby: Optional[tuple[int, int]]
+    distinct: bool | Field | Expression
+    orderby_on_limitby: bool
+    cacheable: bool
+    cache: CacheTuple
+
+
 class Metadata(TypedDict):
     """
     Loosely structured metadata used by Query Builder.
@@ -161,7 +222,7 @@ class Metadata(TypedDict):
 
     final_query: NotRequired[Query | str | None]
     final_args: NotRequired[list[Any]]
-    final_kwargs: NotRequired[AnyDict]
+    final_kwargs: NotRequired[SelectKwargs]
     relationships: NotRequired[set[str]]
 
     sql: NotRequired[str]
