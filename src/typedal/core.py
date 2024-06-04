@@ -1841,15 +1841,6 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
         result = super().group_by_value(*fields, **kwargs)
         return typing.cast(dict[T, list[T_MetaInstance]], result)
 
-    def column(self, column: str = None) -> list[Any]:
-        """
-        Get a list of all values in a specific column.
-
-        Example:
-                rows.column('name') -> ['Name 1', 'Name 2', ...]
-        """
-        return typing.cast(list[Any], super().column(column))
-
     def as_csv(self) -> str:
         """
         Dump the data to csv.
@@ -2425,6 +2416,26 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
         # only saves if requested in metadata:
         return save_to_cache(typed_rows, rows)
+
+    @typing.overload
+    def column(self, field: TypedField[T]) -> list[T]:
+        """
+        If a typedfield is passed, the output type can be safely determined.
+        """
+
+    @typing.overload
+    def column(self, field: T) -> list[T]:
+        """
+        Otherwise, the output type is loosely determined (assumes `field: type` or Any).
+        """
+
+    def column(self, field: TypedField[T] | T) -> list[T]:
+        """
+        Get all values in a specific column.
+
+        Shortcut for `.select(field).execute().column(field)`.
+        """
+        return self.select(field).execute().column(field)
 
     def _handle_relationships_pre_select(
         self,

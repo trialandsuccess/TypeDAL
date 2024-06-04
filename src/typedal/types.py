@@ -79,6 +79,15 @@ class Rows(_Rows):  # type: ignore
     Make mypy happy.
     """
 
+    def column(self, column: typing.Any = None) -> list[typing.Any]:
+        """
+        Get a list of all values in a specific column.
+
+        Example:
+                rows.column('name') -> ['Name 1', 'Name 2', ...]
+        """
+        return [r[str(column) if column else self.colnames[0]] for r in self]
+
 
 class Validator(_Validator):  # type: ignore
     """

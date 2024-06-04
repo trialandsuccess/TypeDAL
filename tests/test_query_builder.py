@@ -454,3 +454,12 @@ def test_execute():
 
     for row in raw_execute:
         assert row['count'] == 4
+
+
+def test_column():
+    _setup_data()
+
+    rows = TestRelationship.where(TestRelationship.value > 30).column(TestRelationship.value)
+
+    assert len(rows) == 4
+    assert set(rows) == {33}

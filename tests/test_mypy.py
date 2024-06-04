@@ -123,6 +123,12 @@ def mypy_test_query() -> None:
     MyTable.update_or_insert(my_query)
     MyTable.update_or_insert(db.my_table.id > 3)
 
+    SomeField: typing.Any
+
+    reveal_type(MyTable.where().column(SomeField))  # R: builtins.list[Any]
+    reveal_type(MyTable.where().column(MyTable.normal))  # R: builtins.list[builtins.str]
+    reveal_type(MyTable.where().column(MyTable.fancy))  # R: builtins.list[builtins.str]
+
 
 @pytest.mark.mypy_testing
 def mypy_test_cachefn() -> None:
