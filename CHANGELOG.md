@@ -2,6 +2,16 @@
 
 <!--next-version-placeholder-->
 
+## v3.3.1 (2024-06-04)
+
+### Fix
+
+* Typing improvements for relationships, with_alias ([`e76d3a3`](https://github.com/trialandsuccess/TypeDAL/commit/e76d3a37ad46c8a4a6bc18accabaab130bb0bd02))
+
+### Documentation
+
+* Manually append changelog ([`032b017`](https://github.com/trialandsuccess/TypeDAL/commit/032b017d4784e138e0065bac9fee22a13214c579))
+
 ## v3.3.0 (2024-05-22)
 
 ### Feature
