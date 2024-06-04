@@ -54,6 +54,8 @@ def mypy_test_typedal_define() -> None:
     reveal_type(MyTable.fancy.lower())  # R: typedal.types.Expression
     reveal_type(MyTable().fancy.lower())  # R: builtins.str
 
+    reveal_type(MyTable.with_alias("---")())  # R: tests.test_mypy.MyTable
+
 
 @pytest.mark.mypy_testing
 def test_update() -> None:

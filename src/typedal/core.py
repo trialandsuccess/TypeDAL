@@ -15,7 +15,7 @@ from collections import defaultdict
 from copy import copy
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Type
 
 import pydal
 from pydal._globals import DEFAULT
@@ -65,8 +65,8 @@ from .types import (
 )
 
 # use typing.cast(type, ...) to make mypy happy with unions
-T_annotation = typing.Type[Any] | types.UnionType
-T_Query = typing.Union["Table", Query, bool, None, "TypedTable", typing.Type["TypedTable"]]
+T_annotation = Type[Any] | types.UnionType
+T_Query = typing.Union["Table", Query, bool, None, "TypedTable", Type["TypedTable"]]
 T_Value = typing.TypeVar("T_Value")  # actual type of the Field (via Generic)
 T_MetaInstance = typing.TypeVar("T_MetaInstance", bound="TypedTable")  # bound="TypedTable"; bound="TableMeta"
 T = typing.TypeVar("T")
@@ -102,7 +102,7 @@ JOIN_OPTIONS = typing.Literal["left", "inner", None]
 DEFAULT_JOIN_OPTION: JOIN_OPTIONS = "left"
 
 # table-ish paramter:
-P_Table = typing.Union[typing.Type["TypedTable"], pydal.objects.Table]
+P_Table = typing.Union[Type["TypedTable"], pydal.objects.Table]
 
 Condition: typing.TypeAlias = typing.Optional[
     typing.Callable[
@@ -120,7 +120,7 @@ OnQuery: typing.TypeAlias = typing.Optional[
     ]
 ]
 
-To_Type = typing.TypeVar("To_Type", type[Any], typing.Type[Any], str)
+To_Type = typing.TypeVar("To_Type", type[Any], Type[Any], str)
 
 
 class Relationship(typing.Generic[To_Type]):
@@ -129,7 +129,7 @@ class Relationship(typing.Generic[To_Type]):
     """
 
     _type: To_Type
-    table: typing.Type["TypedTable"] | type | str
+    table: Type["TypedTable"] | type | str
     condition: Condition
     on: OnQuery
     multiple: bool
@@ -188,7 +188,7 @@ class Relationship(typing.Generic[To_Type]):
         join = f":{self.join}" if self.join else ""
         return f"<Relationship{join} {src_code}>"
 
-    def get_table(self, db: "TypeDAL") -> typing.Type["TypedTable"]:
+    def get_table(self, db: "TypeDAL") -> Type["TypedTable"]:
         """
         Get the table this relationship is bound to.
         """
@@ -199,7 +199,7 @@ class Relationship(typing.Generic[To_Type]):
                 return mapped
 
             # boo, fall back to untyped table but pretend it is typed:
-            return typing.cast(typing.Type["TypedTable"], db[table])  # eh close enough!
+            return typing.cast(Type["TypedTable"], db[table])  # eh close enough!
 
         return table
 
@@ -241,9 +241,7 @@ class Relationship(typing.Generic[To_Type]):
             return None
 
 
-def relationship(
-    _type: To_Type, condition: Condition = None, join: JOIN_OPTIONS = None, on: OnQuery = None
-) -> Relationship[To_Type]:
+def relationship(_type: To_Type, condition: Condition = None, join: JOIN_OPTIONS = None, on: OnQuery = None) -> To_Type:
     """
     Define a relationship to another table, when its id is not stored in the current table.
 
@@ -273,11 +271,17 @@ def relationship(
 
     If you'd try to capture this in a single 'condition', pydal would create a cross join which is much less efficient.
     """
-    return Relationship(_type, condition, join, on)
+    return typing.cast(
+        # note: The descriptor `Relationship[To_Type]` is more correct, but pycharm doesn't really get that.
+        # so for ease of use, just cast to the refered type for now!
+        # e.g. x = relationship(Author) -> x: Author
+        To_Type,
+        Relationship(_type, condition, join, on),
+    )
 
 
 def _generate_relationship_condition(
-    _: typing.Type["TypedTable"], key: str, field: typing.Union["TypedField[Any]", "Table", typing.Type["TypedTable"]]
+    _: Type["TypedTable"], key: str, field: typing.Union["TypedField[Any]", "Table", Type["TypedTable"]]
 ) -> Condition:
     origin = typing.get_origin(field)
     # else: generic
@@ -294,9 +298,9 @@ def _generate_relationship_condition(
 
 
 def to_relationship(
-    cls: typing.Type["TypedTable"] | type[Any],
+    cls: Type["TypedTable"] | type[Any],
     key: str,
-    field: typing.Union["TypedField[Any]", "Table", typing.Type["TypedTable"]],
+    field: typing.Union["TypedField[Any]", "Table", Type["TypedTable"]],
 ) -> typing.Optional[Relationship[Any]]:
     """
     Used to automatically create relationship instance for reference fields.
@@ -427,7 +431,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
             self.try_define(_TypedalCache)
             self.try_define(_TypedalCacheDependency)
 
-    def try_define(self, model: typing.Type[T], verbose: bool = False) -> typing.Type[T]:
+    def try_define(self, model: Type[T], verbose: bool = False) -> Type[T]:
         """
         Try to define a model with migrate or fall back to fake migrate.
         """
@@ -451,9 +455,9 @@ class TypeDAL(pydal.DAL):  # type: ignore
     }
 
     # maps table name to typedal class, for resolving future references
-    _class_map: typing.ClassVar[dict[str, typing.Type["TypedTable"]]] = {}
+    _class_map: typing.ClassVar[dict[str, Type["TypedTable"]]] = {}
 
-    def _define(self, cls: typing.Type[T], **kwargs: Any) -> typing.Type[T]:
+    def _define(self, cls: Type[T], **kwargs: Any) -> Type[T]:
         # todo: new relationship item added should also invalidate (previously unrelated) cache result
 
         # todo: option to enable/disable cache dependency behavior:
@@ -555,7 +559,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
         return cls
 
     @typing.overload
-    def define(self, maybe_cls: None = None, **kwargs: Any) -> typing.Callable[[typing.Type[T]], typing.Type[T]]:
+    def define(self, maybe_cls: None = None, **kwargs: Any) -> typing.Callable[[Type[T]], Type[T]]:
         """
         Typing Overload for define without a class.
 
@@ -564,7 +568,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
         """
 
     @typing.overload
-    def define(self, maybe_cls: typing.Type[T], **kwargs: Any) -> typing.Type[T]:
+    def define(self, maybe_cls: Type[T], **kwargs: Any) -> Type[T]:
         """
         Typing Overload for define with a class.
 
@@ -572,9 +576,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
         class MyTable(TypedTable): ...
         """
 
-    def define(
-        self, maybe_cls: typing.Type[T] | None = None, **kwargs: Any
-    ) -> typing.Type[T] | typing.Callable[[typing.Type[T]], typing.Type[T]]:
+    def define(self, maybe_cls: Type[T] | None = None, **kwargs: Any) -> Type[T] | typing.Callable[[Type[T]], Type[T]]:
         """
         Can be used as a decorator on a class that inherits `TypedTable`, \
           or as a regular method if you need to define your classes before you have access to a 'db' instance.
@@ -597,7 +599,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
             the result of pydal.define_table
         """
 
-        def wrapper(cls: typing.Type[T]) -> typing.Type[T]:
+        def wrapper(cls: Type[T]) -> Type[T]:
             return self._define(cls, **kwargs)
 
         if maybe_cls:
@@ -647,7 +649,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
 
             if isinstance(cls, type) and issubclass(type(cls), type) and issubclass(cls, TypedTable):
                 # table defined without @db.define decorator!
-                _cls: typing.Type[TypedTable] = cls
+                _cls: Type[TypedTable] = cls
                 args[0] = _cls.id != None
 
         _set = super().__call__(*args, **kwargs)
@@ -671,11 +673,11 @@ class TypeDAL(pydal.DAL):  # type: ignore
         cls, _ftype: T_annotation, mut_kw: typing.MutableMapping[str, Any]
     ) -> Optional[str]:
         # ftype can be a union or type. typing.cast is sometimes used to tell mypy when it's not a union.
-        ftype = typing.cast(type, _ftype)  # cast from typing.Type to type to make mypy happy)
+        ftype = typing.cast(type, _ftype)  # cast from Type to type to make mypy happy)
 
         if isinstance(ftype, str):
             # extract type from string
-            ftype = typing.get_args(typing.Type[ftype])[0]._evaluate(
+            ftype = typing.get_args(Type[ftype])[0]._evaluate(
                 localns=locals(), globalns=globals(), recursive_guard=frozenset()
             )
 
@@ -835,13 +837,13 @@ class TableMeta(type):
         else:
             return f"<unbound table {self.__name__}>"
 
-    def from_row(self: typing.Type[T_MetaInstance], row: pydal.objects.Row) -> T_MetaInstance:
+    def from_row(self: Type[T_MetaInstance], row: pydal.objects.Row) -> T_MetaInstance:
         """
         Create a model instance from a pydal row.
         """
         return self(row)
 
-    def all(self: typing.Type[T_MetaInstance]) -> "TypedRows[T_MetaInstance]":
+    def all(self: Type[T_MetaInstance]) -> "TypedRows[T_MetaInstance]":
         """
         Return all rows for this model.
         """
@@ -857,7 +859,7 @@ class TableMeta(type):
     # TypeDAL Modified Logic #
     ##########################
 
-    def insert(self: typing.Type[T_MetaInstance], **fields: Any) -> T_MetaInstance:
+    def insert(self: Type[T_MetaInstance], **fields: Any) -> T_MetaInstance:
         """
         This is only called when db.define is not used as a decorator.
 
@@ -880,7 +882,7 @@ class TableMeta(type):
 
         return str(table._insert(**fields))
 
-    def bulk_insert(self: typing.Type[T_MetaInstance], items: list[AnyDict]) -> "TypedRows[T_MetaInstance]":
+    def bulk_insert(self: Type[T_MetaInstance], items: list[AnyDict]) -> "TypedRows[T_MetaInstance]":
         """
         Insert multiple rows, returns a TypedRows set of new instances.
         """
@@ -889,7 +891,7 @@ class TableMeta(type):
         return self.where(lambda row: row.id.belongs(result)).collect()
 
     def update_or_insert(
-        self: typing.Type[T_MetaInstance], query: T_Query | AnyDict = DEFAULT, **values: Any
+        self: Type[T_MetaInstance], query: T_Query | AnyDict = DEFAULT, **values: Any
     ) -> T_MetaInstance:
         """
         Update a row if query matches, else insert a new one.
@@ -912,7 +914,7 @@ class TableMeta(type):
         return self(record)
 
     def validate_and_insert(
-        self: typing.Type[T_MetaInstance], **fields: Any
+        self: Type[T_MetaInstance], **fields: Any
     ) -> tuple[Optional[T_MetaInstance], Optional[dict[str, str]]]:
         """
         Validate input data and then insert a row.
@@ -927,7 +929,7 @@ class TableMeta(type):
             return None, result.get("errors")
 
     def validate_and_update(
-        self: typing.Type[T_MetaInstance], query: Query, **fields: Any
+        self: Type[T_MetaInstance], query: Query, **fields: Any
     ) -> tuple[Optional[T_MetaInstance], Optional[dict[str, str]]]:
         """
         Validate input data and then update max 1 row.
@@ -947,7 +949,7 @@ class TableMeta(type):
             return None, None
 
     def validate_and_update_or_insert(
-        self: typing.Type[T_MetaInstance], query: Query, **fields: Any
+        self: Type[T_MetaInstance], query: Query, **fields: Any
     ) -> tuple[Optional[T_MetaInstance], Optional[dict[str, str]]]:
         """
         Validate input data and then update_and_insert (on max 1 row).
@@ -965,59 +967,57 @@ class TableMeta(type):
             # update on query without result (shouldnt happen)
             return None, None
 
-    def select(self: typing.Type[T_MetaInstance], *a: Any, **kw: Any) -> "QueryBuilder[T_MetaInstance]":
+    def select(self: Type[T_MetaInstance], *a: Any, **kw: Any) -> "QueryBuilder[T_MetaInstance]":
         """
         See QueryBuilder.select!
         """
         return QueryBuilder(self).select(*a, **kw)
 
-    def paginate(self: typing.Type[T_MetaInstance], limit: int, page: int = 1) -> "PaginatedRows[T_MetaInstance]":
+    def paginate(self: Type[T_MetaInstance], limit: int, page: int = 1) -> "PaginatedRows[T_MetaInstance]":
         """
         See QueryBuilder.paginate!
         """
         return QueryBuilder(self).paginate(limit=limit, page=page)
 
-    def chunk(
-        self: typing.Type[T_MetaInstance], chunk_size: int
-    ) -> typing.Generator["TypedRows[T_MetaInstance]", Any, None]:
+    def chunk(self: Type[T_MetaInstance], chunk_size: int) -> typing.Generator["TypedRows[T_MetaInstance]", Any, None]:
         """
         See QueryBuilder.chunk!
         """
         return QueryBuilder(self).chunk(chunk_size)
 
-    def where(self: typing.Type[T_MetaInstance], *a: Any, **kw: Any) -> "QueryBuilder[T_MetaInstance]":
+    def where(self: Type[T_MetaInstance], *a: Any, **kw: Any) -> "QueryBuilder[T_MetaInstance]":
         """
         See QueryBuilder.where!
         """
         return QueryBuilder(self).where(*a, **kw)
 
-    def cache(self: typing.Type[T_MetaInstance], *deps: Any, **kwargs: Any) -> "QueryBuilder[T_MetaInstance]":
+    def cache(self: Type[T_MetaInstance], *deps: Any, **kwargs: Any) -> "QueryBuilder[T_MetaInstance]":
         """
         See QueryBuilder.cache!
         """
         return QueryBuilder(self).cache(*deps, **kwargs)
 
-    def count(self: typing.Type[T_MetaInstance]) -> int:
+    def count(self: Type[T_MetaInstance]) -> int:
         """
         See QueryBuilder.count!
         """
         return QueryBuilder(self).count()
 
-    def first(self: typing.Type[T_MetaInstance]) -> T_MetaInstance | None:
+    def first(self: Type[T_MetaInstance]) -> T_MetaInstance | None:
         """
         See QueryBuilder.first!
         """
         return QueryBuilder(self).first()
 
-    def first_or_fail(self: typing.Type[T_MetaInstance]) -> T_MetaInstance:
+    def first_or_fail(self: Type[T_MetaInstance]) -> T_MetaInstance:
         """
         See QueryBuilder.first_or_fail!
         """
         return QueryBuilder(self).first_or_fail()
 
     def join(
-        self: typing.Type[T_MetaInstance],
-        *fields: str | typing.Type["TypedTable"],
+        self: Type[T_MetaInstance],
+        *fields: str | Type["TypedTable"],
         method: JOIN_OPTIONS = None,
         on: OnQuery | list[Expression] | Expression = None,
         condition: Condition = None,
@@ -1027,7 +1027,7 @@ class TableMeta(type):
         """
         return QueryBuilder(self).join(*fields, on=on, condition=condition, method=method)
 
-    def collect(self: typing.Type[T_MetaInstance], verbose: bool = False) -> "TypedRows[T_MetaInstance]":
+    def collect(self: Type[T_MetaInstance], verbose: bool = False) -> "TypedRows[T_MetaInstance]":
         """
         See QueryBuilder.collect!
         """
@@ -1127,7 +1127,7 @@ class TableMeta(type):
         table = self._ensure_table_defined()
         return typing.cast(Expression, table.on(query))
 
-    def with_alias(self, alias: str) -> _Table:
+    def with_alias(self: Type[T_MetaInstance], alias: str) -> Type[T_MetaInstance]:
         """
         Shadow Table.with_alias.
 
@@ -1137,7 +1137,7 @@ class TableMeta(type):
             http://web2py.com/books/default/chapter/29/06/the-database-abstraction-layer?search=export_to_csv_file#One-to-many-relation
         """
         table = self._ensure_table_defined()
-        return table.with_alias(alias)
+        return typing.cast(Type[T_MetaInstance], table.with_alias(alias))
 
     # @typing.dataclass_transform()
 
@@ -1159,7 +1159,7 @@ class TypedField(Expression, typing.Generic[T_Value]):  # pragma: no cover
 
     requires: Validator | typing.Iterable[Validator]
 
-    def __init__(self, _type: typing.Type[T_Value] | types.UnionType = str, /, **settings: Any) -> None:  # type: ignore
+    def __init__(self, _type: Type[T_Value] | types.UnionType = str, /, **settings: Any) -> None:  # type: ignore
         """
         A TypedFieldType should not be inited manually, but TypedField (from `fields.py`) should be used!
         """
@@ -1168,19 +1168,19 @@ class TypedField(Expression, typing.Generic[T_Value]):  # pragma: no cover
         # super().__init__()
 
     @typing.overload
-    def __get__(self, instance: T_MetaInstance, owner: typing.Type[T_MetaInstance]) -> T_Value:  # pragma: no cover
+    def __get__(self, instance: T_MetaInstance, owner: Type[T_MetaInstance]) -> T_Value:  # pragma: no cover
         """
         row.field -> (actual data).
         """
 
     @typing.overload
-    def __get__(self, instance: None, owner: "typing.Type[TypedTable]") -> "TypedField[T_Value]":  # pragma: no cover
+    def __get__(self, instance: None, owner: "Type[TypedTable]") -> "TypedField[T_Value]":  # pragma: no cover
         """
         Table.field -> Field.
         """
 
     def __get__(
-        self, instance: T_MetaInstance | None, owner: typing.Type[T_MetaInstance]
+        self, instance: T_MetaInstance | None, owner: Type[T_MetaInstance]
     ) -> typing.Union[T_Value, "TypedField[T_Value]"]:
         """
         Since this class is a Descriptor field, \
@@ -1596,7 +1596,7 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
         super().__setattr__(key, value)
 
     @classmethod
-    def update(cls: typing.Type[T_MetaInstance], query: Query, **fields: Any) -> T_MetaInstance | None:
+    def update(cls: Type[T_MetaInstance], query: Query, **fields: Any) -> T_MetaInstance | None:
         """
         Update one record.
 
@@ -1695,7 +1695,7 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
 
     records: dict[int, T_MetaInstance]
     # _rows: Rows
-    model: typing.Type[T_MetaInstance]
+    model: Type[T_MetaInstance]
     metadata: Metadata
 
     # pseudo-properties: actually stored in _rows
@@ -1708,7 +1708,7 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
     def __init__(
         self,
         rows: Rows,
-        model: typing.Type[T_MetaInstance],
+        model: Type[T_MetaInstance],
         records: dict[int, T_MetaInstance] = None,
         metadata: Metadata = None,
     ) -> None:
@@ -1938,7 +1938,7 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
         Update the current rows in the database with new_values.
         """
         # cast to make mypy understand .id is a TypedField and not an int!
-        table = typing.cast(typing.Type[TypedTable], self.model._ensure_table_defined())
+        table = typing.cast(Type[TypedTable], self.model._ensure_table_defined())
 
         ids = set(self.column("id"))
         query = table.id.belongs(ids)
@@ -1949,7 +1949,7 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
         Delete the currently selected rows from the database.
         """
         # cast to make mypy understand .id is a TypedField and not an int!
-        table = typing.cast(typing.Type[TypedTable], self.model._ensure_table_defined())
+        table = typing.cast(Type[TypedTable], self.model._ensure_table_defined())
 
         ids = set(self.column("id"))
         query = table.id.belongs(ids)
@@ -2004,7 +2004,7 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
 
     @classmethod
     def from_rows(
-        cls, rows: Rows, model: typing.Type[T_MetaInstance], metadata: Metadata = None
+        cls, rows: Rows, model: Type[T_MetaInstance], metadata: Metadata = None
     ) -> "TypedRows[T_MetaInstance]":
         """
         Internal method to convert a Rows object to a TypedRows.
@@ -2047,7 +2047,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
     Abstration on top of pydal's query system.
     """
 
-    model: typing.Type[T_MetaInstance]
+    model: Type[T_MetaInstance]
     query: Query
     select_args: list[Any]
     select_kwargs: SelectKwargs
@@ -2056,7 +2056,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
     def __init__(
         self,
-        model: typing.Type[T_MetaInstance],
+        model: Type[T_MetaInstance],
         add_query: Optional[Query] = None,
         select_args: Optional[list[Any]] = None,
         select_kwargs: Optional[SelectKwargs] = None,
@@ -2151,7 +2151,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
     def where(
         self,
-        *queries_or_lambdas: Query | typing.Callable[[typing.Type[T_MetaInstance]], Query],
+        *queries_or_lambdas: Query | typing.Callable[[Type[T_MetaInstance]], Query],
         **filters: Any,
     ) -> "QueryBuilder[T_MetaInstance]":
         """
@@ -2192,7 +2192,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
     def join(
         self,
-        *fields: str | typing.Type[TypedTable],
+        *fields: str | Type[TypedTable],
         method: JOIN_OPTIONS = None,
         on: OnQuery | list[Expression] | Expression = None,
         condition: Condition = None,
@@ -2219,7 +2219,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
             if isinstance(condition, pydal.objects.Query):
                 condition = as_lambda(condition)
 
-            relationships = {str(fields[0]): relationship(fields[0], condition=condition, join=method)}
+            relationships = {str(fields[0]): Relationship(fields[0], condition=condition, join=method)}
         elif on:
             if len(fields) != 1:
                 raise ValueError("join(field, on=...) can only be used with exactly one field!")
@@ -2229,7 +2229,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
             if isinstance(on, list):
                 on = as_lambda(on)
-            relationships = {str(fields[0]): relationship(fields[0], on=on, join=method)}
+            relationships = {str(fields[0]): Relationship(fields[0], on=on, join=method)}
 
         else:
             if fields:
@@ -2383,7 +2383,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         return db(query).select(*select_args, **select_kwargs)
 
     def collect(
-        self, verbose: bool = False, _to: typing.Type["TypedRows[Any]"] = None, add_id: bool = True
+        self, verbose: bool = False, _to: Type["TypedRows[Any]"] = None, add_id: bool = True
     ) -> "TypedRows[T_MetaInstance]":
         """
         Execute the built query and turn it into model instances, while handling relationships.
@@ -2521,7 +2521,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         return query, select_args
 
     def _collect_with_relationships(
-        self, rows: Rows, metadata: Metadata, _to: typing.Type["TypedRows[Any]"]
+        self, rows: Rows, metadata: Metadata, _to: Type["TypedRows[Any]"]
     ) -> "TypedRows[T_MetaInstance]":
         """
         Transform the raw rows into Typed Table model instances.
