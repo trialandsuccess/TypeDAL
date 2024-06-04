@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.4.0 (2024-06-04)
+
+### Feature
+
+* `.column()` function on querybuilder ([`173fb08`](https://github.com/trialandsuccess/TypeDAL/commit/173fb088458e887ea7df6b7bf720848a07ff949c))
+
 ## v3.3.1 (2024-06-04)
 
 ### Fix
