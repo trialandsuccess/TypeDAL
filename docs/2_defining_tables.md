@@ -56,3 +56,51 @@ Any keyword arguments you would pass to `db.define_table`, you can also pass to 
 |------------------------------------------|---------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------|-------------------------------------------------------|--------------------------------------|
 | `Field('name', 'string', required=True)` | `name: str`                                                               | `name: TypedField[str]`                                                                           | `name = TypedField(str, required=True)`               | `name = StringField(required=True)`  |
 | `Field('name', 'text', required=False)`  | `name: typing.Optional[str]` or  <br/> <code>name: str &#124; None</code> | `name: TypedField[typing.Optional[str]]` or  <br/> <code>name: TypedField[str &#124; None]</code> | `name = TypedField(str, type="text", required=False)` | `name = StringField(required=False)` |
+
+# Hooks
+Some logic can be added when data is added/edited/deleted from the database.
+This can be done just as web2py does (see [their docs](http://www.web2py.com/books/default/chapter/29/06/the-database-abstraction-layer#callbacks-on-record-insert-delete-and-update))
+
+```python
+from typedal import TypedTable
+from typedal.types import OpRow, Reference, Set
+
+class MyTable(TypedTable): ...
+
+def my_before_insert(row: MyTable):
+    """`row` to be inserted, can still be edited."""
+    # return True to cancel
+
+def my_after_insert(row: MyTable, idx: Reference):
+    """`row` that was just inserted with the new row id(x)."""
+
+MyTable.before_insert(my_before_insert)
+MyTable.after_insert(my_after_insert)
+
+row = MyTable.insert(...) # to trigger
+
+def my_before_update(query: Set, changes: OpRow):
+    """`changes` to be applied to the row selection Set, can still be edited"""
+    # return True to cancel
+
+def my_after_update(query: Set, changes: OpRow):
+    """`changes` that were applied to the row selection Set"""
+
+
+MyTable.before_update(my_before_update)
+MyTable.after_update(my_after_update)
+
+row.update_record(...) # to trigger
+MyTable.where(...).update(...) # to trigger
+
+def my_before_delete(query: Set):
+    """rows matching `query` will be deleted"""
+    # return True to cancel
+
+def my_after_delete(query: Set):
+    """Selecting `query` should now yield no results"""
+
+row.delete_record() # to trigger
+MyTable.where(...).delete() # to trigger
+
+```

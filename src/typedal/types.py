@@ -48,12 +48,35 @@ class Set(_Set):  # type: ignore
     """
 
 
-class OpRow(_OpRow):  # type: ignore
-    """
-    Pydal OpRow object.
+if typing.TYPE_CHECKING:
 
-    Make mypy happy.
-    """
+    class OpRow:
+        """
+        Pydal OpRow object for typing (otherwise mypy thinks it's Any).
+
+        Make mypy happy.
+        """
+
+        def __getitem__(self, item: str) -> typing.Any:
+            """
+            Dict [] get notation.
+            """
+
+        def __setitem__(self, key: str, value: typing.Any) -> None:
+            """
+            Dict [] set notation.
+            """
+
+        # ... and more methods
+
+else:
+
+    class OpRow(_OpRow):  # type: ignore
+        """
+        Pydal OpRow object at runtime just uses pydal's version.
+
+        Make mypy happy.
+        """
 
 
 class Reference(_Reference):  # type: ignore
@@ -103,14 +126,6 @@ class _Types:
     """
 
     NONETYPE = type(None)
-
-
-BeforeInsertCallable: typing.TypeAlias = typing.Callable[[OpRow], Any]
-AfterInsertCallable: typing.TypeAlias = typing.Callable[[OpRow, Reference], Any]
-BeforeUpdateCallable: typing.TypeAlias = typing.Callable[[Set, OpRow], Any]
-AfterUpdateCallable: typing.TypeAlias = typing.Callable[[Set, OpRow], Any]
-BeforeDeleteCallable: typing.TypeAlias = typing.Callable[[Set], Any]
-AfterDeleteCallable: typing.TypeAlias = typing.Callable[[Set], Any]
 
 
 class Pagination(TypedDict):

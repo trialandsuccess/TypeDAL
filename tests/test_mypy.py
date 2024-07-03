@@ -11,7 +11,7 @@ from typedal import (  # todo: why does src.typedal not work anymore?
     TypedRows,
     TypedTable,
 )
-from typedal.types import CacheFn, CacheTuple, Rows
+from typedal.types import CacheFn, CacheTuple, Rows, OpRow, Reference
 
 db = TypeDAL("sqlite:memory")
 
@@ -54,7 +54,36 @@ def mypy_test_typedal_define() -> None:
     reveal_type(MyTable.fancy.lower())  # R: typedal.types.Expression
     reveal_type(MyTable().fancy.lower())  # R: builtins.str
 
-    reveal_type(MyTable.with_alias("---")())  # R: tests.test_mypy.MyTable
+    aliased_cls = MyTable.with_alias("---")
+    reveal_type(aliased_cls),  # R: type[tests.test_mypy.MyTable]
+    aliased_instance = aliased_cls()
+    reveal_type(aliased_instance)  # R: tests.test_mypy.MyTable
+
+    def somefunc1(row: typing.Any, _: Reference) -> None:
+        ...
+
+    def somefunc2(row: MyTable, _: Reference) -> None:
+        ...
+
+    def somefunc3(row: OpRow, _: Reference) -> None:
+        ...
+
+    def somefunc_err(row: str, _: Reference) -> None:
+        ...
+
+    # save to variable so we can suppress 'Access to generic instance variables via class is ambiguous' via [misc]
+    after_insert = MyTable._after_insert  # E: [misc]
+
+    # should work:
+    after_insert.append(somefunc1)
+    after_insert.append(somefunc2)
+    after_insert.append(somefunc3)
+    # should error:
+    after_insert.append(somefunc_err)  # E: [arg-type]
+
+    MyTable.after_insert(somefunc1).after_insert(somefunc2)
+    MyTable.after_insert(somefunc3)
+    MyTable.after_insert(somefunc_err)  # E: [arg-type]
 
 
 @pytest.mark.mypy_testing

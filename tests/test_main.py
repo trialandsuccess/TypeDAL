@@ -167,6 +167,7 @@ def test_mixed_defines(capsys):
 
     assert SecondNewSyntax(1).location == "Rotterdam"
 
+
 def test_dont_allow_bool_in_query():
     with pytest.raises(ValueError):
         db(True)
@@ -174,14 +175,12 @@ def test_dont_allow_bool_in_query():
 
 def test_invalid_union():
     with pytest.raises(NotImplementedError):
-
         @db.define
         class Invalid(TypedTable):
             valid: int | None
             invalid: int | str
 
     with pytest.raises(NotImplementedError):
-
         @db.define
         class Invalid(TypedTable):
             valid: list[int]
@@ -259,7 +258,6 @@ def test_typedfield_to_field_type():
         optional_two = TypedField(str | None)
 
     with pytest.raises(NotImplementedError):
-
         @db.define()
         class Invalid(TypedTable):
             third = TypedField(dict[str, int])  # not supported
@@ -300,7 +298,6 @@ def test_fields():
         bigintfield = BigintField()
 
     with pytest.raises(ValueError):
-
         @db.define()
         class Wrong(TypedTable):
             stringfield = ReferenceField(object())
@@ -400,6 +397,35 @@ def test_hooks(capsys):
     HookedTable._after_delete.append(lambda _s: print("after delete"))
 
     steve = HookedTable.insert(name="Steve")
+    captured = capsys.readouterr()
+
+    assert "before insert" in captured.out
+    assert "after insert 1" in captured.out
+
+    steve.update_record(name="Not Steve")
+    captured = capsys.readouterr()
+    assert "before update" in captured.out
+    assert "after update" in captured.out
+
+    steve.delete_record()
+    captured = capsys.readouterr()
+    assert "before delete" in captured.out
+    assert "after delete" in captured.out
+
+
+def test_hooks_v2(capsys):
+    @db.define()
+    class HookedTableV2(TypedTable):
+        name: str
+
+    HookedTableV2.before_insert(lambda _f: print("before insert"))
+    HookedTableV2.after_insert(lambda _f, idx: print("after insert", idx))
+    HookedTableV2.before_update(lambda _s, _f: print("before update"))
+    HookedTableV2.after_update(lambda _s, _f: print("after update"))
+    HookedTableV2.before_delete(lambda _s: print("before delete"))
+    HookedTableV2.after_delete(lambda _s: print("after delete"))
+
+    steve = HookedTableV2.insert(name="Steve")
     captured = capsys.readouterr()
 
     assert "before insert" in captured.out

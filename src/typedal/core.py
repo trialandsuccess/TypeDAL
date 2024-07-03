@@ -43,22 +43,19 @@ from .helpers import (
 )
 from .serializers import as_json
 from .types import (
-    AfterDeleteCallable,
-    AfterInsertCallable,
-    AfterUpdateCallable,
     AnyDict,
-    BeforeDeleteCallable,
-    BeforeInsertCallable,
-    BeforeUpdateCallable,
     CacheMetadata,
     Expression,
     Field,
     Metadata,
+    OpRow,
     PaginateDict,
     Pagination,
     Query,
+    Reference,
     Rows,
     SelectKwargs,
+    Set,
     Table,
     Validator,
     _Types,
@@ -286,7 +283,7 @@ def _generate_relationship_condition(
     origin = typing.get_origin(field)
     # else: generic
 
-    if origin == list:
+    if origin is list:
         # field = typing.get_args(field)[0]  # actual field
         # return lambda _self, _other: cls[key].contains(field)
 
@@ -337,7 +334,7 @@ def to_relationship(
         warnings.warn(f"Invalid relationship for {cls.__name__}.{key}: {field}")
         return None
 
-    join = "left" if optional or typing.get_origin(field) == list else "inner"
+    join = "left" if optional or typing.get_origin(field) is list else "inner"
 
     return Relationship(typing.cast(type[TypedTable], field), condition, typing.cast(JOIN_OPTIONS, join))
 
@@ -1139,7 +1136,63 @@ class TableMeta(type):
         table = self._ensure_table_defined()
         return typing.cast(Type[T_MetaInstance], table.with_alias(alias))
 
-    # @typing.dataclass_transform()
+    # hooks:
+    def before_insert(
+        cls: Type[T_MetaInstance],
+        fn: typing.Callable[[T_MetaInstance], Optional[bool]] | typing.Callable[[OpRow], Optional[bool]],
+    ) -> Type[T_MetaInstance]:
+        """
+        Add a before insert hook.
+        """
+        cls._before_insert.append(fn)  # type: ignore
+        return cls
+
+    def after_insert(
+        cls: Type[T_MetaInstance],
+        fn: (
+            typing.Callable[[T_MetaInstance, Reference], Optional[bool]]
+            | typing.Callable[[OpRow, Reference], Optional[bool]]
+        ),
+    ) -> Type[T_MetaInstance]:
+        """
+        Add an after insert hook.
+        """
+        cls._after_insert.append(fn)  # type: ignore
+        return cls
+
+    def before_update(
+        cls: Type[T_MetaInstance],
+        fn: typing.Callable[[Set, T_MetaInstance], Optional[bool]] | typing.Callable[[Set, OpRow], Optional[bool]],
+    ) -> Type[T_MetaInstance]:
+        """
+        Add a before update hook.
+        """
+        cls._before_update.append(fn)  # type: ignore
+        return cls
+
+    def after_update(
+        cls: Type[T_MetaInstance],
+        fn: typing.Callable[[Set, T_MetaInstance], Optional[bool]] | typing.Callable[[Set, OpRow], Optional[bool]],
+    ) -> Type[T_MetaInstance]:
+        """
+        Add an after update hook.
+        """
+        cls._after_update.append(fn)  # type: ignore
+        return cls
+
+    def before_delete(cls: Type[T_MetaInstance], fn: typing.Callable[[Set], Optional[bool]]) -> Type[T_MetaInstance]:
+        """
+        Add a before delete hook.
+        """
+        cls._before_delete.append(fn)
+        return cls
+
+    def after_delete(cls: Type[T_MetaInstance], fn: typing.Callable[[Set], Optional[bool]]) -> Type[T_MetaInstance]:
+        """
+        Add an after delete hook.
+        """
+        cls._after_delete.append(fn)
+        return cls
 
 
 class TypedField(Expression, typing.Generic[T_Value]):  # pragma: no cover
@@ -1334,12 +1387,14 @@ class _TypedTable:
 
     id: "TypedField[int]"
 
-    _before_insert: list[BeforeInsertCallable]
-    _after_insert: list[AfterInsertCallable]
-    _before_update: list[BeforeUpdateCallable]
-    _after_update: list[AfterUpdateCallable]
-    _before_delete: list[BeforeDeleteCallable]
-    _after_delete: list[AfterDeleteCallable]
+    _before_insert: list[typing.Callable[[Self], Optional[bool]] | typing.Callable[[OpRow], Optional[bool]]]
+    _after_insert: list[
+        typing.Callable[[Self, Reference], Optional[bool]] | typing.Callable[[OpRow, Reference], Optional[bool]]
+    ]
+    _before_update: list[typing.Callable[[Set, Self], Optional[bool]] | typing.Callable[[Set, OpRow], Optional[bool]]]
+    _after_update: list[typing.Callable[[Set, Self], Optional[bool]] | typing.Callable[[Set, OpRow], Optional[bool]]]
+    _before_delete: list[typing.Callable[[Set], Optional[bool]]]
+    _after_delete: list[typing.Callable[[Set], Optional[bool]]]
 
     @classmethod
     def __on_define__(cls, db: TypeDAL) -> None:

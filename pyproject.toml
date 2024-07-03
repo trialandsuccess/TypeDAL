@@ -157,6 +157,10 @@ exclude = ["venv", ".bak"]
 target-version = "py310"
 line-length = 120
 
+extend-exclude = ["*.bak/", "venv*/"]
+
+[tool.ruff.lint]
+
 select = [
     "F", # pyflake error
     "E", # pycodestyle error
@@ -180,7 +184,6 @@ extend-ignore = [
     "E711",
 ]
 
-extend-exclude = ["*.bak/", "venv*/"]
 
 ignore = [
     "RUF013" # implicit optional

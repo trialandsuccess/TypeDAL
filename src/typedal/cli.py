@@ -122,7 +122,7 @@ def get_question(prop: str, annotation: typing.Type[T], default: T | None) -> Op
     question["message"] = question.get("message", f"{prop}? ")
     default = typing.cast(T, default or question.get("default") or "")
 
-    if annotation == int:
+    if annotation is int:
         default = typing.cast(T, str(default))
 
     response = questionary.unsafe_prompt([question], default=default)[prop]
@@ -197,9 +197,9 @@ def setup(
         if isinstance(answer, str):
             answer = answer.strip()
 
-        if annotation == bool:
+        if annotation is bool:
             answer = bool(answer)
-        elif annotation == int:
+        elif annotation is int:
             answer = int(answer)
 
         config.update(**{prop: answer})
