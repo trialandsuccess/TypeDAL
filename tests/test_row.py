@@ -1,6 +1,7 @@
 """
 Test (Typed)Row(s) public APIs.
 """
+
 import io
 import json
 

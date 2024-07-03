@@ -1,6 +1,7 @@
 """
 Test (Typed)Table public API.
 """
+
 import datetime as dt
 import io
 import json
@@ -204,7 +205,7 @@ def test_both_styles_for_class():
 
 
 def test_table_with_methods():
-    simulated_today = dateutil.parser.parse('2020-01-01 00:00').date()
+    simulated_today = dateutil.parser.parse("2020-01-01 00:00").date()
 
     @db.define()
     class TableWithMethods(TypedTable):
@@ -236,21 +237,21 @@ def test_table_with_methods():
             # custom as_dict behavior! Used by as_json()
             return super()._as_dict() | {"age": self.age(simulated_today)}
 
-    row = TableWithMethods.insert(birthday='2000-01-01')
+    row = TableWithMethods.insert(birthday="2000-01-01")
 
     assert row.age(simulated_today) == 20
 
     assert TableWithMethods.get_tablename() == "table_with_methods"
 
     # test custom JSON dumping behavior:
-    assert row.as_dict()['age'] == 20
+    assert row.as_dict()["age"] == 20
 
     loaded = json.loads(row.as_json())
-    assert loaded['birthday']
-    assert loaded['age'] == 20
+    assert loaded["birthday"]
+    assert loaded["age"] == 20
 
     # and from a level up:
     dumped = TableWithMethods.all().as_json()
 
     loaded = json.loads(dumped)
-    assert loaded[0]['age'] == 20
+    assert loaded[0]["age"] == 20

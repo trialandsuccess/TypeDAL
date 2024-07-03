@@ -12,10 +12,11 @@ from src.typedal.helpers import (
     instanciate,
     is_union,
     looks_like,
+    match_strings,
     mktable,
     origin_is_subclass,
     to_snake,
-    unwrap_type, match_strings,
+    unwrap_type,
 )
 
 
@@ -52,8 +53,7 @@ def test_instanciate():
     assert instanciate(dict[str, float]) == {}
 
 
-class MyList(list):
-    ...
+class MyList(list): ...
 
 
 def test_origin_is_subclass():

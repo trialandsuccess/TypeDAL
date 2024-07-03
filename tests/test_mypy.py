@@ -1,9 +1,8 @@
 import typing
 
-from typing_extensions import reveal_type
-
 import pydal.objects
 import pytest
+from typing_extensions import reveal_type
 
 from typedal import (  # todo: why does src.typedal not work anymore?
     TypeDAL,
@@ -11,7 +10,7 @@ from typedal import (  # todo: why does src.typedal not work anymore?
     TypedRows,
     TypedTable,
 )
-from typedal.types import CacheFn, CacheTuple, Rows, OpRow, Reference
+from typedal.types import CacheFn, CacheTuple, OpRow, Reference, Rows
 
 db = TypeDAL("sqlite:memory")
 
@@ -24,12 +23,10 @@ class MyTable(TypedTable):
 
 
 @db.define()
-class OtherTable(TypedTable):
-    ...
+class OtherTable(TypedTable): ...
 
 
-class LaterDefine(TypedTable):
-    ...
+class LaterDefine(TypedTable): ...
 
 
 old_style = db.define_table("old_table")
@@ -59,17 +56,13 @@ def mypy_test_typedal_define() -> None:
     aliased_instance = aliased_cls()
     reveal_type(aliased_instance)  # R: tests.test_mypy.MyTable
 
-    def somefunc1(row: typing.Any, _: Reference) -> None:
-        ...
+    def somefunc1(row: typing.Any, _: Reference) -> None: ...
 
-    def somefunc2(row: MyTable, _: Reference) -> None:
-        ...
+    def somefunc2(row: MyTable, _: Reference) -> None: ...
 
-    def somefunc3(row: OpRow, _: Reference) -> None:
-        ...
+    def somefunc3(row: OpRow, _: Reference) -> None: ...
 
-    def somefunc_err(row: str, _: Reference) -> None:
-        ...
+    def somefunc_err(row: str, _: Reference) -> None: ...
 
     # save to variable so we can suppress 'Access to generic instance variables via class is ambiguous' via [misc]
     after_insert = MyTable._after_insert  # E: [misc]

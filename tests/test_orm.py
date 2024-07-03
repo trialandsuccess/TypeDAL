@@ -1,6 +1,7 @@
 import typing
 import uuid
 from collections import ChainMap
+
 from typing_extensions import reveal_type
 
 from src.typedal.core import TypeDAL, TypedField, TypedTable

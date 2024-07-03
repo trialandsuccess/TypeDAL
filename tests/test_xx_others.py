@@ -8,8 +8,7 @@ from pathlib import Path
 from src.typedal import TypeDAL, TypedTable
 
 
-class DummyTable(TypedTable):
-    ...
+class DummyTable(TypedTable): ...
 
 
 def test_autocreate_folder1():

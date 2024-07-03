@@ -51,7 +51,10 @@ def test_show_config():
 
 
 def test_get_output_format(capsys):
-    import json, tomli, yaml
+    import json
+
+    import tomli
+    import yaml
 
     with pytest.raises(ValueError):
         assert not get_output_format("bleepbloop")

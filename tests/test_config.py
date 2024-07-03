@@ -1,11 +1,12 @@
 import os
 import shutil
 import tempfile
-# from contextlib import chdir
-from contextlib_chdir import chdir
 from pathlib import Path
 
 import pytest
+
+# from contextlib import chdir
+from contextlib_chdir import chdir
 from testcontainers.postgres import PostgresContainer
 
 from src.typedal import TypeDAL

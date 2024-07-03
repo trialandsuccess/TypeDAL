@@ -4,7 +4,7 @@ from typing import Optional
 
 import pytest
 
-from src.typedal import TypedTable, TypeDAL
+from src.typedal import TypeDAL, TypedTable
 from src.typedal.mixins import SlugMixin, TimestampsMixin
 
 
@@ -18,6 +18,7 @@ class TableWithMixins(TypedTable, SlugMixin, slug_field="name", slug_suffix_leng
 
 
 with pytest.warns(DeprecationWarning):
+
     class TableWithMixinsWarns(TypedTable, SlugMixin, slug_field="name", slug_suffix=1):
         name: str
         number: Optional[int]
@@ -29,6 +30,7 @@ class TableWithTimestamps(TypedTable, TimestampsMixin):
 
 def test_invalid_slug_initialization():
     with pytest.raises(ValueError):
+
         class WithoutSlugField(TypedTable, SlugMixin):  # no slug_field=...
             ...
 
@@ -53,9 +55,7 @@ def test_order(db):
 
 
 def test_slug(db):
-    row = TableWithMixins.insert(
-        name="Two Words"
-    )
+    row = TableWithMixins.insert(name="Two Words")
 
     assert row.name == "Two Words"
     assert row.slug.startswith("two-words")

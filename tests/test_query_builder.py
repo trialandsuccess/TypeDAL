@@ -5,7 +5,7 @@ import pytest
 from pydal.objects import Query
 
 from src.typedal import TypeDAL, TypedField, TypedTable, relationship
-from typedal.types import CacheModel, CacheTuple, CacheFn, Rows
+from typedal.types import CacheFn, CacheModel, CacheTuple, Rows
 
 db = TypeDAL("sqlite:memory")
 
@@ -16,8 +16,9 @@ class TestQueryTable(TypedTable):
     other = TypedField(str, default="Something")
     yet_another = TypedField(list[str], default=["something", "and", "other", "things"])
 
-    relations = relationship(list["TestRelationship"], condition=lambda self, other: self.id == other.querytable,
-                             join="left")
+    relations = relationship(
+        list["TestRelationship"], condition=lambda self, other: self.id == other.querytable, join="left"
+    )
 
 
 @db.define()
@@ -453,7 +454,7 @@ def test_execute():
     assert len(raw_execute) == 2
 
     for row in raw_execute:
-        assert row['count'] == 4
+        assert row["count"] == 4
 
 
 def test_column():

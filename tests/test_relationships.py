@@ -84,8 +84,7 @@ class Tagged(TypedTable):  # pivot table
 
 
 @db.define()
-class Empty(TypedTable):
-    ...
+class Empty(TypedTable): ...
 
 
 def _setup_data():
@@ -519,5 +518,6 @@ def test_caching_dependencies():
 
 def test_illegal():
     with pytest.raises(ValueError), pytest.warns(UserWarning):
+
         class HasRelationship:
             something = relationship("...", condition=lambda: 1, on=lambda: 2)

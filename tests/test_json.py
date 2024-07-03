@@ -1,5 +1,5 @@
-import json
 import datetime as dt
+import json
 
 from src.typedal.serializers.as_json import SerializedJson, encode
 from typedal.helpers import utcnow
@@ -50,6 +50,6 @@ def test_classes():
     assert encode(JsonableCustomClass()) == '{"the_value": 3}'
 
     instance = CustomClass()
-    instance.__json__ = '<private information>'
-    assert encoder.default(instance) == '<private information>'
+    instance.__json__ = "<private information>"
+    assert encoder.default(instance) == "<private information>"
     assert encode([instance]) == '["<private information>"]'

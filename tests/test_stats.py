@@ -1,7 +1,7 @@
 import pytest
 
 from src.typedal import TypeDAL, TypedTable
-from src.typedal.caching import humanize_bytes, calculate_stats, table_stats, row_stats
+from src.typedal.caching import calculate_stats, humanize_bytes, row_stats, table_stats
 
 
 class SomeCachedTable(TypedTable):
@@ -15,12 +15,14 @@ def database():
 
     db.define(SomeCachedTable)
 
-    SomeCachedTable.bulk_insert([
-        {"key": "first", "value": 1},
-        {"key": "second", "value": 2},
-        {"key": "third", "value": 3},
-        {"key": "fourth", "value": 4},
-    ])
+    SomeCachedTable.bulk_insert(
+        [
+            {"key": "first", "value": 1},
+            {"key": "second", "value": 2},
+            {"key": "third", "value": 3},
+            {"key": "fourth", "value": 4},
+        ]
+    )
 
     yield db
 
