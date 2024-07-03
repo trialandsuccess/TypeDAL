@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.5.0 (2024-07-03)
+
+### Feature
+
+* Improved callback hooks (before_/after_ insert/update/delete) ([`cabe328`](https://github.com/trialandsuccess/TypeDAL/commit/cabe328ddfc045e102b156de25c10cd9e91bd5ff))
+
 ## v3.4.0 (2024-06-04)
 
 ### Feature
