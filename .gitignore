@@ -5,6 +5,7 @@ venv*
 *.egg-info
 dist/
 build/
+htmlcov/
 .coverage
 coverage.json
 coverage.xml
