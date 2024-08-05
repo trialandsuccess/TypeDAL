@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.6.0 (2024-08-05)
+
+### Feature
+
+* `typedal migrations.stub` (via pydal2sql) to generate edwh-migrate stub migration ([`67dbeb8`](https://github.com/trialandsuccess/TypeDAL/commit/67dbeb81ff4b28fa388688cdad31a42c4cd0cfc0))
+
 ## v3.5.0 (2024-07-03)
 
 ### Feature
