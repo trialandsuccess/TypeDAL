@@ -1,4 +1,3 @@
-import json
 import tempfile
 
 import pytest
@@ -31,6 +30,15 @@ def test_generate_dry():
         assert result.exit_code == 0
         assert "would run" in result.stderr.lower()
         assert "alter" in result.stderr
+
+
+def test_stub():
+    # mostly tested in pydal2sql already
+    result = runner.invoke(app, ["migrations.stub", "my_test_migration", "--dry-run"])
+    assert result.exit_code == 0
+
+    assert "@migration" in result.stdout
+    assert "def my_test_migration" in result.stdout
 
 
 def test_run_dry():

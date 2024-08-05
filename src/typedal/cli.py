@@ -40,7 +40,7 @@ from pydal2sql.types import (
     OutputFormat_Option,
     Tables_Option,
 )
-from pydal2sql_core import core_alter, core_create
+from pydal2sql_core import core_alter, core_create, core_stub
 from typing_extensions import Never
 
 from . import caching
@@ -414,6 +414,38 @@ def fake_migrations(
 
     db.commit()
     rich.print(f"Faked {n} new migrations.")
+    return 0
+
+
+@app.command(name="migrations.stub")
+@with_exit_code(hide_tb=IS_DEBUG)
+def migrations_stub(
+    migration_name: typing.Annotated[str, typer.Argument()] = "stub_migration",
+    connection: typing.Annotated[str, typer.Option("--connection", "-c")] = None,
+    output_format: OutputFormat_Option = None,
+    output_file: Optional[str] = None,
+    dry_run: typing.Annotated[bool, typer.Option("--dry", "--dry-run")] = False,
+    is_pydal: typing.Annotated[bool, typer.Option("--pydal", "-p")] = False,
+    # defaults to is_typedal of course
+) -> int:
+    """
+    Create an empty migration via pydal2sql.
+    """
+    generic_config = load_config(connection)
+    pydal2sql_config = generic_config.to_pydal2sql()
+    pydal2sql_config.update(
+        format=output_format,
+        output=output_file,
+        _skip_none=True,
+    )
+
+    core_stub(
+        migration_name,  # raw, without date or number
+        output_format=pydal2sql_config.format,
+        output_file=pydal2sql_config.output or None,
+        dry_run=dry_run,
+        is_typedal=not is_pydal,
+    )
     return 0
 
 
