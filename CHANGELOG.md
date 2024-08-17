@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.7.0 (2024-08-17)
+
+### Feature
+
+* Add get_db, get_table, get_field helpers to get pydal objects back from typedal ([`2363e9d`](https://github.com/trialandsuccess/TypeDAL/commit/2363e9d3f15eb4500a0d5bc8354bf0326161bd1e))
+
 ## v3.6.0 (2024-08-05)
 
 ### Feature
