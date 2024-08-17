@@ -1,7 +1,9 @@
 import typing
 from datetime import datetime, timedelta
 
+import pydal
 import pytest
+from pydal import DAL
 
 from src.typedal.caching import get_expire
 from src.typedal.helpers import (
@@ -16,8 +18,10 @@ from src.typedal.helpers import (
     mktable,
     origin_is_subclass,
     to_snake,
-    unwrap_type,
+    unwrap_type, get_db, get_table, get_field,
 )
+from typedal import TypeDAL, TypedTable
+from typedal.types import Field
 
 
 def test_is_union():
@@ -175,3 +179,30 @@ def test_match_strings():
     string_list = ["file1.txt", "file2.jpg", "file3.txt", "file4.png"]
     expected_matches = []
     assert sorted(match_strings(patterns, string_list)) == sorted(expected_matches)
+
+
+database = TypeDAL("sqlite:memory")
+assert database._db_uid
+
+
+@database.define()
+class TestGetFunctions(TypedTable):
+    string: str
+
+
+def test_get_functions():
+    db = get_db(TestGetFunctions)
+    assert isinstance(db, DAL)
+    assert db._db_uid == database._db_uid
+    db = get_db(db.test_get_functions)
+    assert db._db_uid == database._db_uid
+    table = get_table(TestGetFunctions)
+    assert hasattr(table, "string")
+    assert issubclass(TestGetFunctions, TypedTable)
+    assert isinstance(table, pydal.objects.Table)
+    assert not isinstance(table, TypedTable)
+    field = get_field(TestGetFunctions.string)
+    print(
+        type(field)
+    )
+    assert isinstance(field, Field)
