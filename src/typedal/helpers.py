@@ -10,7 +10,12 @@ import typing
 from collections import ChainMap
 from typing import Any
 
-from .types import AnyDict
+from pydal import DAL
+
+from .types import AnyDict, Field, Table
+
+if typing.TYPE_CHECKING:
+    from . import TypeDAL, TypedField, TypedTable  # noqa: F401
 
 T = typing.TypeVar("T")
 
@@ -274,3 +279,27 @@ def utcnow() -> dt.datetime:
     """
     # return dt.datetime.now(dt.UTC)
     return dt.datetime.now(dt.timezone.utc)
+
+
+def get_db(table: "TypedTable | Table") -> "DAL":
+    """
+    Get the underlying DAL instance for a pydal or typedal table.
+    """
+    return typing.cast("DAL", table._db)
+
+
+def get_table(table: "TypedTable | Table") -> "Table":
+    """
+    Get the underlying pydal table for a typedal table.
+    """
+    return typing.cast("Table", table._table)
+
+
+def get_field(field: "TypedField[typing.Any] | Field") -> "Field":
+    """
+    Get the underlying pydal field from a typedal field.
+    """
+    return typing.cast(
+        "Field",
+        field,  # Table.field already is a Field, but cast to make sure the editor knows this too.
+    )

@@ -247,6 +247,28 @@ row: TableName = db.table_name(id=1)
 
 See [2. Defining Tables](https://typedal.readthedocs.io/en/stable/2_defining_tables/)
 
+### Helpers
+
+TypeDAL provides some utility functions to interact with the underlying pyDAL objects:
+
+- **`get_db(TableName)`**:  
+  Retrieve the DAL instance associated with a given TypedTable or pyDAL Table.
+
+- **`get_table(TableName)`**:  
+  Access the original PyDAL Table from a TypedTable instance (`db.table_name`).
+
+- **`get_field(TableName.fieldname)`**:  
+  Get the pyDAL Field from a TypedField. This ensures compatibility when interacting directly with PyDAL.
+
+These helpers are useful for scenarios where direct access to the PyDAL objects is needed while still using TypeDAL.
+An example of this is when you need to do a `db.commit()` but you can't import `db` directly:
+
+```python
+MyTable.insert(...)
+db = get_db(MyTable)
+db.commit() # this is usually done automatically but sometimes you want to manually commit.
+```
+
 ## Caveats
 
 - This package depends heavily on the current implementation of annotations (which are computed when the class is
