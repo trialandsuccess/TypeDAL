@@ -264,6 +264,8 @@ These helpers are useful for scenarios where direct access to the PyDAL objects 
 An example of this is when you need to do a `db.commit()` but you can't import `db` directly:
 
 ```python
+from typedal.helpers import get_db #, get_table, get_field
+
 MyTable.insert(...)
 db = get_db(MyTable)
 db.commit() # this is usually done automatically but sometimes you want to manually commit.
