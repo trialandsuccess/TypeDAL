@@ -51,7 +51,7 @@ all = [
     "typer",
     "tabulate",
     "pydal2sql[all]>=1.2.0",
-    "edwh-migrate>=0.8.0",
+    "edwh-migrate[full]>=0.8.0",
     "questionary",
     "tomlkit",
 ]

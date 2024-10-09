@@ -8,6 +8,7 @@ import datetime as dt
 import inspect
 import json
 import math
+import sys
 import types
 import typing
 import warnings
@@ -339,6 +340,22 @@ def to_relationship(
     return Relationship(typing.cast(type[TypedTable], field), condition, typing.cast(JOIN_OPTIONS, join))
 
 
+def evaluate_forward_reference(fw_ref: typing.ForwardRef) -> type:
+    """
+    Extract the original type from a forward reference string.
+    """
+    kwargs = dict(
+        localns=locals(),
+        globalns=globals(),
+        recursive_guard=frozenset(),
+    )
+    if sys.version_info >= (3, 13):
+        # required since 3.13 and not supported before
+        kwargs["type_params"] = ()
+
+    return fw_ref._evaluate(**kwargs)  # type: ignore
+
+
 class TypeDAL(pydal.DAL):  # type: ignore
     """
     Drop-in replacement for pyDAL with layer to convert class-based table definitions to classical pydal define_tables.
@@ -465,6 +482,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
         # when __future__.annotations is implemented, cls.__annotations__ will not work anymore as below.
         # proper way to handle this would be (but gives error right now due to Table implementing magic methods):
         # typing.get_type_hints(cls, globalns=None, localns=None)
+        # -> ERR e.g. `pytest -svxk cli` -> name 'BestFriend' is not defined
 
         # dirty way (with evil eval):
         # [eval(v) for k, v in cls.__annotations__.items()]
@@ -674,9 +692,8 @@ class TypeDAL(pydal.DAL):  # type: ignore
 
         if isinstance(ftype, str):
             # extract type from string
-            ftype = typing.get_args(Type[ftype])[0]._evaluate(
-                localns=locals(), globalns=globals(), recursive_guard=frozenset()
-            )
+            fw_ref: typing.ForwardRef = typing.get_args(Type[ftype])[0]
+            ftype = evaluate_forward_reference(fw_ref)
 
         if mapping := BASIC_MAPPINGS.get(ftype):
             # basi types
@@ -1144,7 +1161,7 @@ class TableMeta(type):
         """
         Add a before insert hook.
         """
-        cls._before_insert.append(fn)  # type: ignore
+        cls._before_insert.append(fn)
         return cls
 
     def after_insert(
@@ -1157,7 +1174,7 @@ class TableMeta(type):
         """
         Add an after insert hook.
         """
-        cls._after_insert.append(fn)  # type: ignore
+        cls._after_insert.append(fn)
         return cls
 
     def before_update(
@@ -1167,7 +1184,7 @@ class TableMeta(type):
         """
         Add a before update hook.
         """
-        cls._before_update.append(fn)  # type: ignore
+        cls._before_update.append(fn)
         return cls
 
     def after_update(
@@ -1177,7 +1194,7 @@ class TableMeta(type):
         """
         Add an after update hook.
         """
-        cls._after_update.append(fn)  # type: ignore
+        cls._after_update.append(fn)
         return cls
 
     def before_delete(cls: Type[T_MetaInstance], fn: typing.Callable[[Set], Optional[bool]]) -> Type[T_MetaInstance]:
