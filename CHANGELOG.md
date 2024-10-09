@@ -2,6 +2,17 @@
 
 <!--next-version-placeholder-->
 
+## v3.7.1 (2024-10-09)
+
+### Fix
+
+* Prepare for python 3.13 (-> cgi dependency, changes in forward reference evaluation); except psycopg2 ([`bbcca8f`](https://github.com/trialandsuccess/TypeDAL/commit/bbcca8f7a5d2f8a6ddc8caf3a1b05fde3ed2fdd2))
+* Require legacy-cgi for python 3.13+ ([`7ba9489`](https://github.com/trialandsuccess/TypeDAL/commit/7ba94898cde600008a350e718783a4d0dbc05e45))
+
+### Documentation
+
+* **readme:** Include `from typedal.helpers import get_db` in example ([`8853052`](https://github.com/trialandsuccess/TypeDAL/commit/8853052575b4576945901eb87da94bf709e99526))
+
 ## v3.7.0 (2024-08-17)
 
 ### Feature
