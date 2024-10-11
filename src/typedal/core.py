@@ -48,6 +48,7 @@ from .types import (
     CacheMetadata,
     Expression,
     Field,
+    FieldSettings,
     Metadata,
     OpRow,
     PaginateDict,
@@ -681,7 +682,9 @@ class TypeDAL(pydal.DAL):  # type: ignore
 
     @classmethod
     def _build_field(cls, name: str, _type: str, **kw: Any) -> Field:
-        return Field(name, _type, **{**cls.default_kwargs, **kw})
+        # return Field(name, _type, **{**cls.default_kwargs, **kw})
+        kw_combined = cls.default_kwargs | kw
+        return Field(name, _type, **kw_combined)
 
     @classmethod
     def _annotation_to_pydal_fieldtype(
@@ -758,6 +761,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
         """
         fname = cls.to_snake(fname)
 
+        # note: 'kw' is updated in `_annotation_to_pydal_fieldtype` by the kwargs provided to the TypedField(...)
         if converted_type := cls._annotation_to_pydal_fieldtype(ftype, kw):
             return cls._build_field(fname, converted_type, **kw)
         else:
@@ -1229,9 +1233,16 @@ class TypedField(Expression, typing.Generic[T_Value]):  # pragma: no cover
 
     requires: Validator | typing.Iterable[Validator]
 
-    def __init__(self, _type: Type[T_Value] | types.UnionType = str, /, **settings: Any) -> None:  # type: ignore
+    # NOTE: for the logic of converting a TypedField into a pydal Field, see TypeDAL._to_field
+
+    def __init__(
+        self, _type: Type[T_Value] | types.UnionType = str, /, **settings: Unpack[FieldSettings]  # type: ignore
+    ) -> None:
         """
-        A TypedFieldType should not be inited manually, but TypedField (from `fields.py`) should be used!
+        Typed version of pydal.Field, which will be converted to a normal Field in the background.
+
+        Provide the Python type for this field as the first positional argument
+        and any other settings to Field() as keyword parameters.
         """
         self._type = _type
         self.kwargs = settings
@@ -1306,9 +1317,11 @@ class TypedField(Expression, typing.Generic[T_Value]):  # pragma: no cover
     def _to_field(self, extra_kwargs: typing.MutableMapping[str, Any]) -> Optional[str]:
         """
         Convert a Typed Field instance to a pydal.Field.
+
+        Actual logic in TypeDAL._to_field but this function creates the pydal type name and updates the kwarg settings.
         """
         other_kwargs = self.kwargs.copy()
-        extra_kwargs.update(other_kwargs)
+        extra_kwargs.update(other_kwargs)  # <- modifies and overwrites the default kwargs with user-specified ones
         return extra_kwargs.pop("type", False) or TypeDAL._annotation_to_pydal_fieldtype(self._type, extra_kwargs)
 
     def bind(self, field: pydal.objects.Field, table: pydal.objects.Table) -> None:

@@ -4,7 +4,8 @@ Stuff to make mypy happy.
 
 import typing
 from datetime import datetime
-from typing import Any, Optional, TypedDict
+from typing import Any, Callable, Optional, TypedDict
+from pydal.helpers.classes import SQLCustomType
 
 from pydal.adapters.base import BaseAdapter
 from pydal.helpers.classes import OpRow as _OpRow
@@ -218,7 +219,7 @@ CacheModel = typing.Callable[[str, CacheFn, int], Rows]
 CacheTuple = tuple[CacheModel, int]
 
 
-class SelectKwargs(typing.TypedDict, total=False):
+class SelectKwargs(TypedDict, total=False):
     """
     Possible keyword arguments for .select().
     """
@@ -250,3 +251,65 @@ class Metadata(TypedDict):
     relationships: NotRequired[set[str]]
 
     sql: NotRequired[str]
+
+
+class FileSystemLike(typing.Protocol):  # pragma: no cover
+    """
+    Protocol for any class that has an 'open' function.
+
+    An example of this is OSFS from PyFilesystem2.
+    """
+
+    def open(self, file: str, mode: str = "r") -> typing.IO[typing.Any]:
+        """
+        Opens a file for reading, writing or other modes.
+        """
+        ...
+
+
+AnyCallable: typing.TypeAlias = Callable[..., Any]
+
+
+class FieldSettings(TypedDict, total=False):
+    """
+    The supported keyword arguments for `pydal.Field()`.
+
+    Other arguments can be passed.
+    """
+
+    type: str | type | SQLCustomType
+    length: int
+    default: Any
+    required: bool
+    requires: list[AnyCallable | Any]
+    ondelete: str
+    onupdate: str
+    notnull: bool
+    unique: bool
+    uploadfield: bool | str
+    widget: AnyCallable
+    label: str
+    comment: str
+    writable: bool
+    readable: bool
+    searchable: bool
+    listable: bool
+    regex: str
+    options: list[Any] | AnyCallable
+    update: Any
+    authorize: AnyCallable
+    autodelete: bool
+    represent: AnyCallable
+    uploadfolder: str
+    uploadseparate: bool
+    uploadfs: FileSystemLike
+    compute: AnyCallable
+    custom_store: AnyCallable
+    custom_retrieve: AnyCallable
+    custom_retrieve_file_properties: AnyCallable
+    custom_delete: AnyCallable
+    filter_in: AnyCallable
+    filter_out: AnyCallable
+    custom_qualifier: Any
+    map_none: Any
+    rname: str

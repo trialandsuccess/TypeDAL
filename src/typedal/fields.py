@@ -10,19 +10,19 @@ import uuid
 
 from pydal.helpers.classes import SQLCustomType
 from pydal.objects import Table
+from typing_extensions import Unpack
 
+from .types import FieldSettings
 from .core import TypeDAL, TypedField, TypedTable
 
 T = typing.TypeVar("T", bound=typing.Any)
 
 
-# todo: **kw: typing.Any into an Unpack of supported keywords
-
 ## general
 
 
 ## specific
-def StringField(**kw: typing.Any) -> TypedField[str]:
+def StringField(**kw: Unpack[FieldSettings]) -> TypedField[str]:
     """
     Pydal type is string, Python type is str.
     """
@@ -33,7 +33,7 @@ def StringField(**kw: typing.Any) -> TypedField[str]:
 String = StringField
 
 
-def TextField(**kw: typing.Any) -> TypedField[str]:
+def TextField(**kw: Unpack[FieldSettings]) -> TypedField[str]:
     """
     Pydal type is text, Python type is str.
     """
@@ -44,7 +44,7 @@ def TextField(**kw: typing.Any) -> TypedField[str]:
 Text = TextField
 
 
-def BlobField(**kw: typing.Any) -> TypedField[bytes]:
+def BlobField(**kw: Unpack[FieldSettings]) -> TypedField[bytes]:
     """
     Pydal type is blob, Python type is bytes.
     """
@@ -55,7 +55,7 @@ def BlobField(**kw: typing.Any) -> TypedField[bytes]:
 Blob = BlobField
 
 
-def BooleanField(**kw: typing.Any) -> TypedField[bool]:
+def BooleanField(**kw: Unpack[FieldSettings]) -> TypedField[bool]:
     """
     Pydal type is boolean, Python type is bool.
     """
@@ -66,7 +66,7 @@ def BooleanField(**kw: typing.Any) -> TypedField[bool]:
 Boolean = BooleanField
 
 
-def IntegerField(**kw: typing.Any) -> TypedField[int]:
+def IntegerField(**kw: Unpack[FieldSettings]) -> TypedField[int]:
     """
     Pydal type is integer, Python type is int.
     """
@@ -77,7 +77,7 @@ def IntegerField(**kw: typing.Any) -> TypedField[int]:
 Integer = IntegerField
 
 
-def DoubleField(**kw: typing.Any) -> TypedField[float]:
+def DoubleField(**kw: Unpack[FieldSettings]) -> TypedField[float]:
     """
     Pydal type is double, Python type is float.
     """
@@ -88,7 +88,7 @@ def DoubleField(**kw: typing.Any) -> TypedField[float]:
 Double = DoubleField
 
 
-def DecimalField(n: int, m: int, **kw: typing.Any) -> TypedField[decimal.Decimal]:
+def DecimalField(n: int, m: int, **kw: Unpack[FieldSettings]) -> TypedField[decimal.Decimal]:
     """
     Pydal type is decimal, Python type is Decimal.
     """
@@ -99,7 +99,7 @@ def DecimalField(n: int, m: int, **kw: typing.Any) -> TypedField[decimal.Decimal
 Decimal = DecimalField
 
 
-def DateField(**kw: typing.Any) -> TypedField[dt.date]:
+def DateField(**kw: Unpack[FieldSettings]) -> TypedField[dt.date]:
     """
     Pydal type is date, Python type is datetime.date.
     """
@@ -110,7 +110,7 @@ def DateField(**kw: typing.Any) -> TypedField[dt.date]:
 Date = DateField
 
 
-def TimeField(**kw: typing.Any) -> TypedField[dt.time]:
+def TimeField(**kw: Unpack[FieldSettings]) -> TypedField[dt.time]:
     """
     Pydal type is time, Python type is datetime.time.
     """
@@ -121,7 +121,7 @@ def TimeField(**kw: typing.Any) -> TypedField[dt.time]:
 Time = TimeField
 
 
-def DatetimeField(**kw: typing.Any) -> TypedField[dt.datetime]:
+def DatetimeField(**kw: Unpack[FieldSettings]) -> TypedField[dt.datetime]:
     """
     Pydal type is datetime, Python type is datetime.datetime.
     """
@@ -132,7 +132,7 @@ def DatetimeField(**kw: typing.Any) -> TypedField[dt.datetime]:
 Datetime = DatetimeField
 
 
-def PasswordField(**kw: typing.Any) -> TypedField[str]:
+def PasswordField(**kw: Unpack[FieldSettings]) -> TypedField[str]:
     """
     Pydal type is password, Python type is str.
     """
@@ -143,7 +143,7 @@ def PasswordField(**kw: typing.Any) -> TypedField[str]:
 Password = PasswordField
 
 
-def UploadField(**kw: typing.Any) -> TypedField[str]:
+def UploadField(**kw: Unpack[FieldSettings]) -> TypedField[str]:
     """
     Pydal type is upload, Python type is str.
     """
@@ -157,7 +157,7 @@ T_subclass = typing.TypeVar("T_subclass", TypedTable, Table)
 
 
 def ReferenceField(
-    other_table: str | typing.Type[TypedTable] | TypedTable | Table | T_subclass, **kw: typing.Any
+    other_table: str | typing.Type[TypedTable] | TypedTable | Table | T_subclass, **kw: Unpack[FieldSettings]
 ) -> TypedField[int]:
     """
     Pydal type is reference, Python type is int (id).
@@ -180,7 +180,7 @@ def ReferenceField(
 Reference = ReferenceField
 
 
-def ListStringField(**kw: typing.Any) -> TypedField[list[str]]:
+def ListStringField(**kw: Unpack[FieldSettings]) -> TypedField[list[str]]:
     """
     Pydal type is list:string, Python type is list of str.
     """
@@ -191,7 +191,7 @@ def ListStringField(**kw: typing.Any) -> TypedField[list[str]]:
 ListString = ListStringField
 
 
-def ListIntegerField(**kw: typing.Any) -> TypedField[list[int]]:
+def ListIntegerField(**kw: Unpack[FieldSettings]) -> TypedField[list[int]]:
     """
     Pydal type is list:integer, Python type is list of int.
     """
@@ -202,7 +202,7 @@ def ListIntegerField(**kw: typing.Any) -> TypedField[list[int]]:
 ListInteger = ListIntegerField
 
 
-def ListReferenceField(other_table: str, **kw: typing.Any) -> TypedField[list[int]]:
+def ListReferenceField(other_table: str, **kw: Unpack[FieldSettings]) -> TypedField[list[int]]:
     """
     Pydal type is list:reference, Python type is list of int (id).
     """
@@ -213,7 +213,7 @@ def ListReferenceField(other_table: str, **kw: typing.Any) -> TypedField[list[in
 ListReference = ListReferenceField
 
 
-def JSONField(**kw: typing.Any) -> TypedField[object]:
+def JSONField(**kw: Unpack[FieldSettings]) -> TypedField[object]:
     """
     Pydal type is json, Python type is object (can be anything JSON-encodable).
     """
@@ -221,7 +221,7 @@ def JSONField(**kw: typing.Any) -> TypedField[object]:
     return TypedField(object, **kw)
 
 
-def BigintField(**kw: typing.Any) -> TypedField[int]:
+def BigintField(**kw: Unpack[FieldSettings]) -> TypedField[int]:
     """
     Pydal type is bigint, Python type is int.
     """
@@ -241,7 +241,7 @@ NativeTimestampField = SQLCustomType(
 )
 
 
-def TimestampField(**kw: typing.Any) -> TypedField[dt.datetime]:
+def TimestampField(**kw: Unpack[FieldSettings]) -> TypedField[dt.datetime]:
     """
     Database type is timestamp, Python type is datetime.
 
@@ -264,7 +264,7 @@ NativePointField = SQLCustomType(
 )
 
 
-def PointField(**kw: typing.Any) -> TypedField[tuple[float, float]]:
+def PointField(**kw: Unpack[FieldSettings]) -> TypedField[tuple[float, float]]:
     """
     Database type is point, Python type is tuple[float, float].
     """
@@ -280,7 +280,7 @@ NativeUUIDField = SQLCustomType(
 )
 
 
-def UUIDField(**kw: typing.Any) -> TypedField[uuid.UUID]:
+def UUIDField(**kw: Unpack[FieldSettings]) -> TypedField[uuid.UUID]:
     """
     Database type is uuid, Python type is UUID.
     """
