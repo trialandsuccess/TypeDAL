@@ -537,7 +537,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
         # }
 
         # keys of implicit references (also relationships):
-        reference_field_keys = [k for k, v in fields.items() if v.type.split(" ")[0] in ("list:reference", "reference")]
+        reference_field_keys = [k for k, v in fields.items() if str(v.type).split(" ")[0] in ("list:reference", "reference")]
 
         # add implicit relationships:
         # User; list[User]; TypedField[User]; TypedField[list[User]]

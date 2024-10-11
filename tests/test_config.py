@@ -2,20 +2,21 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
+import datetime as dt
 
 import pytest
-
 # from contextlib import chdir
 from contextlib_chdir import chdir
 from testcontainers.postgres import PostgresContainer
 
-from src.typedal import TypeDAL
+from src.typedal import TypeDAL, TypedTable, TypedField
 from src.typedal.config import (
     _load_dotenv,
     _load_toml,
     expand_env_vars_into_toml_values,
     load_config,
 )
+from src.typedal.fields import TimestampField
 
 postgres = PostgresContainer(
     dbname="postgres",
@@ -153,3 +154,67 @@ def test_expand_env_vars():
     expand_env_vars_into_toml_values(data, {"myvalue": "789"})
     assert data["myvar"] is None
     assert data["mynumber"] == 123
+
+
+from pydal.helpers.classes import SQLCustomType
+
+PydalTimestampField = SQLCustomType(
+    type="datetime",
+    native="timestamp",
+    encoder=lambda x: f"'{x.isoformat()}'",
+    decoder=lambda x: x,
+)
+
+
+# note: this is not really 'config' specific but we already have access to postgres here so good enough
+def test_timestamp_fields(at_temp_dir):
+    sqlite_db = TypeDAL("sqlite:memory")
+
+    examples = Path(__file__).parent / "configs"
+    shutil.copy(examples / "valid.env", "./.env")
+    shutil.copy(examples / "simple.toml", "./pyproject.toml")
+
+    assert _load_db_after_setup("postgres")
+    postgres_db = TypeDAL(attempts=1)
+
+    class TimestampPostgres(TypedTable):
+        ts = TimestampField(default=dt.datetime.now)
+
+    class TimestampSqlite(TypedTable):
+        ts = TimestampField(default=dt.datetime.now)
+
+    postgres_db.define(TimestampPostgres)
+    sqlite_db.define(TimestampSqlite)
+
+    row1 = TimestampPostgres.insert()
+    row2 = TimestampSqlite.insert()
+
+    assert isinstance(row1.ts, dt.datetime), "not a datetime"
+    assert "." in str(row1.ts)  # ms precision
+
+    assert isinstance(row2.ts, dt.datetime), "not a datetime"
+    assert "." in str(row2.ts)  # ms precision
+
+
+# note: this is not really 'config' specific but we already have access to postgres here so good enough
+def test_point_fields(at_temp_dir):
+    sqlite_db = TypeDAL("sqlite:memory")
+
+    examples = Path(__file__).parent / "configs"
+    shutil.copy(examples / "valid.env", "./.env")
+    shutil.copy(examples / "simple.toml", "./pyproject.toml")
+
+    assert _load_db_after_setup("postgres")
+    postgres_db = TypeDAL(attempts=1)
+
+    class Point(TypedTable):
+        pt = TypedField(str, native="point")
+
+    postgres_db.define(Point)
+    # sqlite_db.define(Point)
+
+    row = Point.insert(pt=(1, 0))
+
+    print(
+        row
+    )

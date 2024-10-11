@@ -7,6 +7,7 @@ import decimal
 import typing
 
 from pydal.objects import Table
+from pydal.helpers.classes import SQLCustomType
 
 from .core import TypeDAL, TypedField, TypedTable
 
@@ -167,7 +168,7 @@ T_subclass = typing.TypeVar("T_subclass", TypedTable, Table)
 
 
 def ReferenceField(
-    other_table: str | typing.Type[TypedTable] | TypedTable | Table | T_subclass, **kw: typing.Any
+        other_table: str | typing.Type[TypedTable] | TypedTable | Table | T_subclass, **kw: typing.Any
 ) -> TypedField[int]:
     """
     Pydal type is reference, Python type is int (id).
@@ -240,3 +241,20 @@ def BigintField(**kw: typing.Any) -> TypedField[int]:
 
 
 Bigint = BigintField
+
+PydalTimestampField = SQLCustomType(
+    type="datetime",
+    native="timestamp",
+    # encoder=lambda x: f"'{x.isoformat()}'",
+    encoder=lambda x: f"'{x}'",
+    decoder=lambda x: x,
+)
+
+def TimestampField(**kw: typing.Any) -> TypedField[dt.datetime]:
+    return TypedField(
+        dt.datetime,
+        type=PydalTimestampField,
+        **kw,
+    )
+
+# todo: point, uuid

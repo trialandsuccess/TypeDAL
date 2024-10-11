@@ -19,6 +19,8 @@ class Person(TypedTable):
     age = TypedField(int, default=18)
     nicknames: list[str]
 
+    ts = TypedField(dt.datetime, type="timestamp")
+
 
 assert db.person._format == "%(name)s"
 
