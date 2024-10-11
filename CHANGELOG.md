@@ -2,6 +2,15 @@
 
 <!--next-version-placeholder-->
 
+## v3.8.0 (2024-10-11)
+
+### Feature
+
+* Add `_sql()` function to TypedTable to generate SQL Schema code. (only if 'migration' extra/pydal2sql is installed) ([`31f86de`](https://github.com/trialandsuccess/TypeDAL/commit/31f86de30cc53cf320f6231c27dd545103b50d10))
+* Add FieldSettings typed dict for better hinting for options when creating a TypedField() or any of the fields using it ([`97a7c7a`](https://github.com/trialandsuccess/TypeDAL/commit/97a7c7ad6112a6098088c44bbc6ae438bbfc0040))
+* Add custom TypedFields for timestamp, point and uuid (valid types in postgres and sqlite is okay with anything) ([`a7bc9d1`](https://github.com/trialandsuccess/TypeDAL/commit/a7bc9d1b7ab0c88d4937956a68305b4d61a0851f))
+* Started on custom types (timestamp) ([`981da83`](https://github.com/trialandsuccess/TypeDAL/commit/981da83cc8f4fec442b2cf74e0b555ce0633f96a))
+
 ## v3.7.1 (2024-10-09)
 
 ### Fix
