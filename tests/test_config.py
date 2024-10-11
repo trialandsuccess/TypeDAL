@@ -16,7 +16,7 @@ from src.typedal.config import (
     expand_env_vars_into_toml_values,
     load_config,
 )
-from src.typedal.fields import TimestampField
+from src.typedal.fields import TimestampField, PointField, UUIDField
 
 postgres = PostgresContainer(
     dbname="postgres",
@@ -156,65 +156,158 @@ def test_expand_env_vars():
     assert data["mynumber"] == 123
 
 
-from pydal.helpers.classes import SQLCustomType
+# note: these are not really 'config' specific but we already have access to postgres here so good enough:
 
-PydalTimestampField = SQLCustomType(
-    type="datetime",
-    native="timestamp",
-    encoder=lambda x: f"'{x.isoformat()}'",
-    decoder=lambda x: x,
-)
+def test_timestamp_fields_sqlite(at_temp_dir):
+    db = TypeDAL("sqlite:memory")
+
+    class Timestamp(TypedTable):
+        ts = TimestampField(default=dt.datetime.now)
+        dt = TypedField(dt.datetime, default=dt.datetime.now)
+
+    db.define(Timestamp)
+
+    row = Timestamp.insert()
+
+    # old:
+    assert isinstance(row.dt, dt.datetime), "not a datetime"
+    assert "." not in str(row.dt)  # no ms precision
+
+    # new:
+    assert isinstance(row.ts, dt.datetime), "not a datetime"
+    assert "." in str(row.ts)  # ms precision
+
+    assert '"ts" timestamp NOT NULL' in Timestamp._sql()
 
 
-# note: this is not really 'config' specific but we already have access to postgres here so good enough
-def test_timestamp_fields(at_temp_dir):
-    sqlite_db = TypeDAL("sqlite:memory")
-
+def test_timestamp_fields_psql(at_temp_dir):
     examples = Path(__file__).parent / "configs"
     shutil.copy(examples / "valid.env", "./.env")
     shutil.copy(examples / "simple.toml", "./pyproject.toml")
 
     assert _load_db_after_setup("postgres")
-    postgres_db = TypeDAL(attempts=1)
+    db = TypeDAL(attempts=1)
 
-    class TimestampPostgres(TypedTable):
+    class Timestamp(TypedTable):
         ts = TimestampField(default=dt.datetime.now)
+        dt = TypedField(dt.datetime, default=dt.datetime.now)
 
-    class TimestampSqlite(TypedTable):
-        ts = TimestampField(default=dt.datetime.now)
+    db.define(Timestamp)
 
-    postgres_db.define(TimestampPostgres)
-    sqlite_db.define(TimestampSqlite)
+    row = Timestamp.insert()
 
-    row1 = TimestampPostgres.insert()
-    row2 = TimestampSqlite.insert()
+    # old:
+    assert isinstance(row.dt, dt.datetime), "not a datetime"
+    assert "." not in str(row.dt)  # no ms precision
 
-    assert isinstance(row1.ts, dt.datetime), "not a datetime"
-    assert "." in str(row1.ts)  # ms precision
+    # new:
+    assert isinstance(row.ts, dt.datetime), "not a datetime"
+    assert "." in str(row.ts)  # ms precision
 
-    assert isinstance(row2.ts, dt.datetime), "not a datetime"
-    assert "." in str(row2.ts)  # ms precision
+    assert '"ts" timestamp NOT NULL' in Timestamp._sql()
 
 
-# note: this is not really 'config' specific but we already have access to postgres here so good enough
-def test_point_fields(at_temp_dir):
-    sqlite_db = TypeDAL("sqlite:memory")
-
-    examples = Path(__file__).parent / "configs"
-    shutil.copy(examples / "valid.env", "./.env")
-    shutil.copy(examples / "simple.toml", "./pyproject.toml")
-
-    assert _load_db_after_setup("postgres")
-    postgres_db = TypeDAL(attempts=1)
+def test_point_fields_sqlite(at_temp_dir):
+    db = TypeDAL("sqlite:memory")
 
     class Point(TypedTable):
-        pt = TypedField(str, native="point")
+        pt = PointField()
 
-    postgres_db.define(Point)
-    # sqlite_db.define(Point)
+    db.define(Point)
 
-    row = Point.insert(pt=(1, 0))
+    row1 = Point.insert(pt=(1, 0))
+    row2 = Point.insert(pt="(1, 0)")
 
-    print(
-        row
-    )
+    assert row1.pt == row2.pt
+
+    x, y = row1.pt
+    assert x == 1
+    assert y == 0
+
+    with pytest.raises(Exception):
+        Point.insert(pt=123)
+
+    with pytest.raises(Exception):
+        Point.insert(pt="123")
+
+    # note: psql will check this whereas sqlite won't:
+    Point.insert(pt=())
+
+    assert '"pt" point NOT NULL' in Point._sql()
+
+
+def test_point_fields_psql(at_temp_dir):
+    examples = Path(__file__).parent / "configs"
+    shutil.copy(examples / "valid.env", "./.env")
+    shutil.copy(examples / "simple.toml", "./pyproject.toml")
+
+    assert _load_db_after_setup("postgres")
+    db = TypeDAL(attempts=1)
+
+    class Point(TypedTable):
+        pt = PointField()
+
+    db.define(Point)
+
+    row1 = Point.insert(pt=(1, 0))
+    row2 = Point.insert(pt="(1, 0)")
+
+    assert row1.pt == row2.pt
+
+    x, y = row1.pt
+    assert x == 1
+    assert y == 0
+
+    with pytest.raises(Exception):
+        Point.insert(pt=123)
+
+    with pytest.raises(Exception):
+        Point.insert(pt="123")
+
+    # note: psql will check this whereas sqlite won't:
+
+    with pytest.raises(Exception):
+        Point.insert(pt=())
+
+    assert '"pt" point NOT NULL' in Point._sql()
+
+
+def test_uuid_fields_psql(at_temp_dir):
+    examples = Path(__file__).parent / "configs"
+    shutil.copy(examples / "valid.env", "./.env")
+    shutil.copy(examples / "simple.toml", "./pyproject.toml")
+
+    assert _load_db_after_setup("postgres")
+    db = TypeDAL(attempts=1)
+
+    class UUIDTable(TypedTable):
+        gid = UUIDField(default=uuid.uuid4)
+
+    db.define(UUIDTable)
+
+    row = UUIDTable.insert()
+
+    assert isinstance(row.gid, uuid.UUID)
+
+    with pytest.raises(Exception):
+        UUIDTable.insert(gid="not-a-uuid")
+
+    assert '"gid" uuid NOT NULL' in UUIDTable._sql()
+
+
+def test_uuid_fields_sqlite(at_temp_dir):
+    db = TypeDAL("sqlite:memory")
+
+    class UUIDTable(TypedTable):
+        gid = UUIDField(default=uuid.uuid4)
+
+    db.define(UUIDTable)
+
+    row = UUIDTable.insert()
+
+    assert isinstance(row.gid, uuid.UUID)
+
+    with pytest.raises(Exception):
+        UUIDTable.insert(gid="not-a-uuid")
+
+    assert '"gid" uuid NOT NULL' in UUIDTable._sql()

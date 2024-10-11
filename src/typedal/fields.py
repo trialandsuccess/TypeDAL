@@ -2,34 +2,23 @@
 This file contains available Field types.
 """
 
+import ast
 import datetime as dt
 import decimal
 import typing
+import uuid
 
-from pydal.objects import Table
 from pydal.helpers.classes import SQLCustomType
+from pydal.objects import Table
 
 from .core import TypeDAL, TypedField, TypedTable
 
 T = typing.TypeVar("T", bound=typing.Any)
 
 
+# todo: **kw: typing.Any into an Unpack of supported keywords
+
 ## general
-
-
-# def TypedField(
-#     _type: typing.Type[T] | types.UnionType,
-#     **kwargs: typing.Any,
-# ) -> T:
-#     """
-#     sneaky: its a function and not a class, because there's a return type.
-#
-#     and the return type (T) is the input type in _type
-#
-#     Example:
-#         age: TypedField(int, default=18)
-#     """
-#     return typing.cast(T, TypedFieldType(_type, **kwargs))
 
 
 ## specific
@@ -168,7 +157,7 @@ T_subclass = typing.TypeVar("T_subclass", TypedTable, Table)
 
 
 def ReferenceField(
-        other_table: str | typing.Type[TypedTable] | TypedTable | Table | T_subclass, **kw: typing.Any
+    other_table: str | typing.Type[TypedTable] | TypedTable | Table | T_subclass, **kw: typing.Any
 ) -> TypedField[int]:
     """
     Pydal type is reference, Python type is int (id).
@@ -242,19 +231,58 @@ def BigintField(**kw: typing.Any) -> TypedField[int]:
 
 Bigint = BigintField
 
-PydalTimestampField = SQLCustomType(
+## Custom:
+
+NativeTimestampField = SQLCustomType(
     type="datetime",
     native="timestamp",
-    # encoder=lambda x: f"'{x.isoformat()}'",
-    encoder=lambda x: f"'{x}'",
-    decoder=lambda x: x,
+    encoder=lambda x: f"'{x}'",  # extra quotes
+    # decoder=lambda x: x, # already parsed into datetime
 )
 
+
 def TimestampField(**kw: typing.Any) -> TypedField[dt.datetime]:
+    """
+    Database type is timestamp, Python type is datetime.
+
+    Advantage over the regular datetime type is that
+    a timestamp has millisecond precision (2024-10-11 20:18:24.505194)
+    whereas a regular datetime only has precision up to the second (2024-10-11 20:18:24)
+    """
+    kw["type"] = NativeTimestampField
     return TypedField(
         dt.datetime,
-        type=PydalTimestampField,
         **kw,
     )
 
-# todo: point, uuid
+
+NativePointField = SQLCustomType(
+    type="string",
+    native="point",
+    encoder=str,
+    decoder=ast.literal_eval,
+)
+
+
+def PointField(**kw: typing.Any) -> TypedField[tuple[float, float]]:
+    """
+    Database type is point, Python type is tuple[float, float].
+    """
+    kw["type"] = NativePointField
+    return TypedField(tuple[float, float], **kw)
+
+
+NativeUUIDField = SQLCustomType(
+    type="string",
+    native="uuid",
+    encoder=str,
+    decoder=uuid.UUID,
+)
+
+
+def UUIDField(**kw: typing.Any) -> TypedField[uuid.UUID]:
+    """
+    Database type is uuid, Python type is UUID.
+    """
+    kw["type"] = NativeUUIDField
+    return TypedField(uuid.UUID, **kw)
