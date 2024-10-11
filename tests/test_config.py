@@ -3,7 +3,9 @@ import shutil
 import tempfile
 from pathlib import Path
 import datetime as dt
+import uuid
 
+from pydal2sql import generate_sql
 import pytest
 # from contextlib import chdir
 from contextlib_chdir import chdir

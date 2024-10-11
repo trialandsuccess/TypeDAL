@@ -5,11 +5,11 @@ Stuff to make mypy happy.
 import typing
 from datetime import datetime
 from typing import Any, Callable, Optional, TypedDict
-from pydal.helpers.classes import SQLCustomType
 
 from pydal.adapters.base import BaseAdapter
 from pydal.helpers.classes import OpRow as _OpRow
 from pydal.helpers.classes import Reference as _Reference
+from pydal.helpers.classes import SQLCustomType
 from pydal.objects import Expression as _Expression
 from pydal.objects import Field as _Field
 from pydal.objects import Query as _Query

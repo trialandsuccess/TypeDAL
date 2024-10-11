@@ -350,8 +350,8 @@ def evaluate_forward_reference(fw_ref: typing.ForwardRef) -> type:
         globalns=globals(),
         recursive_guard=frozenset(),
     )
-    if sys.version_info >= (3, 13):
-        # required since 3.13 and not supported before
+    if sys.version_info >= (3, 13):  # pragma: no cover
+        # suggested since 3.13 (warning) and not supported before. Mandatory after 1.15!
         kwargs["type_params"] = ()
 
     return fw_ref._evaluate(**kwargs)  # type: ignore
@@ -538,7 +538,9 @@ class TypeDAL(pydal.DAL):  # type: ignore
         # }
 
         # keys of implicit references (also relationships):
-        reference_field_keys = [k for k, v in fields.items() if str(v.type).split(" ")[0] in ("list:reference", "reference")]
+        reference_field_keys = [
+            k for k, v in fields.items() if str(v.type).split(" ")[0] in ("list:reference", "reference")
+        ]
 
         # add implicit relationships:
         # User; list[User]; TypedField[User]; TypedField[list[User]]
@@ -1767,6 +1769,18 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
         # then create a new (more empty) row object:
         state["_row"] = Row(json.loads(state["_row"]))
         self.__dict__ |= state
+
+    @classmethod
+    def _sql(cls) -> str:
+        """
+        Generate SQL Schema for this table via pydal2sql (if 'migrations' extra is installed).
+        """
+        try:
+            import pydal2sql
+        except ImportError as e:  # pragma: no cover
+            raise RuntimeError("Can not generate SQL without the 'migration' extra or `pydal2sql` installed!") from e
+
+        return pydal2sql.generate_sql(cls)
 
 
 # backwards compat:

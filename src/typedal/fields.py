@@ -12,8 +12,8 @@ from pydal.helpers.classes import SQLCustomType
 from pydal.objects import Table
 from typing_extensions import Unpack
 
-from .types import FieldSettings
 from .core import TypeDAL, TypedField, TypedTable
+from .types import FieldSettings
 
 T = typing.TypeVar("T", bound=typing.Any)
 
