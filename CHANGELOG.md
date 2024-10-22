@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.8.1 (2024-10-22)
+
+### Fix
+
+* Make 'requires=' also accept list[Validator] or a single Validator/Callable ([`a4a7c00`](https://github.com/trialandsuccess/TypeDAL/commit/a4a7c002186f8824971987f96d573fe455dcd01d))
+
 ## v3.8.0 (2024-10-11)
 
 ### Feature
