@@ -5,7 +5,8 @@ from decimal import Decimal
 import datetime as dt
 
 from src.typedal.fields import TextField
-from typedal.helpers import utcnow
+from src.typedal.helpers import utcnow
+from pydal.validators import IS_NOT_EMPTY
 
 db = TypeDAL("sqlite:memory")
 
@@ -16,7 +17,7 @@ db = TypeDAL("sqlite:memory")
 class Person(TypedTable):
     name: TypedField[str]
 
-    age = TypedField(int, default=18)
+    age = TypedField(int, default=18, requires=IS_NOT_EMPTY())
     nicknames: list[str]
 
     ts = TypedField(dt.datetime, type="timestamp")

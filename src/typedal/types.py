@@ -281,7 +281,7 @@ class FieldSettings(TypedDict, total=False):
     length: int
     default: Any
     required: bool
-    requires: list[AnyCallable | Any]
+    requires: list[AnyCallable | Any | Validator] | Validator | AnyCallable
     ondelete: str
     onupdate: str
     notnull: bool
