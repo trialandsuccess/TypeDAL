@@ -550,6 +550,9 @@ class TypeDAL(pydal.DAL):  # type: ignore
             if k not in relationships and (new_relationship := to_relationship(cls, k, annotations[k]))
         }
 
+        # fixme: list[Reference] is recognized as relationship,
+        #        TypedField(list[Reference]) is NOT recognized!!!
+
         cache_dependency = self._config.caching and kwargs.pop("cache_dependency", True)
 
         table: Table = self.define_table(tablename, *fields.values(), **kwargs)

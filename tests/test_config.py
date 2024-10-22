@@ -58,10 +58,12 @@ def test_load_toml(at_temp_dir):
     base = Path("pyproject.toml")
     base.write_text("# empty")
 
-    assert _load_toml(False) == ("", {})
-    assert _load_toml(None) == (str(base.resolve().absolute()), {})
-    assert _load_toml(str(base)) == ("pyproject.toml", {})
-    assert _load_toml(".") == (str(base.resolve().absolute()), {})
+    with pytest.warns(UserWarning):
+        # it should warn because the toml is empty
+        assert _load_toml(False) == ("", {})
+        assert _load_toml(None) == (str(base.resolve().absolute()), {})
+        assert _load_toml(str(base)) == ("pyproject.toml", {})
+        assert _load_toml(".") == (str(base.resolve().absolute()), {})
 
 
 def test_load_dotenv(at_temp_dir):
