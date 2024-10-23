@@ -4,7 +4,10 @@
 
 ## v3.8.2 (2024-10-23)
 
+### Fix
 
+* Improvements in relationship detection and multiple mixins
+* make Mixin base class define __settings__ so other mixins can use them without checking for existance
 
 ## v3.8.1 (2024-10-22)
 
