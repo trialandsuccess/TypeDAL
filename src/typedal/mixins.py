@@ -36,6 +36,14 @@ class Mixin(_TypedTable):
         ('inconsistent method resolution' or 'metaclass conflicts')
     """
 
+    __settings__: typing.ClassVar[dict[str, Any]]
+
+    def __init_subclass__(cls, **kwargs: Any):
+        """
+        Ensures __settings__ exists for other mixins.
+        """
+        cls.__settings__ = getattr(cls, "__settings__", None) or {}
+
 
 class TimestampsMixin(Mixin):
     """
@@ -102,12 +110,16 @@ class SlugMixin(Mixin):
         },
     )  # set via init subclass
 
-    def __init_subclass__(cls, slug_field: str = None, slug_suffix_length: int = 0, **kw: Any) -> None:
+    def __init_subclass__(
+        cls, slug_field: str = None, slug_suffix_length: int = 0, slug_suffix: Optional[int] = None, **kw: Any
+    ) -> None:
         """
         Bind 'slug field' option to be used later (on_define).
 
         You can control the length of the random suffix with the `slug_suffix_length` option (0 is no suffix).
         """
+        super().__init_subclass__(**kw)
+
         # unfortunately, PyCharm and mypy do not recognize/autocomplete/typecheck init subclass (keyword) arguments.
         if slug_field is None:
             raise ValueError(
@@ -115,7 +127,7 @@ class SlugMixin(Mixin):
                 "e.g. `class MyClass(TypedTable, SlugMixin, slug_field='title'): ...`"
             )
 
-        if "slug_suffix" in kw:
+        if slug_suffix:
             warnings.warn(
                 "The 'slug_suffix' option is deprecated, use 'slug_suffix_length' instead.",
                 DeprecationWarning,
@@ -123,10 +135,9 @@ class SlugMixin(Mixin):
 
         slug_suffix = slug_suffix_length or kw.get("slug_suffix", 0)
 
-        cls.__settings__ = {
-            "slug_field": slug_field,
-            "slug_suffix": slug_suffix,
-        }
+        # append settings:
+        cls.__settings__["slug_field"] = slug_field
+        cls.__settings__["slug_suffix"] = slug_suffix
 
     @classmethod
     def __on_define__(cls, db: TypeDAL) -> None:

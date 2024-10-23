@@ -279,9 +279,10 @@ def relationship(_type: To_Type, condition: Condition = None, join: JOIN_OPTIONS
     )
 
 
-def _generate_relationship_condition(
-    _: Type["TypedTable"], key: str, field: typing.Union["TypedField[Any]", "Table", Type["TypedTable"]]
-) -> Condition:
+T_Field: typing.TypeAlias = typing.Union["TypedField[Any]", "Table", Type["TypedTable"]]
+
+
+def _generate_relationship_condition(_: Type["TypedTable"], key: str, field: T_Field) -> Condition:
     origin = typing.get_origin(field)
     # else: generic
 
@@ -299,7 +300,7 @@ def _generate_relationship_condition(
 def to_relationship(
     cls: Type["TypedTable"] | type[Any],
     key: str,
-    field: typing.Union["TypedField[Any]", "Table", Type["TypedTable"]],
+    field: T_Field,
 ) -> typing.Optional[Relationship[Any]]:
     """
     Used to automatically create relationship instance for reference fields.
@@ -317,9 +318,14 @@ def to_relationship(
     Also works for list:reference (list[OtherTable]) and TypedField[OtherTable].
     """
     if looks_like(field, TypedField):
+        # typing.get_args works for list[str] but not for TypedField[role] :(
         if args := typing.get_args(field):
+            # TypedField[SomeType] -> SomeType
             field = args[0]
-        else:
+        elif hasattr(field, "_type"):
+            # TypedField(SomeType) -> SomeType
+            field = typing.cast(T_Field, field._type)
+        else:  # pragma: no cover
             # weird
             return None
 
@@ -543,12 +549,15 @@ class TypeDAL(pydal.DAL):  # type: ignore
         ]
 
         # add implicit relationships:
-        # User; list[User]; TypedField[User]; TypedField[list[User]]
+        # User; list[User]; TypedField[User]; TypedField[list[User]]; TypedField(User); TypedField(list[User])
         relationships |= {
             k: new_relationship
             for k in reference_field_keys
             if k not in relationships and (new_relationship := to_relationship(cls, k, annotations[k]))
         }
+
+        # fixme: list[Reference] is recognized as relationship,
+        #        TypedField(list[Reference]) is NOT recognized!!!
 
         cache_dependency = self._config.caching and kwargs.pop("cache_dependency", True)
 

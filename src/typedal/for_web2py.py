@@ -10,6 +10,8 @@ from .core import TypeDAL, TypedField, TypedTable
 from .fields import TextField
 from .web2py_py4web_shared import AuthUser
 
+DAL = TypeDAL  # export as DAL for compatibility with py4web
+
 
 class AuthGroup(TypedTable):
     """

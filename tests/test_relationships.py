@@ -45,6 +45,8 @@ class User(TypedTable, TaggableMixin):
     gid = TypedField(str, default=uuid4)
     name: str
     roles: TypedField[list[Role]]
+    main_role = TypedField(Role)
+    extra_roles = TypedField(list[Role])
 
     # relationships:
     articles = relationship(list["Article"], lambda self, other: other.author == self.id)
@@ -102,9 +104,9 @@ def _setup_data():
 
     reader, writer, editor = User.bulk_insert(
         [
-            {"name": "Reader 1", "roles": [reader]},
-            {"name": "Writer 1", "roles": [reader, writer]},
-            {"name": "Editor 1", "roles": [reader, writer, editor]},
+            {"name": "Reader 1", "roles": [reader], "main_role": reader, "extra_roles": []},
+            {"name": "Writer 1", "roles": [reader, writer], "main_role": writer, "extra_roles": []},
+            {"name": "Editor 1", "roles": [reader, writer, editor], "main_role": editor, "extra_roles": []},
         ]
     )
 
@@ -333,9 +335,22 @@ class CacheTwoRelationships(TypedTable):
     second: NoCacheSecond
 
 
-def test_caching():
-    _setup_data()
+def test_relationship_detection():
+    user_table_relationships = User.get_relationships()
 
+    assert user_table_relationships["roles"]
+    assert user_table_relationships["main_role"]
+    assert user_table_relationships["extra_roles"]
+    assert user_table_relationships["articles"]
+    assert user_table_relationships["bestie"]
+    assert user_table_relationships["tags"]
+
+    assert user_table_relationships["roles"].join == "left"
+    assert user_table_relationships["main_role"].join == "inner"
+    assert user_table_relationships["extra_roles"].join == "left"
+
+
+def test_caching():
     uncached = User.join().collect_or_fail()
     cached = User.cache().join().collect_or_fail()  # not actually cached yet!
     cached_user_only = User.join().cache(User.id).collect_or_fail()  # idem
@@ -365,12 +380,12 @@ def test_caching():
     cached_user_only2 = User.join().cache(User.id).collect_or_fail()
 
     assert (
-        len(uncached2)
-        == len(uncached)
-        == len(cached2)
-        == len(cached)
-        == len(cached_user_only2)
-        == len(cached_user_only)
+            len(uncached2)
+            == len(uncached)
+            == len(cached2)
+            == len(cached)
+            == len(cached_user_only2)
+            == len(cached_user_only)
     )
 
     assert uncached.as_json() == uncached2.as_json() == cached.as_json() == cached2.as_json()
@@ -378,9 +393,9 @@ def test_caching():
     assert cached.first().gid == cached2.first().gid
 
     assert (
-        [_.name for _ in uncached2.first().roles]
-        == [_.name for _ in cached.first().roles]
-        == [_.name for _ in cached2.first().roles]
+            [_.name for _ in uncached2.first().roles]
+            == [_.name for _ in cached.first().roles]
+            == [_.name for _ in cached2.first().roles]
     )
 
     assert not uncached2.metadata.get("cache", {}).get("enabled")
@@ -518,6 +533,5 @@ def test_caching_dependencies():
 
 def test_illegal():
     with pytest.raises(ValueError), pytest.warns(UserWarning):
-
         class HasRelationship:
             something = relationship("...", condition=lambda: 1, on=lambda: 2)
