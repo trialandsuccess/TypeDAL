@@ -11,6 +11,9 @@ from src.typedal.helpers import (
     all_annotations,
     as_lambda,
     extract_type_optional,
+    get_db,
+    get_field,
+    get_table,
     instanciate,
     is_union,
     looks_like,
@@ -18,7 +21,7 @@ from src.typedal.helpers import (
     mktable,
     origin_is_subclass,
     to_snake,
-    unwrap_type, get_db, get_table, get_field,
+    unwrap_type,
 )
 from typedal import TypeDAL, TypedTable
 from typedal.types import Field
@@ -202,7 +205,5 @@ def test_get_functions():
     assert isinstance(table, pydal.objects.Table)
     assert not isinstance(table, TypedTable)
     field = get_field(TestGetFunctions.string)
-    print(
-        type(field)
-    )
+    print(type(field))
     assert isinstance(field, Field)

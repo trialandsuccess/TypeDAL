@@ -1,13 +1,13 @@
 import time
+import uuid
 from datetime import datetime
 from typing import Optional
 
 import pytest
-import uuid
 
 from src.typedal import TypeDAL, TypedTable
-from src.typedal.mixins import SlugMixin, TimestampsMixin
-from src.typedal.fields import UUIDField, StringField, TypedField
+from src.typedal.fields import StringField, TypedField, UUIDField
+from src.typedal.mixins import Mixin, SlugMixin, TimestampsMixin
 
 
 class AllMixins(TypedTable, SlugMixin, TimestampsMixin, slug_field="name"):
@@ -20,6 +20,7 @@ class TableWithMixins(TypedTable, SlugMixin, slug_field="name", slug_suffix_leng
 
 
 with pytest.warns(DeprecationWarning):
+
     class TableWithMixinsWarns(TypedTable, SlugMixin, slug_field="name", slug_suffix=1):
         name: str
         number: Optional[int]
@@ -31,6 +32,7 @@ class TableWithTimestamps(TypedTable, TimestampsMixin):
 
 def test_invalid_slug_initialization():
     with pytest.raises(ValueError):
+
         class WithoutSlugField(TypedTable, SlugMixin):  # no slug_field=...
             ...
 
@@ -94,3 +96,34 @@ def test_reusing(db):
     assert str(TableWithTimestamps.created_at) == "table_with_timestamps.created_at"
     assert str(TableWithTimestamps.unrelated) == "table_with_timestamps.unrelated"
 
+
+def test_combining_mixins():
+    class FirstMixin(Mixin):
+        def __init_subclass__(cls, first: str, **kw):
+            super().__init_subclass__(**kw)
+
+            cls.__settings__["first"] = first
+
+        @classmethod
+        def one(cls):
+            return cls.__settings__["first"] == "first" and cls.__settings__["second"] == "second"
+
+    class SecondMixin(Mixin):
+        def __init_subclass__(cls, second: str, **kw):
+            super().__init_subclass__(**kw)
+
+            cls.__settings__["second"] = second
+
+        @classmethod
+        def two(cls):
+            return cls.__settings__["first"] == "first" and cls.__settings__["second"] == "second"
+
+    class Combined(TypedTable, FirstMixin, SecondMixin, first="first", second="second"): ...
+
+    assert Combined.one()
+    assert Combined.two()
+
+    class CombinedDifferentOrder(TypedTable, SecondMixin, FirstMixin, first="first", second="second"): ...
+
+    assert CombinedDifferentOrder.one()
+    assert CombinedDifferentOrder.two()

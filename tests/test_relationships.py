@@ -380,12 +380,12 @@ def test_caching():
     cached_user_only2 = User.join().cache(User.id).collect_or_fail()
 
     assert (
-            len(uncached2)
-            == len(uncached)
-            == len(cached2)
-            == len(cached)
-            == len(cached_user_only2)
-            == len(cached_user_only)
+        len(uncached2)
+        == len(uncached)
+        == len(cached2)
+        == len(cached)
+        == len(cached_user_only2)
+        == len(cached_user_only)
     )
 
     assert uncached.as_json() == uncached2.as_json() == cached.as_json() == cached2.as_json()
@@ -393,9 +393,9 @@ def test_caching():
     assert cached.first().gid == cached2.first().gid
 
     assert (
-            [_.name for _ in uncached2.first().roles]
-            == [_.name for _ in cached.first().roles]
-            == [_.name for _ in cached2.first().roles]
+        [_.name for _ in uncached2.first().roles]
+        == [_.name for _ in cached.first().roles]
+        == [_.name for _ in cached2.first().roles]
     )
 
     assert not uncached2.metadata.get("cache", {}).get("enabled")
@@ -533,5 +533,6 @@ def test_caching_dependencies():
 
 def test_illegal():
     with pytest.raises(ValueError), pytest.warns(UserWarning):
+
         class HasRelationship:
             something = relationship("...", condition=lambda: 1, on=lambda: 2)

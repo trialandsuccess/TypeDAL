@@ -1,24 +1,25 @@
+import datetime as dt
 import os
 import shutil
 import tempfile
-from pathlib import Path
-import datetime as dt
 import uuid
+from pathlib import Path
 
-from pydal2sql import generate_sql
 import pytest
+
 # from contextlib import chdir
 from contextlib_chdir import chdir
+from pydal2sql import generate_sql
 from testcontainers.postgres import PostgresContainer
 
-from src.typedal import TypeDAL, TypedTable, TypedField
+from src.typedal import TypeDAL, TypedField, TypedTable
 from src.typedal.config import (
     _load_dotenv,
     _load_toml,
     expand_env_vars_into_toml_values,
     load_config,
 )
-from src.typedal.fields import TimestampField, PointField, UUIDField
+from src.typedal.fields import PointField, TimestampField, UUIDField
 
 postgres = PostgresContainer(
     dbname="postgres",
@@ -161,6 +162,7 @@ def test_expand_env_vars():
 
 
 # note: these are not really 'config' specific but we already have access to postgres here so good enough:
+
 
 def test_timestamp_fields_sqlite(at_temp_dir):
     db = TypeDAL("sqlite:memory")
