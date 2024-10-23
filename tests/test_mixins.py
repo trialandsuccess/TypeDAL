@@ -6,7 +6,7 @@ import pytest
 import uuid
 
 from src.typedal import TypeDAL, TypedTable
-from src.typedal.mixins import SlugMixin, TimestampsMixin, SearchMixin
+from src.typedal.mixins import SlugMixin, TimestampsMixin
 from src.typedal.fields import UUIDField, StringField, TypedField
 
 
@@ -17,18 +17,6 @@ class AllMixins(TypedTable, SlugMixin, TimestampsMixin, slug_field="name"):
 class TableWithMixins(TypedTable, SlugMixin, slug_field="name", slug_suffix_length=1):
     name: str
     number: Optional[int]
-
-
-class ExampleSearchTable(TypedTable,
-                         SlugMixin,
-                         SearchMixin,
-                         slug_field="title",
-                         search_fields=("gid", "title", "description"),
-                         ):
-    gid = UUIDField(default=uuid.uuid4)
-    title: str
-    description: str
-    dont_search: str
 
 
 with pytest.warns(DeprecationWarning):
@@ -106,16 +94,3 @@ def test_reusing(db):
     assert str(TableWithTimestamps.created_at) == "table_with_timestamps.created_at"
     assert str(TableWithTimestamps.unrelated) == "table_with_timestamps.unrelated"
 
-
-def test_search_mixin(db):
-    db.define(ExampleSearchTable)
-
-    row = ExampleSearchTable.insert(
-        title="Example Title",
-        description="Example Description",
-        dont_search="Secret",
-    )
-
-    assert ExampleSearchTable.search("example").count()
-    assert ExampleSearchTable.search(row.gid).count()
-    assert not ExampleSearchTable.search("secret").count()

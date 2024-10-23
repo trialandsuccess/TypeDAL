@@ -11,11 +11,8 @@ import warnings
 from datetime import datetime
 from typing import Any, Optional
 
-from pydal import SQLCustomType
 from slugify import slugify
-from typing_extensions import Self
 
-from . import TypedRows
 from .core import (  # noqa F401 - used by example in docstring
     QueryBuilder,
     T_MetaInstance,
@@ -25,7 +22,7 @@ from .core import (  # noqa F401 - used by example in docstring
     _TypedTable,
 )
 from .fields import DatetimeField, StringField
-from .types import OpRow, Set, Field
+from .types import OpRow, Set
 
 
 class Mixin(_TypedTable):
@@ -38,6 +35,14 @@ class Mixin(_TypedTable):
     During runtime, mixin should not have a base class in order to prevent MRO issues
         ('inconsistent method resolution' or 'metaclass conflicts')
     """
+
+    __settings__: typing.ClassVar[dict[str, Any]]
+
+    def __init_subclass__(cls, **kwargs: Any):
+        """
+        Ensures __settings__ exists for other mixins.
+        """
+        cls.__settings__ = getattr(cls, "__settings__", None) or {}
 
 
 class TimestampsMixin(Mixin):
@@ -82,91 +87,6 @@ def slug_random_suffix(length: int = 8) -> str:
     return base64.urlsafe_b64encode(os.urandom(length)).rstrip(b"=").decode().strip("=")
 
 
-class SearchMixin(Mixin):
-    """
-    Example mixin that provides search() within selected fields per class.
-    """
-    __settings__: typing.TypedDict(  # type: ignore
-        "SearchFieldSettings",
-        {
-            "search_fields": tuple[str, ...],
-        },
-    )  # set via init subclass
-
-    def __init_subclass__(cls, search_fields: tuple[str, ...] = (), **kw: Any) -> None:
-        # append settings:
-        super().__init_subclass__(**kw)
-
-        cls.__settings__ = (getattr(cls, "__settings__", None) or {}) | {
-            "search_fields": search_fields,
-        }
-
-    @classmethod
-    def __search_mixin_daily_seed__(cls):
-        """
-        You can use this as a raw field in .select().
-
-        setseed expects a number between -1 and 1.
-        This function converts the current date to a number in that range.
-        This will break in the year 20000 but who cares.
-        """
-        today = datetime.now()  # dt
-        today = int(today.strftime("%Y%m%d"))  # e.g. 20240201 for 1st of Feb
-        seed = today / 100_000_000
-        return f"setseed({seed})"
-
-    @classmethod
-    def __search_mixin_orderby__(cls, order):
-        extra_fields = []
-        if order == "random":
-            orderby = "<random>"
-            order = (
-                cls.id
-            )  # some field is required for groupby, so might as well use id
-
-            seed = cls.__search_mixin_daily_seed__()
-            extra_fields.append(seed)
-        elif isinstance(order, str):
-            if order.startswith("~"):
-                order = cls[order[1:]]
-                orderby = ~order
-            else:
-                order = cls[order]
-                orderby = order
-        else:
-            orderby = order
-
-        print('orderby', orderby)
-        print('groupby', (cls.gid, order))
-
-    @classmethod
-    def search(cls,
-               search: str = "",
-               limit: int = 0,
-               page: int = 1,
-               order: str | Field | typing.Literal["random"] = None,
-               builder: QueryBuilder[Self] = None,
-               ) -> QueryBuilder[Self]:
-        builder = builder or cls.select()
-
-        if order:
-            cls.__search_mixin_orderby__(order)
-
-        if search:
-            query = cls.id == 0
-            for field in cls.__settings__["search_fields"]:
-
-                if isinstance(cls[field].type, SQLCustomType):
-                    query |= cls[field] == search
-                else:
-                    # todo: there are other cases where .contains is not possible!
-                    query |= cls[field].contains(search)
-
-            builder = builder.where(query)
-
-        return builder
-
-
 class SlugMixin(Mixin):
     """
     (Opinionated) example mixin to add a 'slug' field, which depends on a user-provided other field.
@@ -190,8 +110,9 @@ class SlugMixin(Mixin):
         },
     )  # set via init subclass
 
-    def __init_subclass__(cls, slug_field: str = None, slug_suffix_length: int = 0, slug_suffix=None,
-                          **kw: Any) -> None:
+    def __init_subclass__(
+        cls, slug_field: str = None, slug_suffix_length: int = 0, slug_suffix: Optional[int] = None, **kw: Any
+    ) -> None:
         """
         Bind 'slug field' option to be used later (on_define).
 
@@ -215,10 +136,8 @@ class SlugMixin(Mixin):
         slug_suffix = slug_suffix_length or kw.get("slug_suffix", 0)
 
         # append settings:
-        cls.__settings__ = (getattr(cls, "__settings__", None) or {}) | {
-            "slug_field": slug_field,
-            "slug_suffix": slug_suffix,
-        }
+        cls.__settings__["slug_field"] = slug_field
+        cls.__settings__["slug_suffix"] = slug_suffix
 
     @classmethod
     def __on_define__(cls, db: TypeDAL) -> None:
