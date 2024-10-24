@@ -2754,7 +2754,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         metadata["pagination"] = {
             "limit": limit,
             "current_page": page,
-            "max_page": math.ceil(available / limit),
+            "max_page": math.ceil(available / limit) if limit else 1,
             "rows": available,
             "min_max": (_from, _to),
         }

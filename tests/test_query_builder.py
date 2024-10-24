@@ -273,6 +273,12 @@ def test_paginate():
     assert page_dict["next_page"] is None
     assert page_dict["prev_page"] is None
 
+    # what if no limit?
+    all_rows = TestQueryTable.join(method="left").paginate(limit=0, page=1)
+    assert all_rows.pagination["total_items"] == 5
+    assert all_rows.pagination["total_pages"] == 1
+    assert not all_rows.pagination["has_next_page"]
+
 
 def test_chunking():
     _setup_data()
