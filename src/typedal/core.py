@@ -2744,10 +2744,10 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         limit: int,
         page: int = 1,
     ) -> "QueryBuilder[T_MetaInstance]":
-        _from = limit * (page - 1)
-        _to = limit * page
-
         available = self.count()
+
+        _from = limit * (page - 1)
+        _to = (limit * page) if limit else available
 
         metadata: Metadata = {}
 

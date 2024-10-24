@@ -275,6 +275,7 @@ def test_paginate():
 
     # what if no limit?
     all_rows = TestQueryTable.join(method="left").paginate(limit=0, page=1)
+    assert len(all_rows) == 5
     assert all_rows.pagination["total_items"] == 5
     assert all_rows.pagination["total_pages"] == 1
     assert not all_rows.pagination["has_next_page"]
