@@ -8,6 +8,8 @@ from src.typedal.fields import TextField
 from src.typedal.helpers import utcnow
 from pydal.validators import IS_NOT_EMPTY
 
+from typedal.fields import TimestampField
+
 db = TypeDAL("sqlite:memory")
 
 
@@ -20,7 +22,7 @@ class Person(TypedTable):
     age = TypedField(int, default=18, requires=IS_NOT_EMPTY())
     nicknames: list[str]
 
-    ts = TypedField(dt.datetime, type="timestamp")
+    ts = TimestampField()
 
 
 assert db.person._format == "%(name)s"
