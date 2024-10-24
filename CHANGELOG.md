@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.8.3 (2024-10-24)
+
+### Fix
+
+* Paginate with limit=0 will yield all rows instead of crashing ([`76813e6`](https://github.com/trialandsuccess/TypeDAL/commit/76813e63fc2a0915de2ae5aa3df5be0254678f8b))
+
 ## v3.8.2 (2024-10-23)
 
 ### Fix
