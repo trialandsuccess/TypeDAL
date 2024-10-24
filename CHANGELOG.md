@@ -2,6 +2,13 @@
 
 <!--next-version-placeholder-->
 
+## v3.8.5 (2024-10-24)
+
+### Fix
+
+* Use right 'timestamp' field ([`2aedb02`](https://github.com/trialandsuccess/TypeDAL/commit/2aedb027b4490f8284253e9c7f427b0660b6bc13))
+* Allow specifying a field to Builder.count(...); support selecting extra fields (e.g. MyField.count()) ([`ce28a79`](https://github.com/trialandsuccess/TypeDAL/commit/ce28a7995a6d817424462f8b18383c85fa349ba4))
+
 ## v3.8.4 (2024-10-24)
 
 ### Fix
