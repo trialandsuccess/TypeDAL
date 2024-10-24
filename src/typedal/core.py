@@ -1500,7 +1500,14 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
             return None  # type: ignore
 
         inst._row = row
-        inst.__dict__.update(row)
+
+        if hasattr(row, "id"):
+            inst.__dict__.update(row)
+        else:
+            # deal with _extra (and possibly others?)
+            # Row <{actual: {}, _extra: ...}>
+            inst.__dict__.update(row[str(cls)])
+
         inst._setup_instance_methods()
         return inst
 
@@ -1828,7 +1835,22 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
         `metadata` can be any (un)structured data
         `model` is a Typed Table class
         """
-        records = records or {row.id: model(row) for row in rows}
+
+        def _get_id(row):
+            """
+            Try to find the id field in a row.
+
+            If _extra exists, the row changes:
+            <Row {'test_relationship': {'id': 1}, '_extra': {'COUNT("test_relationship"."querytable")': 8}}>
+            """
+            if idx := getattr(row, "id", None):
+                return idx
+            elif main := getattr(row, str(model), None):
+                return main.id
+            else:
+                raise NotImplementedError(f"`id` could not be found for {row}")
+
+        records = records or {_get_id(row): model(row) for row in rows}
         super().__init__(rows.db, records, rows.colnames, rows.compact, rows.response, rows.fields)
         self.model = model
         self.metadata = metadata or {}
@@ -2721,7 +2743,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         """
         yield from self.collect()
 
-    def count(self) -> int:
+    def count(self, distinct: bool = None) -> int:
         """
         Return the amount of rows matching the current query.
         """
@@ -2730,14 +2752,16 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         query = self.query
 
         for key, relation in self.relationships.items():
-            if not relation.condition or relation.join != "inner":
+            if (not relation.condition or relation.join != "inner") and not distinct:
                 continue
 
             other = relation.get_table(db)
-            other = other.with_alias(f"{key}_{hash(relation)}")
+            if not distinct:
+                # todo: can this lead to other issues?
+                other = other.with_alias(f"{key}_{hash(relation)}")
             query &= relation.condition(model, other)
 
-        return db(query).count()
+        return db(query).count(distinct)
 
     def __paginate(
         self,

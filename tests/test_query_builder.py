@@ -471,3 +471,17 @@ def test_column():
 
     assert len(rows) == 4
     assert set(rows) == {33}
+
+
+def test_collect_with_extra_fields():
+    _setup_data()
+    builder = TestRelationship.select(TestRelationship.id, TestRelationship.name, TestRelationship.querytable.count())
+
+    assert builder.execute()
+
+    row = builder.first_or_fail()
+
+    assert row.id
+    assert row.name
+    assert row._extra
+    assert row[TestRelationship.querytable.count()]

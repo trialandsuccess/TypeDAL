@@ -43,7 +43,7 @@ class Role(TypedTable, TaggableMixin):
 @db.define()
 class User(TypedTable, TaggableMixin):
     gid = TypedField(str, default=uuid4)
-    name: str
+    name: TypedField[str]
     roles: TypedField[list[Role]]
     main_role = TypedField(Role)
     extra_roles = TypedField(list[Role])
@@ -109,6 +109,11 @@ def _setup_data():
             {"name": "Editor 1", "roles": [reader, writer, editor], "main_role": editor, "extra_roles": []},
         ]
     )
+
+    # no relationships:
+    new_author = User.insert(name="Untagged Author", roles=[], main_role=writer, extra_roles=[])
+    untagged1 = Article.insert(title="Untagged Article 1", author=new_author)
+    untagged2 = Article.insert(title="Untagged Article 2", author=new_author)
 
     # articles
 
@@ -184,11 +189,11 @@ def test_typedal_way():
 
     all_articles = Article.join().collect().as_dict()
 
-    assert all_articles[1]["final_editor"]["name"] == "Editor 1"
-    assert all_articles[2]["secondary_author"]["name"] == "Editor 1"
+    assert all_articles[3]["final_editor"]["name"] == "Editor 1"
+    assert all_articles[4]["secondary_author"]["name"] == "Editor 1"
 
-    assert all_articles[1]["secondary_author"] is None
-    assert all_articles[2]["final_editor"] is None
+    assert all_articles[3]["secondary_author"] is None
+    assert all_articles[4]["final_editor"] is None
 
     assert Article.first_or_fail()
 
@@ -244,7 +249,7 @@ def test_typedal_way():
 
     users = User.join().collect()
 
-    assert len(users) == 3  # reader, writer, editor
+    assert len(users) == 4  # reader, writer, editor, untagged
 
     # get by id:
     reader = users[1]
@@ -533,6 +538,47 @@ def test_caching_dependencies():
 
 def test_illegal():
     with pytest.raises(ValueError), pytest.warns(UserWarning):
-
         class HasRelationship:
             something = relationship("...", condition=lambda: 1, on=lambda: 2)
+
+
+
+def test_join_with_select():
+    _setup_data()
+
+    builder = User.select(User.id, User.gid, Article.id, Article.gid).where(id=2).join("articles")
+    user = builder.first_or_fail()
+
+    assert user.id
+    assert user.gid
+    assert not user.name
+    assert user.articles[0].id
+    assert user.articles[0].gid
+    assert not hasattr(user.articles[0], "title")
+
+    for user in builder.paginate(limit=1, page=1):
+        assert user.id
+        assert user.gid
+        assert not user.name
+        assert user.articles[0].id
+        assert user.articles[0].gid
+        assert not hasattr(user.articles[0], "title")
+
+    for user in builder.collect():
+        assert user.id
+        assert user.gid
+        assert not user.name
+        assert user.articles[0].id
+        assert user.articles[0].gid
+        assert not hasattr(user.articles[0], "title")
+
+
+def test_count_with_join():
+    _setup_data()
+
+    # 0. count via select:
+    row = User.select(User.id, User.gid, Article.id, Article.gid).where(id=4).join("articles").first_or_fail()
+    assert len(row.articles) == 2
+
+    assert User.where(id=4).join("articles").count(User.id) == 1
+    assert User.where(id=4).join("articles").count(Article.id) == 2
