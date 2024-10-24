@@ -542,6 +542,39 @@ def test_illegal():
             something = relationship("...", condition=lambda: 1, on=lambda: 2)
 
 
+def test_left_join_must_have():
+    _setup_data()
+
+    user = User.join("articles").first_or_fail()
+
+    assert user.id == 1
+    assert not user.articles
+
+    # switch to inner instead of left to get first user that has articles:
+    user = User.where(User.name.ilike('%Untagged%')).join("articles", method="inner").first_or_fail()
+
+    assert user.id == 4
+    assert len(user.articles) == 2
+
+    query_left = Article.join("tags", method="left").to_sql()
+    assert "CROSS JOIN" not in query_left, query_left
+    query_inner = Article.join("tags", method="inner").to_sql()
+    assert "CROSS JOIN" not in query_inner, query_inner
+
+    # left vs inner on an .on:
+    article = Article.join("tags", method="left").first_or_fail()
+    assert article.id == 1
+    assert not article.tags
+
+    article = Article.join("tags", method="inner").first_or_fail()
+    assert article.id == 3
+    assert len(article.tags) == 2
+
+    # use .has instead:
+    # article = Article.has("tags").join("tags").first_or_fail()
+    #
+    # assert article.tags
+
 
 def test_join_with_select():
     _setup_data()

@@ -150,7 +150,8 @@ class Relationship(typing.Generic[To_Type]):
 
         self._type = _type
         self.condition = condition
-        self.join = "left" if on else join  # .on is always left join!
+
+        self.join = join or DEFAULT_JOIN_OPTION
         self.on = on
 
         if args := typing.get_args(_type):
@@ -1055,6 +1056,12 @@ class TableMeta(type):
         See QueryBuilder.join!
         """
         return QueryBuilder(self).join(*fields, on=on, condition=condition, method=method)
+
+    def has(self: Type[T_MetaInstance], *fields: str | Type["TypedTable"]):
+        """
+        See QueryBuilder.has!
+        """
+        return QueryBuilder(self).has(*fields)
 
     def collect(self: Type[T_MetaInstance], verbose: bool = False) -> "TypedRows[T_MetaInstance]":
         """
@@ -2362,6 +2369,35 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
         return self._extend(relationships=relationships)
 
+    # def has(
+    #     self,
+    #     *fields: str | Type[TypedTable],
+    # ) -> "QueryBuilder[T_MetaInstance]":
+    #     """
+    #     Performs a join, but skips entries without that relationship.
+    #
+    #     Also works for left joins.
+    #     """
+    #     relationships = self.model.get_relationships()
+    #     for field in fields:
+    #         table = self.model._table
+    #         db = table._db
+    #         x = table.with_alias("inner_join_left")
+    #         row = db(
+    #             x
+    #         ).select(
+    #             join=relationships[str(field)].on(
+    #                 x,
+    #                 db.tag.with_alias("inner_join_right"),
+    #             )
+    #         )
+    #
+    #         print(
+    #             row
+    #         )
+    #
+    #     return self
+
     def cache(
         self, *deps: Any, expires_at: Optional[dt.datetime] = None, ttl: Optional[int | dt.timedelta] = None
     ) -> "QueryBuilder[T_MetaInstance]":
@@ -2582,12 +2618,19 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         # query = self._update_query_for_inner(db, model, query)
         join = []
         for key, relation in self.relationships.items():
-            if not relation.condition or relation.join != "inner":
+            if relation.join != "inner" or not (relation.condition or relation.on):
                 continue
 
             other = relation.get_table(db)
-            other = other.with_alias(f"{key}_{hash(relation)}")
-            join.append(other.on(relation.condition(model, other)))
+
+            if relation.condition:
+                other = other.with_alias(f"{key}_{hash(relation)}")
+                join.append(other.on(relation.condition(model, other)))
+            elif relation.on:
+                on = relation.on(model, other)
+                if not isinstance(on, list):  # pragma: no cover
+                    on = [on]
+                join.extend(on)
 
         if limitby := select_kwargs.pop("limitby", ()):
 
@@ -2626,14 +2669,14 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
                 # fields of other selected, but required ID is missing.
                 select_args.append(other.id)
 
-            if relation.on:
+            if method == "left" and relation.on:
                 # if it has a .on, it's always a left join!
                 on = relation.on(model, other)
                 if not isinstance(on, list):  # pragma: no cover
                     on = [on]
 
                 left.extend(on)
-            elif method == "left":
+            elif method == "left" and relation.condition:
                 # .on not given, generate it:
                 other = other.with_alias(f"{key}_{hash(relation)}")
                 condition = typing.cast(Query, relation.condition(model, other))
@@ -2641,8 +2684,6 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
             else:
                 # else: inner join (handled earlier)
                 other = other.with_alias(f"{key}_{hash(relation)}")  # only for replace
-                # other = other.with_alias(f"{key}_{hash(relation)}")
-                # query &= relation.condition(model, other)
 
             # if no fields of 'other' are included, add other.ALL
             # else: only add other.id if missing
@@ -2657,6 +2698,8 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
                 )
 
                 select_args = select_fields.split(", ")
+
+            print(select_args)
 
         select_kwargs["left"] = left
         return query, select_args
