@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.9.0 (2024-10-25)
+
+### Feature
+
+* Add `condition_and` to .join so you can add additional requirements to inner joins ([`0ae688b`](https://github.com/trialandsuccess/TypeDAL/commit/0ae688ba01f421c70a660b5bb5d9672484494aa4))
+
 ## v3.8.5 (2024-10-24)
 
 ### Fix
