@@ -295,6 +295,7 @@ def test_typedal_way():
 
 
 def test_reprs():
+    _setup_data()
     assert "Relationship:left on=" in repr(Article.tags)
 
     article = Article.first()
@@ -322,6 +323,16 @@ def test_reprs():
     assert empty.get_table(db) == db.new
 
     assert empty.get_table_name() == "new"
+
+    relation = Article.join("author").relationships["author"]
+
+    assert "AND" not in repr(relation)
+
+    relation = Article.join("author",
+                            condition_and=lambda article, author: author.name != "Hank"
+                            ).relationships["author"]
+
+    assert "AND" in repr(relation) and "Hank" in repr(relation)
 
 
 @db.define()
@@ -353,6 +364,33 @@ def test_relationship_detection():
     assert user_table_relationships["roles"].join == "left"
     assert user_table_relationships["main_role"].join == "inner"
     assert user_table_relationships["extra_roles"].join == "left"
+
+
+def test_join_with_different_condition():
+    _setup_data()
+
+    role_with_users = Role.join(
+        "users",
+        method="inner",
+    ).first()
+
+    assert role_with_users.users
+    assert role_with_users.users[0].name == "Reader 1"
+
+    role_with_users = Role.join(
+        "users", method="inner", condition_and=lambda role, user: ~user.name.like("Reader%")
+    ).first()
+
+    assert role_with_users.users
+    assert role_with_users.users[0].name != "Reader 1"
+
+    # left:
+    role_with_users = Role.join(
+        "users", method="left", condition_and=lambda role, user: ~user.name.like("Reader%")
+    ).first()
+
+    assert role_with_users.users
+    assert role_with_users.users[0].name != "Reader 1"
 
 
 def test_caching():
@@ -538,9 +576,9 @@ def test_caching_dependencies():
 
 def test_illegal():
     with pytest.raises(ValueError), pytest.warns(UserWarning):
+
         class HasRelationship:
             something = relationship("...", condition=lambda: 1, on=lambda: 2)
-
 
 
 def test_join_with_select():

@@ -130,6 +130,7 @@ class Relationship(typing.Generic[To_Type]):
     _type: To_Type
     table: Type["TypedTable"] | type | str
     condition: Condition
+    condition_and: Condition
     on: OnQuery
     multiple: bool
     join: JOIN_OPTIONS
@@ -140,6 +141,7 @@ class Relationship(typing.Generic[To_Type]):
         condition: Condition = None,
         join: JOIN_OPTIONS = None,
         on: OnQuery = None,
+        condition_and: Condition = None,
     ):
         """
         Should not be called directly, use relationship() instead!
@@ -152,6 +154,7 @@ class Relationship(typing.Generic[To_Type]):
         self.condition = condition
         self.join = "left" if on else join  # .on is always left join!
         self.on = on
+        self.condition_and = condition_and
 
         if args := typing.get_args(_type):
             self.table = unwrap_type(args[0])
@@ -172,6 +175,7 @@ class Relationship(typing.Generic[To_Type]):
             update.get("condition") or self.condition,
             update.get("join") or self.join,
             update.get("on") or self.on,
+            update.get("condition_and") or self.condition_and,
         )
 
     def __repr__(self) -> str:
@@ -180,6 +184,10 @@ class Relationship(typing.Generic[To_Type]):
         """
         if callback := self.condition or self.on:
             src_code = inspect.getsource(callback).strip()
+
+            if c_and := self.condition_and:
+                and_code = inspect.getsource(c_and).strip()
+                src_code += " AND " + and_code
         else:
             cls_name = self._type if isinstance(self._type, str) else self._type.__name__  # type: ignore
             src_code = f"to {cls_name} (missing condition)"
@@ -1050,11 +1058,12 @@ class TableMeta(type):
         method: JOIN_OPTIONS = None,
         on: OnQuery | list[Expression] | Expression = None,
         condition: Condition = None,
+        condition_and: Condition = None,
     ) -> "QueryBuilder[T_MetaInstance]":
         """
         See QueryBuilder.join!
         """
-        return QueryBuilder(self).join(*fields, on=on, condition=condition, method=method)
+        return QueryBuilder(self).join(*fields, on=on, condition=condition, method=method, condition_and=condition_and)
 
     def collect(self: Type[T_MetaInstance], verbose: bool = False) -> "TypedRows[T_MetaInstance]":
         """
@@ -2317,6 +2326,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         method: JOIN_OPTIONS = None,
         on: OnQuery | list[Expression] | Expression = None,
         condition: Condition = None,
+        condition_and: Condition = None,
     ) -> "QueryBuilder[T_MetaInstance]":
         """
         Include relationship fields in the result.
@@ -2326,8 +2336,13 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
         By default, the `method` defined in the relationship is used.
             This can be overwritten with the `method` keyword argument (left or inner)
+
+        `condition_and` can be used to add extra conditions to an inner join.
         """
         # todo: allow limiting amount of related rows returned for join?
+        # todo: it would be nice if 'fields' could be an actual relationship
+        #   (Article.tags = list[Tag]) and you could change the .condition and .on
+        #  this could deprecate condition_and
 
         relationships = self.model.get_relationships()
 
@@ -2340,7 +2355,9 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
             if isinstance(condition, pydal.objects.Query):
                 condition = as_lambda(condition)
 
-            relationships = {str(fields[0]): Relationship(fields[0], condition=condition, join=method)}
+            relationships = {
+                str(fields[0]): Relationship(fields[0], condition=condition, join=method, condition_and=condition_and)
+            }
         elif on:
             if len(fields) != 1:
                 raise ValueError("join(field, on=...) can only be used with exactly one field!")
@@ -2350,15 +2367,17 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
             if isinstance(on, list):
                 on = as_lambda(on)
-            relationships = {str(fields[0]): Relationship(fields[0], on=on, join=method)}
+            relationships = {str(fields[0]): Relationship(fields[0], on=on, join=method, condition_and=condition_and)}
 
         else:
             if fields:
                 # join on every relationship
-                relationships = {str(k): relationships[str(k)] for k in fields}
+                relationships = {str(k): relationships[str(k)].clone(condition_and=condition_and) for k in fields}
 
             if method:
-                relationships = {str(k): r.clone(join=method) for k, r in relationships.items()}
+                relationships = {
+                    str(k): r.clone(join=method, condition_and=condition_and) for k, r in relationships.items()
+                }
 
         return self._extend(relationships=relationships)
 
@@ -2579,7 +2598,6 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
         metadata["relationships"] = set(self.relationships.keys())
 
-        # query = self._update_query_for_inner(db, model, query)
         join = []
         for key, relation in self.relationships.items():
             if not relation.condition or relation.join != "inner":
@@ -2587,7 +2605,11 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
             other = relation.get_table(db)
             other = other.with_alias(f"{key}_{hash(relation)}")
-            join.append(other.on(relation.condition(model, other)))
+            condition = relation.condition(model, other)
+            if callable(relation.condition_and):
+                condition &= relation.condition_and(model, other)
+
+            join.append(other.on(condition))
 
         if limitby := select_kwargs.pop("limitby", ()):
 
@@ -2637,12 +2659,12 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
                 # .on not given, generate it:
                 other = other.with_alias(f"{key}_{hash(relation)}")
                 condition = typing.cast(Query, relation.condition(model, other))
+                if callable(relation.condition_and):
+                    condition &= relation.condition_and(model, other)
                 left.append(other.on(condition))
             else:
                 # else: inner join (handled earlier)
                 other = other.with_alias(f"{key}_{hash(relation)}")  # only for replace
-                # other = other.with_alias(f"{key}_{hash(relation)}")
-                # query &= relation.condition(model, other)
 
             # if no fields of 'other' are included, add other.ALL
             # else: only add other.id if missing

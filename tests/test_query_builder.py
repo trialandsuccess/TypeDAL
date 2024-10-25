@@ -400,6 +400,7 @@ def test_complex_join():
 
 
 def test_reprs_and_bool():
+    _setup_data()
     assert TestQueryTable.where(id=1)
     assert not TestQueryTable.where(id=101)
 
