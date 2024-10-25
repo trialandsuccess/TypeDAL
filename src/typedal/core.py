@@ -2230,9 +2230,19 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
     def __bool__(self) -> bool:
         """
-        Querybuilder is truthy if it has rows.
+        Querybuilder is truthy if it has any conditions.
         """
-        return self.count() > 0
+        table = self.model._ensure_table_defined()
+        default_query = typing.cast(Query, table.id > 0)
+        return any(
+            [
+                self.query != default_query,
+                self.select_args,
+                self.select_kwargs,
+                self.relationships,
+                self.metadata,
+            ]
+        )
 
     def _extend(
         self,

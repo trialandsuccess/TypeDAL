@@ -401,8 +401,15 @@ def test_complex_join():
 
 def test_reprs_and_bool():
     _setup_data()
-    assert TestQueryTable.where(id=1)
-    assert not TestQueryTable.where(id=101)
+
+    # NOTE: This logic changed: any 'empty' query table is False, and adding any conditions make it True.
+    empty = TestQueryTable.where()
+    notempty = TestQueryTable.where(id=1)
+    assert (empty or notempty) is notempty
+    assert (notempty or empty) is notempty
+    assert not empty
+    assert notempty
+    assert TestQueryTable.where(id=10000000000)
 
     assert repr(TestQueryTable.where(id=1))
     assert str(TestQueryTable.where(id=1))
