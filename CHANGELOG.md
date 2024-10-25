@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.9.1 (2024-10-25)
+
+### Fix
+
+* Bool(QueryBuilder) should NOT look at the data but if any filters were applied ([`962ddf3`](https://github.com/trialandsuccess/TypeDAL/commit/962ddf37f5d1ac014b73fd6349099100cc7efb5f))
+
 ## v3.9.0 (2024-10-25)
 
 ### Feature
