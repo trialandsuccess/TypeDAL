@@ -414,6 +414,23 @@ def test_hooks(capsys):
     assert "before delete" in captured.out
     assert "after delete" in captured.out
 
+    idx = db.hooked_table.insert(name="Steve 2")
+    steve2 = db.hooked_table(idx)
+    captured = capsys.readouterr()
+
+    assert "before insert" in captured.out
+    assert "after insert 2" in captured.out
+
+    steve2.update_record(name="Not Steve")
+    captured = capsys.readouterr()
+    assert "before update" in captured.out
+    assert "after update" in captured.out
+
+    steve2.delete_record()
+    captured = capsys.readouterr()
+    assert "before delete" in captured.out
+    assert "after delete" in captured.out
+
 
 def test_hooks_v2(capsys):
     @db.define()
@@ -441,6 +458,23 @@ def test_hooks_v2(capsys):
     assert "after update" in captured.out
 
     steve.delete_record()
+    captured = capsys.readouterr()
+    assert "before delete" in captured.out
+    assert "after delete" in captured.out
+
+    idx = db.hooked_table_v2.insert(name="Steve 2")
+    steve2 = db.hooked_table_v2(idx)
+    captured = capsys.readouterr()
+
+    assert "before insert" in captured.out
+    assert "after insert 2" in captured.out
+
+    steve2.update_record(name="Not Steve")
+    captured = capsys.readouterr()
+    assert "before update" in captured.out
+    assert "after update" in captured.out
+
+    steve2.delete_record()
     captured = capsys.readouterr()
     assert "before delete" in captured.out
     assert "after delete" in captured.out
