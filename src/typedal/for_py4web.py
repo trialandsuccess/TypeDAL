@@ -2,9 +2,13 @@
 ONLY USE IN COMBINATION WITH PY4WEB!
 """
 
+import typing
+
 import threadsafevariable
+from configuraptor.abs import AnyType
 from py4web.core import ICECUBE
 from py4web.core import Fixture as _Fixture
+from pydal.base import MetaDAL, hashlib_md5
 
 from .core import TypeDAL
 from .types import AnyDict
@@ -17,7 +21,21 @@ class Fixture(_Fixture):  # type: ignore
     """
 
 
-class DAL(TypeDAL, Fixture):  # pragma: no cover
+class PY4WEB_DAL_SINGLETON(MetaDAL):
+    _instances: typing.ClassVar[typing.MutableMapping[str, AnyType]] = {}
+
+    def __call__(cls, uri: str, *args: typing.Any, **kwargs: typing.Any) -> AnyType:
+        db_uid = kwargs.get("db_uid", hashlib_md5(repr(uri)).hexdigest())
+        if db_uid not in cls._instances:
+            cls._instances[db_uid] = super().__call__(*args, **kwargs)
+
+        return cls._instances[db_uid]
+
+    def _clear(cls) -> None:
+        cls._instances.clear()
+
+
+class DAL(TypeDAL, Fixture, metaclass=PY4WEB_DAL_SINGLETON):  # pragma: no cover
     """
     Fixture similar to the py4web pydal fixture, but for typedal.
     """

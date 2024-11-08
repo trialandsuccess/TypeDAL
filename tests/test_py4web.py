@@ -1,4 +1,6 @@
 import json
+import tempfile
+from contextlib import chdir
 
 from pydal.validators import IS_EMAIL, IS_NOT_IN_DB
 
@@ -44,3 +46,23 @@ def test_auth_user():
 
     assert isinstance(requirements[0], IS_EMAIL)
     assert isinstance(requirements[1], IS_NOT_IN_DB)
+
+
+def test_py4web_dal_singleton():
+    with tempfile.TemporaryDirectory() as d:
+        with chdir(d):
+            # note: typedal caching is disabled here because otherwise the cache table might send logs to {d}/log.sql
+            # which can lead to problems in other tests :(
+            db_1a = DAL("sqlite:memory", enable_typedal_caching=False)
+            db_1b = DAL("sqlite:memory", enable_typedal_caching=False)
+
+            db_2a = DAL("sqlite://test_py4web_dal_singleton", folder=d, enable_typedal_caching=False)
+            db_2b = DAL("sqlite://test_py4web_dal_singleton", folder=d, enable_typedal_caching=False)
+
+            assert db_1a is db_1b
+            assert db_2a is db_2b
+            assert db_1a is not db_2a
+            assert db_1b is not db_2b
+
+    # reset singletons for later use:
+    DAL._clear()
