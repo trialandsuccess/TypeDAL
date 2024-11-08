@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.9.2 (2024-11-08)
+
+### Fix
+
+* Py4web-specific DAL now provides a singleton per db_uid, so different apps using shared typedal classes share a db instance, leading to less weird behavior (e.g. on `db.commit()`) ([`a2af3d5`](https://github.com/trialandsuccess/TypeDAL/commit/a2af3d52a3f14ddddd40ec326df9c2705ef26eca))
+
 ## v3.9.1 (2024-10-25)
 
 ### Fix
