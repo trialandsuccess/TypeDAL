@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.9.3 (2024-11-08)
+
+### Fix
+
+* **p4w:** Actually passing the 'uri' to connect to a database in singleton mode would be pretty useful no? ([`e29a0bb`](https://github.com/trialandsuccess/TypeDAL/commit/e29a0bbb1b3f954d7f8a3c13704952f8ec42a799))
+
 ## v3.9.2 (2024-11-08)
 
 ### Fix
