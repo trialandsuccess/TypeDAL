@@ -60,9 +60,20 @@ def test_py4web_dal_singleton():
             db_2b = DAL("sqlite://test_py4web_dal_singleton", folder=d, enable_typedal_caching=False)
 
             assert db_1a is db_1b
+            assert db_1a._uri == db_1b._uri
+            assert db_1a._db_uid == db_1b._db_uid
+            
             assert db_2a is db_2b
+            assert db_2a._uri == db_2b._uri
+            assert db_2a._db_uid == db_2b._db_uid
+            
             assert db_1a is not db_2a
+            assert db_1a._uri != db_2a._uri
+            assert db_1a._db_uid != db_2a._db_uid
+            
             assert db_1b is not db_2b
-
+            assert db_1b._uri != db_2b._uri
+            assert db_1b._db_uid != db_2b._db_uid
+            
     # reset singletons for later use:
     DAL._clear()

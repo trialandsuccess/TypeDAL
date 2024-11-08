@@ -27,7 +27,7 @@ class PY4WEB_DAL_SINGLETON(MetaDAL):
     def __call__(cls, uri: str, *args: typing.Any, **kwargs: typing.Any) -> AnyType:
         db_uid = kwargs.get("db_uid", hashlib_md5(repr(uri)).hexdigest())
         if db_uid not in cls._instances:
-            cls._instances[db_uid] = super().__call__(*args, **kwargs)
+            cls._instances[db_uid] = super().__call__(uri, *args, **kwargs)
 
         return cls._instances[db_uid]
 
