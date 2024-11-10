@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.9.4 (2024-11-10)
+
+### Fix
+
+* **p4w:** Calling `for_py4web.DAL()` without any arguments (to load from config) should work even with singleton ([`16f9e68`](https://github.com/trialandsuccess/TypeDAL/commit/16f9e681eaac2fccd06a110031c0d55261a0a7e9))
+
 ## v3.9.3 (2024-11-08)
 
 ### Fix
