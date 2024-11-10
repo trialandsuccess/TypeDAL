@@ -24,8 +24,8 @@ class Fixture(_Fixture):  # type: ignore
 class PY4WEB_DAL_SINGLETON(MetaDAL):
     _instances: typing.ClassVar[typing.MutableMapping[str, AnyType]] = {}
 
-    def __call__(cls, uri: str, *args: typing.Any, **kwargs: typing.Any) -> AnyType:
-        db_uid = kwargs.get("db_uid", hashlib_md5(repr(uri)).hexdigest())
+    def __call__(cls, uri: typing.Optional[str] = None, *args: typing.Any, **kwargs: typing.Any) -> AnyType:
+        db_uid = kwargs.get("db_uid", hashlib_md5(repr(uri or (args, kwargs))).hexdigest())
         if db_uid not in cls._instances:
             cls._instances[db_uid] = super().__call__(uri, *args, **kwargs)
 
