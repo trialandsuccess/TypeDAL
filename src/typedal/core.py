@@ -580,23 +580,13 @@ class TypeDAL(pydal.DAL):  # type: ignore
         #   - don't add TypedalCacheDependency entry
         #   - don't invalidate other item on new row of this type
 
-        # when __future__.annotations is implemented, cls.__annotations__ will not work anymore as below.
-        # proper way to handle this would be (but gives error right now due to Table implementing magic methods):
-        # typing.get_type_hints(cls, globalns=None, localns=None)
-        # -> ERR e.g. `pytest -svxk cli` -> name 'BestFriend' is not defined
-
-        # dirty way (with evil eval):
-        # [eval(v) for k, v in cls.__annotations__.items()]
-        # this however also stops working when variables outside this scope or even references to other
-        # objects are used. So for now, this package will NOT work when from __future__ import annotations is used,
-        # and might break in the future, when this annotations behavior is enabled by default.
-
         # non-annotated variables have to be passed to define_table as kwargs
         full_dict = all_dict(cls)  # includes properties from parents (e.g. useful for mixins)
 
         tablename = self.to_snake(cls.__name__)
-        # grab annotations of cls and it's parents:
-        annotations = all_annotations(cls)
+        # grab annotations of cls and its parents:
+        annotations = all_annotations(cls)  # has already resolved string/forward references in 3.14+ but not older!
+
         # extend with `prop = TypedField()` 'annotations':
         annotations |= {k: typing.cast(type, v) for k, v in full_dict.items() if is_typed_field(v)}
         # remove internal stuff:
@@ -610,16 +600,12 @@ class TypeDAL(pydal.DAL):  # type: ignore
 
         fields = {fname: self._to_field(fname, ftype) for fname, ftype in annotations.items()}
 
-        # ! dont' use full_dict here:
+        # ! don't use full_dict here:
         other_kwargs = kwargs | {
             k: v for k, v in cls.__dict__.items() if k not in annotations and not k.startswith("_")
         }  # other_kwargs was previously used to pass kwargs to typedal, but use @define(**kwargs) for that.
         #    now it's only used to extract relationships from the object.
         #    other properties of the class (incl methods) should not be touched
-
-        # for key in typedfields.keys() - full_dict.keys():
-        #     # typed fields that don't haven't been added to the object yet
-        #     setattr(cls, key, typedfields[key])
 
         for key, field in typedfields.items():
             # clone every property so it can be re-used across mixins:
