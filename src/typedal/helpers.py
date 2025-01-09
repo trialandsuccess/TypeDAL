@@ -43,14 +43,17 @@ def reversed_mro(cls: type) -> typing.Iterable[type]:
     return reversed(getattr(cls, "__mro__", []))
 
 
-def _cls_annotations(c: type):  # pragma: no cover
+def _cls_annotations(c: type) -> dict[str, type]:  # pragma: no cover
     """
     Functions to get the annotations of a class (excl inherited, use _all_annotations for that).
 
     Uses `annotationlib` if available (since 3.14) and if so, resolves forward references immediately.
     """
     if annotationlib:
-        return annotationlib.get_annotations(c, format=annotationlib.Format.VALUE, eval_str=True)
+        return typing.cast(
+            dict[str, type],
+            annotationlib.get_annotations(c, format=annotationlib.Format.VALUE, eval_str=True)
+        )
     else:
         return getattr(c, "__annotations__", {})
 
@@ -63,15 +66,6 @@ def _all_annotations(cls: type) -> ChainMap[str, type]:
     # chainmap reverses the iterable, so reverse again beforehand to keep order normally:
 
     return ChainMap(*(_cls_annotations(c) for c in reversed_mro(cls)))
-
-
-# def _all_annotations(cls: type) -> ChainMap[str, type]:
-#     """
-#     Returns a dictionary-like ChainMap that includes annotations for all \
-#     attributes defined in cls or inherited from superclasses.
-#     """
-#     # chainmap reverses the iterable, so reverse again beforehand to keep order normally:
-#     return ChainMap(*(getattr(c, "__annotations__", {}) for c in reversed_mro(cls)))
 
 
 def all_dict(cls: type) -> AnyDict:

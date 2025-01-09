@@ -103,12 +103,14 @@ def evaluate_forward_reference_312(fw_ref: ForwardRef) -> type:  # pragma: no co
 
     Variant for python 3.12 and below
     """
-
-    return fw_ref._evaluate(
-        localns=locals(),
-        globalns=globals(),
-        recursive_guard=frozenset(),
-    )  # type: ignore
+    return typing.cast(
+        type,
+        fw_ref._evaluate(
+            localns=locals(),
+            globalns=globals(),
+            recursive_guard=frozenset(),
+        )
+    )
 
 
 def evaluate_forward_reference_313(fw_ref: ForwardRef) -> type:  # pragma: no cover
@@ -117,11 +119,14 @@ def evaluate_forward_reference_313(fw_ref: ForwardRef) -> type:  # pragma: no co
 
     Variant for python 3.13
     """
-    return fw_ref._evaluate(
-        localns=locals(),
-        globalns=globals(),
-        recursive_guard=frozenset(),
-        type_params=(),  # suggested since 3.13 (warning) and not supported before. Mandatory after 1.15!
+    return typing.cast(
+        type,
+        fw_ref._evaluate(
+            localns=locals(),
+            globalns=globals(),
+            recursive_guard=frozenset(),
+            type_params=(),  # suggested since 3.13 (warning) and not supported before. Mandatory after 1.15!
+        )
     )
 
 
@@ -131,14 +136,17 @@ def evaluate_forward_reference_314(fw_ref: ForwardRef) -> type:  # pragma: no co
 
     Variant for python 3.14 (and hopefully above)
     """
-    return fw_ref.evaluate(
-        globals=globals(),
-        locals=locals(),
-        type_params=(),
+    return typing.cast(
+        type,
+        fw_ref.evaluate(
+            globals=globals(),
+            locals=locals(),
+            type_params=(),
+        )
     )
 
 
-def evaluate_forward_reference(fw_ref: ForwardRef):  # pragma: no cover
+def evaluate_forward_reference(fw_ref: ForwardRef) -> type:  # pragma: no cover
     """
     Extract the original type from a forward reference string.
 
@@ -194,8 +202,8 @@ def is_typed_field(cls: Any) -> typing.TypeGuard["TypedField[Any]"]:
     """
     return (
         isinstance(cls, TypedField)
-        or isinstance(typing.get_origin(cls), type)
-        and issubclass(typing.get_origin(cls), TypedField)
+        or (isinstance(typing.get_origin(cls), type)
+        and issubclass(typing.get_origin(cls), TypedField))
     )
 
 
@@ -1331,9 +1339,9 @@ class TypedField(Expression, typing.Generic[T_Value]):  # pragma: no cover
 
     def __init__(
         self,
-        _type: Type[T_Value] | types.UnionType = str,
+        _type: Type[T_Value] | types.UnionType = str, # type: ignore
         /,
-        **settings: Unpack[FieldSettings],  # type: ignore
+        **settings: Unpack[FieldSettings],
     ) -> None:
         """
         Typed version of pydal.Field, which will be converted to a normal Field in the background.
