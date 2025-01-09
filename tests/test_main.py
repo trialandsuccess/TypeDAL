@@ -1,4 +1,5 @@
 import re
+import sys
 from sqlite3 import IntegrityError
 
 import pydal
@@ -488,3 +489,24 @@ def test_try():
 
     with pytest.warns(RuntimeWarning):
         assert db.try_define(SomeTableToRetry, verbose=True)
+
+
+def test_forward_reference_class_314():
+    if sys.version_info.minor < 14:
+        return
+
+    class WithForwardRef(TypedTable):
+        fwd: Future
+
+    class WithFakeRef(TypedTable):
+        fwd: Fake
+
+    class Future(TypedTable): ...
+
+    # note: this still has to be defined first because otherwise pydal can't create a database relation!:
+    assert db.define(Future)
+
+    assert db.define(WithForwardRef)
+
+    with pytest.raises(NameError):
+        assert db.define(WithFakeRef)

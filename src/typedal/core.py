@@ -11,6 +11,7 @@ import math
 import sys
 import types
 import typing
+import typing as t
 import warnings
 from collections import defaultdict
 from copy import copy
@@ -26,6 +27,7 @@ from pydal.objects import Row
 from pydal.objects import Table as _Table
 from typing_extensions import Self, Unpack
 
+# from .annotations import resolve_annotation
 from .config import TypeDALConfig, load_config
 from .helpers import (
     DummyQuery,
@@ -63,6 +65,13 @@ from .types import (
     _Types,
 )
 
+try:
+    # python 3.14+
+    from annotationlib import ForwardRef
+except ImportError:  # pragma: no cover
+    # python 3.13-
+    from typing import ForwardRef
+
 # use typing.cast(type, ...) to make mypy happy with unions
 T_annotation = Type[Any] | types.UnionType
 T_Query = typing.Union["Table", Query, bool, None, "TypedTable", Type["TypedTable"]]
@@ -82,6 +91,99 @@ BASIC_MAPPINGS: dict[T_annotation, str] = {
     dt.time: "time",
     dt.datetime: "datetime",
 }
+
+
+# note: these functions can not be moved to a different file,
+#  because then they will have different globals and it breaks!
+
+
+def evaluate_forward_reference_312(fw_ref: ForwardRef) -> type:  # pragma: no cover
+    """
+    Extract the original type from a forward reference string.
+
+    Variant for python 3.12 and below
+    """
+
+    return fw_ref._evaluate(
+        localns=locals(),
+        globalns=globals(),
+        recursive_guard=frozenset(),
+    )  # type: ignore
+
+
+def evaluate_forward_reference_313(fw_ref: ForwardRef) -> type:  # pragma: no cover
+    """
+    Extract the original type from a forward reference string.
+
+    Variant for python 3.13
+    """
+    return fw_ref._evaluate(
+        localns=locals(),
+        globalns=globals(),
+        recursive_guard=frozenset(),
+        type_params=(),  # suggested since 3.13 (warning) and not supported before. Mandatory after 1.15!
+    )
+
+
+def evaluate_forward_reference_314(fw_ref: ForwardRef) -> type:  # pragma: no cover
+    """
+    Extract the original type from a forward reference string.
+
+    Variant for python 3.14 (and hopefully above)
+    """
+    return fw_ref.evaluate(
+        globals=globals(),
+        locals=locals(),
+        type_params=(),
+    )
+
+
+def evaluate_forward_reference(fw_ref: ForwardRef):  # pragma: no cover
+    """
+    Extract the original type from a forward reference string.
+
+    Automatically chooses strategy based on current Python version.
+    """
+    if sys.version_info.minor < 13:
+        return evaluate_forward_reference_312(fw_ref)
+    elif sys.version_info.minor == 13:
+        return evaluate_forward_reference_313(fw_ref)
+    else:
+        return evaluate_forward_reference_314(fw_ref)
+
+
+def resolve_annotation_313(ftype: str) -> type:  # pragma: no cover
+    """
+    Resolve an annotation that's in string representation.
+
+    Variant for Python 3.13
+    """
+    fw_ref: ForwardRef = t.get_args(t.Type[ftype])[0]
+    return evaluate_forward_reference(fw_ref)
+
+
+def resolve_annotation_314(ftype: str) -> type:  # pragma: no cover
+    """
+    Resolve an annotation that's in string representation.
+
+    Variant for Python 3.14 + using annotationlib
+    """
+    fw_ref = ForwardRef(ftype)
+    return evaluate_forward_reference(fw_ref)
+
+
+def resolve_annotation(ftype: str) -> type:  # pragma: no cover
+    """
+    Resolve an annotation that's in string representation.
+
+    Automatically chooses strategy based on current Python version.
+    """
+    assert sys.version_info.major == 3, "Only python 3 is supported."
+
+    if sys.version_info.minor <= 13:  # pragma: no cover
+        return resolve_annotation_313(ftype)
+    else:  # pragma: no cover
+        return resolve_annotation_314(ftype)
 
 
 def is_typed_field(cls: Any) -> typing.TypeGuard["TypedField[Any]"]:
@@ -353,22 +455,6 @@ def to_relationship(
     join = "left" if optional or typing.get_origin(field) is list else "inner"
 
     return Relationship(typing.cast(type[TypedTable], field), condition, typing.cast(JOIN_OPTIONS, join))
-
-
-def evaluate_forward_reference(fw_ref: typing.ForwardRef) -> type:
-    """
-    Extract the original type from a forward reference string.
-    """
-    kwargs = dict(
-        localns=locals(),
-        globalns=globals(),
-        recursive_guard=frozenset(),
-    )
-    if sys.version_info >= (3, 13):  # pragma: no cover
-        # suggested since 3.13 (warning) and not supported before. Mandatory after 1.15!
-        kwargs["type_params"] = ()
-
-    return fw_ref._evaluate(**kwargs)  # type: ignore
 
 
 class TypeDAL(pydal.DAL):  # type: ignore
@@ -714,8 +800,10 @@ class TypeDAL(pydal.DAL):  # type: ignore
 
         if isinstance(ftype, str):
             # extract type from string
-            fw_ref: typing.ForwardRef = typing.get_args(Type[ftype])[0]
-            ftype = evaluate_forward_reference(fw_ref)
+            ftype = resolve_annotation(ftype)
+
+        if isinstance(ftype, ForwardRef):
+            raise ValueError("oh boy")
 
         if mapping := BASIC_MAPPINGS.get(ftype):
             # basi types
@@ -1256,7 +1344,10 @@ class TypedField(Expression, typing.Generic[T_Value]):  # pragma: no cover
     # NOTE: for the logic of converting a TypedField into a pydal Field, see TypeDAL._to_field
 
     def __init__(
-        self, _type: Type[T_Value] | types.UnionType = str, /, **settings: Unpack[FieldSettings]  # type: ignore
+        self,
+        _type: Type[T_Value] | types.UnionType = str,
+        /,
+        **settings: Unpack[FieldSettings],  # type: ignore
     ) -> None:
         """
         Typed version of pydal.Field, which will be converted to a normal Field in the background.
@@ -2622,7 +2713,6 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
             join.append(other.on(condition))
 
         if limitby := select_kwargs.pop("limitby", ()):
-
             # if limitby + relationships:
             # 1. get IDs of main table entries that match 'query'
             # 2. change query to .belongs(id)

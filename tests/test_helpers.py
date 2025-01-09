@@ -1,3 +1,4 @@
+import sys
 import typing
 from datetime import datetime, timedelta
 
@@ -207,3 +208,21 @@ def test_get_functions():
     field = get_field(TestGetFunctions.string)
     print(type(field))
     assert isinstance(field, Field)
+
+
+def test_forward_reference_annotation_314():
+    if sys.version_info.minor < 14:
+        return
+
+    class WithForwardRef:
+        fwd: Future
+
+    class Future: ...
+
+    assert all_annotations(WithForwardRef)
+
+    class WithFakeForwardRef:
+        fwd: Fake
+
+    with pytest.raises(NameError):
+        all_annotations(WithFakeForwardRef)

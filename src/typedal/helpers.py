@@ -17,6 +17,11 @@ from .types import AnyDict, Field, Table
 if typing.TYPE_CHECKING:
     from . import TypeDAL, TypedField, TypedTable  # noqa: F401
 
+try:
+    import annotationlib
+except ImportError:  # pragma: no cover
+    annotationlib = None
+
 T = typing.TypeVar("T")
 
 
@@ -38,6 +43,18 @@ def reversed_mro(cls: type) -> typing.Iterable[type]:
     return reversed(getattr(cls, "__mro__", []))
 
 
+def _cls_annotations(c: type):  # pragma: no cover
+    """
+    Functions to get the annotations of a class (excl inherited, use _all_annotations for that).
+
+    Uses `annotationlib` if available (since 3.14) and if so, resolves forward references immediately.
+    """
+    if annotationlib:
+        return annotationlib.get_annotations(c, format=annotationlib.Format.VALUE, eval_str=True)
+    else:
+        return getattr(c, "__annotations__", {})
+
+
 def _all_annotations(cls: type) -> ChainMap[str, type]:
     """
     Returns a dictionary-like ChainMap that includes annotations for all \
@@ -45,7 +62,16 @@ def _all_annotations(cls: type) -> ChainMap[str, type]:
     """
     # chainmap reverses the iterable, so reverse again beforehand to keep order normally:
 
-    return ChainMap(*(c.__annotations__ for c in reversed_mro(cls) if "__annotations__" in c.__dict__))
+    return ChainMap(*(_cls_annotations(c) for c in reversed_mro(cls)))
+
+
+# def _all_annotations(cls: type) -> ChainMap[str, type]:
+#     """
+#     Returns a dictionary-like ChainMap that includes annotations for all \
+#     attributes defined in cls or inherited from superclasses.
+#     """
+#     # chainmap reverses the iterable, so reverse again beforehand to keep order normally:
+#     return ChainMap(*(getattr(c, "__annotations__", {}) for c in reversed_mro(cls)))
 
 
 def all_dict(cls: type) -> AnyDict:

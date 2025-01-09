@@ -8,16 +8,11 @@ db = DAL("sqlite:memory")
 
 ### basic examples
 
-db.define_table("person",
-                Field("name", "string"),
-                Field("age", "integer", default=18),
-                Field("nicknames", "list:string")
-                )
+db.define_table(
+    "person", Field("name", "string"), Field("age", "integer", default=18), Field("nicknames", "list:string")
+)
 
-db.define_table("pet",
-                Field("name", "string"),
-                Field("owners", "list:reference person")
-                )
+db.define_table("pet", Field("name", "string"), Field("owners", "list:reference person"))
 
 db.person.insert(name="Henk", age=44, nicknames=["Henkie", "Gekke Henk"])
 db.person.insert(name="Ingrid", age=47, nicknames=[])
@@ -39,28 +34,29 @@ for person in people:
 ### example with all possible field types;
 db.define_table("other_table")
 
-db.define_table("all_fields",
-                Field("string", "string"),
-                Field("text", "text"),
-                Field("blob", "blob"),
-                Field("boolean", "boolean"),
-                Field("integer", "integer"),
-                Field("double", "double"),
-                Field("decimal", "decimal(2,3)"),
-                Field("date", "date"),
-                Field("time", "time"),
-                Field("datetime", "datetime"),
-                Field("password", "password"),
-                Field("upload", "upload", uploadfield="upload_data"),
-                Field("upload_data", "blob"),
-                Field("reference", "reference other_table"),
-                Field("list_string", "list:string"),
-                Field("list_integer", "list:integer"),
-                Field("list_reference", "list:reference other_table"),
-                Field("json", "json"),
-                Field("bigint", "bigint"),
-                # The big-id and, big-reference are only supported by some of the database engines and are experimental.
-                )
+db.define_table(
+    "all_fields",
+    Field("string", "string"),
+    Field("text", "text"),
+    Field("blob", "blob"),
+    Field("boolean", "boolean"),
+    Field("integer", "integer"),
+    Field("double", "double"),
+    Field("decimal", "decimal(2,3)"),
+    Field("date", "date"),
+    Field("time", "time"),
+    Field("datetime", "datetime"),
+    Field("password", "password"),
+    Field("upload", "upload", uploadfield="upload_data"),
+    Field("upload_data", "blob"),
+    Field("reference", "reference other_table"),
+    Field("list_string", "list:string"),
+    Field("list_integer", "list:integer"),
+    Field("list_reference", "list:reference other_table"),
+    Field("json", "json"),
+    Field("bigint", "bigint"),
+    # The big-id and, big-reference are only supported by some of the database engines and are experimental.
+)
 
 now = utcnow()
 
@@ -69,7 +65,7 @@ db.other_table.insert()
 other1 = db.other_table(id=1)
 other2 = db.other_table(id=2)
 
-with open('example_old.py', 'rb') as stream:
+with open("example_old.py", "rb") as stream:
     db.all_fields.insert(
         string="hi",
         text="hi but longer",
@@ -88,7 +84,7 @@ with open('example_old.py', 'rb') as stream:
         list_string=["hi", "there"],
         list_integer=[1, 2],
         list_reference=[other1, other2],
-        json={'hi': 'there'},
+        json={"hi": "there"},
         bigint=42,
     )
 
