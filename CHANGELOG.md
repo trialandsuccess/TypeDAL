@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.10.1 (2025-02-17)
+
+### Fix
+
+* Specify pydal dependency before `20250215.1` because newer releases have breaking changes on table aliases ([`67b6466`](https://github.com/trialandsuccess/TypeDAL/commit/67b64669fce3ac9b43a0daa997f6e7c4c56d24f6))
+
 ## v3.10.0 (2025-02-17)
 
 ### Feature
