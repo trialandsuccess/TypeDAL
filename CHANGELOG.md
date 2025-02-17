@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.10.0 (2025-02-17)
+
+### Feature
+
+* Add a pydal validator to tables using the slug mixin (without a random suffix) to catch duplicates before the actual database insert (which raises a unique violation exception) ([`6466345`](https://github.com/trialandsuccess/TypeDAL/commit/64663454eab7a4f281660cb2df6e50e2dadd7740))
+
 ## v3.9.4 (2024-11-10)
 
 ### Fix
