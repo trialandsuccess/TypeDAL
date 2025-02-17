@@ -24,7 +24,7 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
-    "pydal", # core
+    "pydal<20250215.1", # core
     "dill", # caching
     "configuraptor >= 1.26.2", # config
     "Configurable-JSON", # json dumping
