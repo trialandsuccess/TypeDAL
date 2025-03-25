@@ -188,11 +188,11 @@ def resolve_annotation(ftype: str) -> type:  # pragma: no cover
 
     Automatically chooses strategy based on current Python version.
     """
-    assert sys.version_info.major == 3, "Only python 3 is supported."
-
-    if sys.version_info.minor <= 13:  # pragma: no cover
+    if sys.version_info.major != 3:
+        raise EnvironmentError("Only python 3 is supported.")
+    elif sys.version_info.minor <= 13:
         return resolve_annotation_313(ftype)
-    else:  # pragma: no cover
+    else:
         return resolve_annotation_314(ftype)
 
 
@@ -820,7 +820,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
         elif origin_is_subclass(ftype, TypedField):
             # TypedField[int]
             return cls._annotation_to_pydal_fieldtype(typing.get_args(ftype)[0], mut_kw)
-        elif isinstance(ftype, types.GenericAlias) and typing.get_origin(ftype) in (list, TypedField):
+        elif isinstance(ftype, types.GenericAlias) and typing.get_origin(ftype) in (list, TypedField):  # type: ignore
             # list[str] -> str -> string -> list:string
             _child_type = typing.get_args(ftype)[0]
             _child_type = cls._annotation_to_pydal_fieldtype(_child_type, mut_kw)
