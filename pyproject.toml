@@ -2,6 +2,9 @@
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.metadata]
+allow-direct-references = true
+
 [project]
 name = "TypeDAL"
 dynamic = ["version"]
@@ -24,7 +27,8 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
-    "pydal", # core
+    # "pydal", # core
+    "pydal@git+https://github.com/robinvandernoord/pydal-python3.14@8dac177b68adbbc7a968fc5b9358dffab9cf96b5",
     "dill", # caching
     "configuraptor >= 1.27.1", # config
     "Configurable-JSON", # json dumping
