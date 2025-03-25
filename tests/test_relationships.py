@@ -328,9 +328,9 @@ def test_reprs():
 
     assert "AND" not in repr(relation)
 
-    relation = Article.join("author",
-                            condition_and=lambda article, author: author.name != "Hank"
-                            ).relationships["author"]
+    relation = Article.join("author", condition_and=lambda article, author: author.name != "Hank").relationships[
+        "author"
+    ]
 
     assert "AND" in repr(relation) and "Hank" in repr(relation)
 

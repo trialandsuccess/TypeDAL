@@ -1,19 +1,19 @@
-from src.typedal import TypeDAL, TypedField, TypedTable, TypedRows, fields
-
+import datetime as dt
 import typing
 from decimal import Decimal
-import datetime as dt
 
-from src.typedal.fields import TextField
-from src.typedal.helpers import utcnow
 from pydal.validators import IS_NOT_EMPTY
 
+from src.typedal import TypeDAL, TypedField, TypedRows, TypedTable, fields
+from src.typedal.fields import TextField
+from src.typedal.helpers import utcnow
 from typedal.fields import TimestampField
 
 db = TypeDAL("sqlite:memory")
 
 
 ### basic examples
+
 
 @db.define(format="%(name)s")
 class Person(TypedTable):
@@ -81,9 +81,9 @@ assert not max.owners
 
 ### example with all possible field types;
 
+
 @db.define
-class OtherTable(TypedTable):
-    ...
+class OtherTable(TypedTable): ...
 
 
 @db.define
@@ -161,7 +161,7 @@ class AllFieldsExplicit(TypedTable):
     reference_two = fields.ReferenceField("other_table", notnull=False)
     list_string = fields.ListStringField()
     list_integer = fields.ListIntegerField()
-    list_reference = fields.ListReferenceField('other_table')
+    list_reference = fields.ListReferenceField("other_table")
     json = fields.JSONField()
     bigint = fields.BigintField()
 
@@ -173,7 +173,7 @@ db.other_table.insert()
 other1 = db.other_table(id=1)
 other2 = db.other_table(id=2)
 
-with open('example_new.py', 'rb') as stream:
+with open("example_new.py", "rb") as stream:
     db.all_fields_basic.insert(
         string="hi!",
         text="hi but longer",
@@ -192,11 +192,11 @@ with open('example_new.py', 'rb') as stream:
         list_string=["hi", "there"],
         list_integer=[1, 2],
         list_reference=[other1, other2],
-        json={'hi': 'there'},
+        json={"hi": "there"},
         bigint=42,
     )
 
-with open('example_new.py', 'rb') as stream:
+with open("example_new.py", "rb") as stream:
     (
         AllFieldsAdvanced.insert(
             string="hi!",
@@ -216,12 +216,12 @@ with open('example_new.py', 'rb') as stream:
             list_string=["hi", "there"],
             list_integer=[1, 2],
             list_reference=[other1, other2],
-            json={'hi': 'there'},
+            json={"hi": "there"},
             bigint=42,
         )
     )
 
-with open('example_new.py', 'rb') as stream:
+with open("example_new.py", "rb") as stream:
     AllFieldsExplicit.insert(
         string="hi!",
         text="hi but longer",
@@ -240,23 +240,23 @@ with open('example_new.py', 'rb') as stream:
         list_string=["hi", "there"],
         list_integer=[1, 2],
         list_reference=[other1, other2],
-        json={'hi': 'there'},
+        json={"hi": "there"},
         bigint=42,
     )
 
 rowa = db.all_fields_advanced(string="hi!")
-print('advanced')
+print("advanced")
 # for field in rowa:
 #     print(field, type(rowa[field]))
 print(rowa)
 
-print('basic')
+print("basic")
 rowb = db.all_fields_basic(string="hi!")
 # for field in rowa:
 #     print(field, type(rowa[field]))
 print(rowb)
 
-print('explicit')
+print("explicit")
 rowb = db.all_fields_explicit(string="hi!")
 # for field in rowa:
 #     print(field, type(rowa[field]))

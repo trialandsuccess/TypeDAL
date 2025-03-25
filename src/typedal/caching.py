@@ -385,7 +385,7 @@ def _calculate_stats(db: "TypeDAL", query: Query) -> GenericStats:
     sum_len_field = _TypedalCache.data.len().sum()
     size_row = db(query).select(sum_len_field).first()
 
-    size = size_row[sum_len_field] if size_row else 0  # type: ignore
+    size = size_row[sum_len_field] if size_row else 0
 
     return {
         "entries": _TypedalCache.where(query).count(),

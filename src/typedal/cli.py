@@ -185,7 +185,7 @@ def setup(
             data.pop(prop, None)
             continue
 
-        if minimal and getattr(config, prop, None) not in (None, "") or is_optional(annotation):
+        if (minimal and getattr(config, prop, None) not in (None, "")) or is_optional(annotation):
             # property already present or not required, SKIP!
             data[prop] = getattr(config, prop, None)
             continue

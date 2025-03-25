@@ -68,8 +68,8 @@ def setup_py4web_tables(db: TypeDAL) -> None:
 
 
 __all__ = [
+    "DAL",
     "AuthUser",
     "Fixture",
-    "DAL",
     "setup_py4web_tables",
 ]
