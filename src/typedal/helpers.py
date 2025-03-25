@@ -51,8 +51,7 @@ def _cls_annotations(c: type) -> dict[str, type]:  # pragma: no cover
     """
     if annotationlib:
         return typing.cast(
-            dict[str, type],
-            annotationlib.get_annotations(c, format=annotationlib.Format.VALUE, eval_str=True)
+            dict[str, type], annotationlib.get_annotations(c, format=annotationlib.Format.VALUE, eval_str=True)
         )
     else:
         return getattr(c, "__annotations__", {})

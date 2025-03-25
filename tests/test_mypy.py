@@ -52,7 +52,7 @@ def mypy_test_typedal_define() -> None:
     reveal_type(MyTable().fancy.lower())  # R: builtins.str
 
     aliased_cls = MyTable.with_alias("---")
-    (reveal_type(aliased_cls),)  # R: type[tests.test_mypy.MyTable]
+    reveal_type(aliased_cls)  # R: type[tests.test_mypy.MyTable]
     aliased_instance = aliased_cls()
     reveal_type(aliased_instance)  # R: tests.test_mypy.MyTable
 

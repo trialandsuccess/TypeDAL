@@ -109,7 +109,7 @@ def evaluate_forward_reference_312(fw_ref: ForwardRef) -> type:  # pragma: no co
             localns=locals(),
             globalns=globals(),
             recursive_guard=frozenset(),
-        )
+        ),
     )
 
 
@@ -126,7 +126,7 @@ def evaluate_forward_reference_313(fw_ref: ForwardRef) -> type:  # pragma: no co
             globalns=globals(),
             recursive_guard=frozenset(),
             type_params=(),  # suggested since 3.13 (warning) and not supported before. Mandatory after 1.15!
-        )
+        ),
     )
 
 
@@ -142,7 +142,7 @@ def evaluate_forward_reference_314(fw_ref: ForwardRef) -> type:  # pragma: no co
             globals=globals(),
             locals=locals(),
             type_params=(),
-        )
+        ),
     )
 
 
@@ -200,10 +200,8 @@ def is_typed_field(cls: Any) -> typing.TypeGuard["TypedField[Any]"]:
 
     Deprecated
     """
-    return (
-        isinstance(cls, TypedField)
-        or (isinstance(typing.get_origin(cls), type)
-        and issubclass(typing.get_origin(cls), TypedField))
+    return isinstance(cls, TypedField) or (
+        isinstance(typing.get_origin(cls), type) and issubclass(typing.get_origin(cls), TypedField)
     )
 
 
@@ -299,7 +297,7 @@ class Relationship(typing.Generic[To_Type]):
                 and_code = inspect.getsource(c_and).strip()
                 src_code += " AND " + and_code
         else:
-            cls_name = self._type if isinstance(self._type, str) else self._type.__name__  # type: ignore
+            cls_name = self._type if isinstance(self._type, str) else self._type.__name__
             src_code = f"to {cls_name} (missing condition)"
 
         join = f":{self.join}" if self.join else ""
@@ -1339,7 +1337,7 @@ class TypedField(Expression, typing.Generic[T_Value]):  # pragma: no cover
 
     def __init__(
         self,
-        _type: Type[T_Value] | types.UnionType = str, # type: ignore
+        _type: Type[T_Value] | types.UnionType = str,  # type: ignore
         /,
         **settings: Unpack[FieldSettings],
     ) -> None:
