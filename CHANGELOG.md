@@ -2,6 +2,24 @@
 
 <!--next-version-placeholder-->
 
+## v3.10.2-beta.1 (2025-02-20)
+
+### Fix
+
+* Alias TypeDAL.db to self (required for some Validators) ([`f230853`](https://github.com/trialandsuccess/TypeDAL/commit/f2308536d2206def844ac25277d01cdb503554ed))
+
+## v3.10.1 (2025-02-17)
+
+### Fix
+
+* Specify pydal dependency before `20250215.1` because newer releases have breaking changes on table aliases ([`67b6466`](https://github.com/trialandsuccess/TypeDAL/commit/67b64669fce3ac9b43a0daa997f6e7c4c56d24f6))
+
+## v3.10.0 (2025-02-17)
+
+### Feature
+
+* Add a pydal validator to tables using the slug mixin (without a random suffix) to catch duplicates before the actual database insert (which raises a unique violation exception) ([`6466345`](https://github.com/trialandsuccess/TypeDAL/commit/64663454eab7a4f281660cb2df6e50e2dadd7740))
+
 ## v3.9.4 (2024-11-10)
 
 ### Fix

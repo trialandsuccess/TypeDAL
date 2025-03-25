@@ -14,7 +14,12 @@ class AllMixins(TypedTable, SlugMixin, TimestampsMixin, slug_field="name"):
     name: str
 
 
-class TableWithMixins(TypedTable, SlugMixin, slug_field="name", slug_suffix_length=1):
+class TableWithMixins(TypedTable, SlugMixin, slug_field="name", slug_suffix_length=0):
+    name: str
+    number: Optional[int]
+
+
+class TableWithSlugSuffix(TypedTable, SlugMixin, slug_field="name", slug_suffix_length=1):
     name: str
     number: Optional[int]
 
@@ -43,6 +48,7 @@ def db():
 
     _db.define(AllMixins)
     _db.define(TableWithMixins)
+    _db.define(TableWithSlugSuffix)
     _db.define(TableWithTimestamps)
     yield _db
 
@@ -57,10 +63,17 @@ def test_order(db):
 
 
 def test_slug(db):
-    row = TableWithMixins.insert(name="Two Words")
+    row, error = TableWithMixins.validate_and_insert(name="")
+    assert row is None
+    assert error
+
+    # without random suffix: duplicates are forbidden
+
+    row, error = TableWithMixins.validate_and_insert(name="Two Words")
+    assert error is None
 
     assert row.name == "Two Words"
-    assert row.slug.startswith("two-words")
+    assert row.slug == "two-words"
 
     assert TableWithMixins.from_slug(row.slug)
     assert TableWithMixins.from_slug("missing") is None
@@ -69,6 +82,26 @@ def test_slug(db):
 
     with pytest.raises(ValueError):
         TableWithMixins.from_slug_or_fail("missing")
+
+    row, error = TableWithMixins.validate_and_insert(name="Two Words")
+    assert row is None
+    assert error == {
+        'name': 'This slug is not unique: two-words.',
+    }
+
+    # with random suffix: duplicates are fine
+
+    row, error = TableWithSlugSuffix.validate_and_insert(name="Two Words")
+    assert error is None
+
+    assert row.name == "Two Words"
+    assert row.slug.startswith("two-words")
+
+    row, error = TableWithSlugSuffix.validate_and_insert(name="Two Words")
+    assert error is None
+
+    assert row.name == "Two Words"
+    assert row.slug.startswith("two-words")
 
 
 def test_timestamps(db):

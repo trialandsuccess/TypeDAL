@@ -11,7 +11,7 @@ dynamic = ["version"]
 description = 'Typing support for PyDAL'
 readme = "README.md"
 requires-python = ">=3.10"
-license = "MIT"
+license-expression = "MIT"
 keywords = []
 authors = [
     { name = "Robin van der Noord", email = "contact@trialandsuccess.nl" },
@@ -29,6 +29,7 @@ classifiers = [
 dependencies = [
     # "pydal", # core
     "pydal@git+https://github.com/robinvandernoord/pydal-python3.14@8dac177b68adbbc7a968fc5b9358dffab9cf96b5",
+    # pydal should be <20250215.1 since after that it has breaking changes for joins!
     "dill", # caching
     "configuraptor >= 1.27.1", # config
     "Configurable-JSON", # json dumping

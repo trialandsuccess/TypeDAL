@@ -518,6 +518,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
         )
 
         self._config = config
+        self.db = self
 
         if config.folder:
             Path(config.folder).mkdir(exist_ok=True)
