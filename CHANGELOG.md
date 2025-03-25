@@ -2,7 +2,7 @@
 
 <!--next-version-placeholder-->
 
-## v3.10.2-beta.1 (2025-02-20)
+## v3.10.2 (2025-03-25)
 
 ### Fix
 
