@@ -794,8 +794,8 @@ class TypeDAL(pydal.DAL):  # type: ignore
             # extract type from string
             ftype = resolve_annotation(ftype)
 
-        if isinstance(ftype, ForwardRef):
-            raise ValueError("oh boy")
+        if isinstance(ftype, ForwardRef):  # pragma: no cover
+            raise NotImplementedError("ForwardRef couldn't be resolved?")
 
         if mapping := BASIC_MAPPINGS.get(ftype):
             # basi types
