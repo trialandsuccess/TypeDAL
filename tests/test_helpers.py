@@ -221,6 +221,8 @@ def test_forward_reference_annotation_314():
 
     assert all_annotations(WithForwardRef)
 
+    print(all_annotations(WithForwardRef))
+
     class WithFakeForwardRef:
         fwd: Fake
 

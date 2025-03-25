@@ -97,7 +97,7 @@ BASIC_MAPPINGS: dict[T_annotation, str] = {
 #  because then they will have different globals and it breaks!
 
 
-def evaluate_forward_reference_312(fw_ref: ForwardRef) -> type:  # pragma: no cover
+def evaluate_forward_reference_312(fw_ref: ForwardRef, namespace: dict[str, type]) -> type:  # pragma: no cover
     """
     Extract the original type from a forward reference string.
 
@@ -107,13 +107,13 @@ def evaluate_forward_reference_312(fw_ref: ForwardRef) -> type:  # pragma: no co
         type,
         fw_ref._evaluate(
             localns=locals(),
-            globalns=globals(),
+            globalns=globals() | namespace,
             recursive_guard=frozenset(),
         ),
     )
 
 
-def evaluate_forward_reference_313(fw_ref: ForwardRef) -> type:  # pragma: no cover
+def evaluate_forward_reference_313(fw_ref: ForwardRef, namespace: dict[str, type]) -> type:  # pragma: no cover
     """
     Extract the original type from a forward reference string.
 
@@ -123,14 +123,14 @@ def evaluate_forward_reference_313(fw_ref: ForwardRef) -> type:  # pragma: no co
         type,
         fw_ref._evaluate(
             localns=locals(),
-            globalns=globals(),
+            globalns=globals() | namespace,
             recursive_guard=frozenset(),
             type_params=(),  # suggested since 3.13 (warning) and not supported before. Mandatory after 1.15!
         ),
     )
 
 
-def evaluate_forward_reference_314(fw_ref: ForwardRef) -> type:  # pragma: no cover
+def evaluate_forward_reference_314(fw_ref: ForwardRef, namespace: dict[str, type]) -> type:  # pragma: no cover
     """
     Extract the original type from a forward reference string.
 
@@ -139,25 +139,27 @@ def evaluate_forward_reference_314(fw_ref: ForwardRef) -> type:  # pragma: no co
     return typing.cast(
         type,
         fw_ref.evaluate(
-            globals=globals(),
             locals=locals(),
+            globals=globals() | namespace,
             type_params=(),
         ),
     )
 
 
-def evaluate_forward_reference(fw_ref: ForwardRef) -> type:  # pragma: no cover
+def evaluate_forward_reference(
+    fw_ref: ForwardRef, namespace: dict[str, type] | None = None
+) -> type:  # pragma: no cover
     """
     Extract the original type from a forward reference string.
 
     Automatically chooses strategy based on current Python version.
     """
     if sys.version_info.minor < 13:
-        return evaluate_forward_reference_312(fw_ref)
+        return evaluate_forward_reference_312(fw_ref, namespace=namespace or {})
     elif sys.version_info.minor == 13:
-        return evaluate_forward_reference_313(fw_ref)
+        return evaluate_forward_reference_313(fw_ref, namespace=namespace or {})
     else:
-        return evaluate_forward_reference_314(fw_ref)
+        return evaluate_forward_reference_314(fw_ref, namespace=namespace or {})
 
 
 def resolve_annotation_313(ftype: str) -> type:  # pragma: no cover
@@ -653,6 +655,8 @@ class TypeDAL(pydal.DAL):  # type: ignore
         for name, typed_field in typedfields.items():
             field = fields[name]
             typed_field.bind(field, table)
+            if not field._table:  # pragma: no cover
+                field.bind(table)
 
         if issubclass(cls, TypedTable):
             cls.__set_internals__(
@@ -795,8 +799,10 @@ class TypeDAL(pydal.DAL):  # type: ignore
             # extract type from string
             ftype = resolve_annotation(ftype)
 
-        if isinstance(ftype, ForwardRef):  # pragma: no cover
-            raise NotImplementedError("ForwardRef couldn't be resolved?")
+        if isinstance(ftype, ForwardRef):
+            known_classes = {table.__name__: table for table in cls._class_map.values()}
+
+            ftype = evaluate_forward_reference(ftype, namespace=known_classes)
 
         if mapping := BASIC_MAPPINGS.get(ftype):
             # basi types
@@ -1006,6 +1012,7 @@ class TableMeta(type):
         """
         table = self._ensure_table_defined()
         result = table.bulk_insert(items)
+
         return self.where(lambda row: row.id.belongs(result)).collect()
 
     def update_or_insert(
