@@ -4,10 +4,6 @@
 
 ## v3.10.2 (2025-03-25)
 
-
-
-## v3.10.2-beta.1 (2025-02-20)
-
 ### Fix
 
 * Alias TypeDAL.db to self (required for some Validators) ([`f230853`](https://github.com/trialandsuccess/TypeDAL/commit/f2308536d2206def844ac25277d01cdb503554ed))
