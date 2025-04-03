@@ -276,7 +276,7 @@ NativeUUIDField = SQLCustomType(
     type="string",
     native="uuid",
     encoder=str,
-    decoder=uuid.UUID,
+    decoder=lambda value: uuid.UUID(value) if value else None,
 )
 
 
