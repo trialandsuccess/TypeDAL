@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.10.3 (2025-04-03)
+
+### Fix
+
+* **NativeUUIDField:** Don't try to parse uuid if it is falsey (null) ([`4dbca35`](https://github.com/trialandsuccess/TypeDAL/commit/4dbca3514efa13bdceb4367816f5deabf247de08))
+
 ## v3.10.2 (2025-03-25)
 
 ### Fix
