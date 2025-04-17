@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.10.4 (2025-04-17)
+
+### Fix
+
+* Prevent duplicate callback hooks (before/after insert/update/delete) ([`e8e2271`](https://github.com/trialandsuccess/TypeDAL/commit/e8e2271da87d1993afc586060052dd5d057c28e1))
+
 ## v3.10.3 (2025-04-03)
 
 ### Fix
