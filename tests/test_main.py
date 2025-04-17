@@ -1,4 +1,5 @@
 import re
+from copy import copy
 from sqlite3 import IntegrityError
 
 import pydal
@@ -478,6 +479,39 @@ def test_hooks_v2(capsys):
     captured = capsys.readouterr()
     assert "before delete" in captured.out
     assert "after delete" in captured.out
+
+
+def test_hooks_duplicates():
+    counter = 0
+
+    @db.define()
+    class HookedTableV3(TypedTable):
+        name: str
+
+    def increase_counter(_, __):
+        nonlocal counter
+        counter += 1
+
+    HookedTableV3.after_insert(increase_counter)
+    HookedTableV3.after_insert(increase_counter)
+    HookedTableV3.after_insert(copy(increase_counter))  # other id, same hash
+
+    assert counter == 0
+
+    HookedTableV3.insert(name="Should increase counter once")
+
+    assert counter == 1
+
+    # other function hash -> allow 'duplicate'
+    def increase_counter_v2(_, __):
+        nonlocal counter
+        counter += 1
+
+    HookedTableV3.after_insert(increase_counter_v2)  # other hash
+
+    HookedTableV3.insert(name="Should increase counter twice")
+
+    assert counter == 3
 
 
 def test_try():

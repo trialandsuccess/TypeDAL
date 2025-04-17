@@ -1186,7 +1186,8 @@ class TableMeta(type):
         """
         Add a before insert hook.
         """
-        cls._before_insert.append(fn)
+        if fn not in cls._before_insert:
+            cls._before_insert.append(fn)
         return cls
 
     def after_insert(
@@ -1199,7 +1200,8 @@ class TableMeta(type):
         """
         Add an after insert hook.
         """
-        cls._after_insert.append(fn)
+        if fn not in cls._after_insert:
+            cls._after_insert.append(fn)
         return cls
 
     def before_update(
@@ -1209,7 +1211,8 @@ class TableMeta(type):
         """
         Add a before update hook.
         """
-        cls._before_update.append(fn)
+        if fn not in cls._before_update:
+            cls._before_update.append(fn)
         return cls
 
     def after_update(
@@ -1219,21 +1222,24 @@ class TableMeta(type):
         """
         Add an after update hook.
         """
-        cls._after_update.append(fn)
+        if fn not in cls._after_update:
+            cls._after_update.append(fn)
         return cls
 
     def before_delete(cls: Type[T_MetaInstance], fn: typing.Callable[[Set], Optional[bool]]) -> Type[T_MetaInstance]:
         """
         Add a before delete hook.
         """
-        cls._before_delete.append(fn)
+        if fn not in cls._before_delete:
+            cls._before_delete.append(fn)
         return cls
 
     def after_delete(cls: Type[T_MetaInstance], fn: typing.Callable[[Set], Optional[bool]]) -> Type[T_MetaInstance]:
         """
         Add an after delete hook.
         """
-        cls._after_delete.append(fn)
+        if fn not in cls._after_delete:
+            cls._after_delete.append(fn)
         return cls
 
 
@@ -1257,7 +1263,10 @@ class TypedField(Expression, typing.Generic[T_Value]):  # pragma: no cover
     # NOTE: for the logic of converting a TypedField into a pydal Field, see TypeDAL._to_field
 
     def __init__(
-        self, _type: Type[T_Value] | types.UnionType = str, /, **settings: Unpack[FieldSettings]  # type: ignore
+        self,
+        _type: Type[T_Value] | types.UnionType = str,
+        /,
+        **settings: Unpack[FieldSettings],  # type: ignore
     ) -> None:
         """
         Typed version of pydal.Field, which will be converted to a normal Field in the background.
@@ -2623,7 +2632,6 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
             join.append(other.on(condition))
 
         if limitby := select_kwargs.pop("limitby", ()):
-
             # if limitby + relationships:
             # 1. get IDs of main table entries that match 'query'
             # 2. change query to .belongs(id)

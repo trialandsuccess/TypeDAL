@@ -86,7 +86,7 @@ def test_slug(db):
     row, error = TableWithMixins.validate_and_insert(name="Two Words")
     assert row is None
     assert error == {
-        'name': 'This slug is not unique: two-words.',
+        "name": "This slug is not unique: two-words.",
     }
 
     # with random suffix: duplicates are fine
