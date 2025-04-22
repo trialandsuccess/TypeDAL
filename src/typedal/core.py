@@ -1977,7 +1977,11 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
         Print a table on repr().
         """
         data = self.as_dict()
-        headers = list(next(iter(data.values())).keys())
+        try:
+            headers = list(next(iter(data.values())).keys())
+        except StopIteration:
+            headers = []
+
         return mktable(data, headers)
 
     def group_by_value(
