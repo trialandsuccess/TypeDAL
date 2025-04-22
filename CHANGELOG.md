@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.10.5 (2025-04-22)
+
+### Fix
+
+* `repr(rows)` crashed when `rows` contained no data ([`cc3b2d0`](https://github.com/trialandsuccess/TypeDAL/commit/cc3b2d0bd332faee579e6fdfb7068bd511f22093))
+
 ## v3.10.4 (2025-04-17)
 
 ### Fix
