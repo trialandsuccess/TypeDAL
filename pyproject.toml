@@ -28,7 +28,7 @@ dependencies = [
     "dill < 1", # caching
     "configuraptor >= 1.26.2, < 2", # config
     "Configurable-JSON < 2", # json dumping
-    "python-slugify < 2",
+    "python-slugify < 9",
     "legacy-cgi; python_version >= '3.13'"
 ]
 
