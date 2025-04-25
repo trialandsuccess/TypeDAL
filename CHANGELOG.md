@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.12.1 (2025-04-25)
+
+### Fix
+
+* Support latest pydal version ([`5af1d2b`](https://github.com/trialandsuccess/TypeDAL/commit/5af1d2bbb8cd4188cfab840191816fc0de87cc4a))
+
 ## v3.12.0 (2025-04-25)
 
 ### Feature
