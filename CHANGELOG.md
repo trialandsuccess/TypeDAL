@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.12.0 (2025-04-25)
+
+### Feature
+
+* Support adding a `unique_alias` which improves working with multiple joins. ([`8b2112c`](https://github.com/trialandsuccess/TypeDAL/commit/8b2112cf9c97a00a9610e1af6e80e05fcc296aad))
+
 ## v3.11.1 (2025-04-25)
 
 ### Fix
