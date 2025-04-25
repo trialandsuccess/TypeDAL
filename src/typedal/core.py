@@ -2790,14 +2790,10 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         """
         yield from self.collect()
 
-    def count(self, distinct: bool = None) -> int:
-        """
-        Return the amount of rows matching the current query.
-        """
-        db = self._get_db()
+    def __count(self, db: TypeDAL, distinct: bool = None):
+        # internal, shared logic between .count and ._count
         model = self.model
         query = self.query
-
         for key, relation in self.relationships.items():
             if (not relation.condition or relation.join != "inner") and not distinct:
                 continue
@@ -2808,7 +2804,25 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
                 other = other.with_alias(f"{key}_{hash(relation)}")
             query &= relation.condition(model, other)
 
+        return query
+
+    def count(self, distinct: bool = None) -> int:
+        """
+        Return the amount of rows matching the current query.
+        """
+        db = self._get_db()
+        query = self.__count(db, distinct=distinct)
+
         return db(query).count(distinct)
+
+    def _count(self, distinct: bool = None):
+        """
+        Return the SQL for .count().
+        """
+        db = self._get_db()
+        query = self.__count(db, distinct=distinct)
+
+        return db(query)._count(distinct)
 
     def exists(self) -> bool:
         """
