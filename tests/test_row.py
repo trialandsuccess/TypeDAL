@@ -214,3 +214,7 @@ def test_rows():
     assert len(empty) == 0
     assert len(empty.exclude(lambda x: x)) == 0
     assert len(empty.find(lambda x: x)) == 0
+
+    empty_rows = NewStyleClass.where(NewStyleClass.id < 0).collect()
+    assert str(empty_rows)
+    assert repr(empty_rows)
