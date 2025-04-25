@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.12.2 (2025-04-25)
+
+### Fix
+
+* Pinned slugify at wrong version ([`470c545`](https://github.com/trialandsuccess/TypeDAL/commit/470c545fd503afbd8d787b92fdf977f5e610333a))
+
 ## v3.12.1 (2025-04-25)
 
 ### Fix
