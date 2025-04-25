@@ -189,7 +189,7 @@ class Relationship(typing.Generic[To_Type]):
                 and_code = inspect.getsource(c_and).strip()
                 src_code += " AND " + and_code
         else:
-            cls_name = self._type if isinstance(self._type, str) else self._type.__name__  # type: ignore
+            cls_name = self._type if isinstance(self._type, str) else self._type.__name__
             src_code = f"to {cls_name} (missing condition)"
 
         join = f":{self.join}" if self.join else ""
@@ -1270,9 +1270,9 @@ class TypedField(Expression, typing.Generic[T_Value]):  # pragma: no cover
 
     def __init__(
         self,
-        _type: Type[T_Value] | types.UnionType = str,
+        _type: Type[T_Value] | types.UnionType = str, # type: ignore
         /,
-        **settings: Unpack[FieldSettings],  # type: ignore
+        **settings: Unpack[FieldSettings],
     ) -> None:
         """
         Typed version of pydal.Field, which will be converted to a normal Field in the background.
@@ -2794,7 +2794,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         """
         yield from self.collect()
 
-    def __count(self, db: TypeDAL, distinct: bool = None):
+    def __count(self, db: TypeDAL, distinct: bool = None) -> Query:
         # internal, shared logic between .count and ._count
         model = self.model
         query = self.query
@@ -2819,14 +2819,17 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
         return db(query).count(distinct)
 
-    def _count(self, distinct: bool = None):
+    def _count(self, distinct: bool = None) -> str:
         """
         Return the SQL for .count().
         """
         db = self._get_db()
         query = self.__count(db, distinct=distinct)
 
-        return db(query)._count(distinct)
+        return typing.cast(
+            str,
+            db(query)._count(distinct)
+        )
 
     def exists(self) -> bool:
         """
