@@ -318,6 +318,9 @@ def test_complex_join():
 
     assert builder.count() == 4 == len(builder.collect())
 
+    count_sql = builder._count()
+    assert "COUNT(" in count_sql
+
     sql = builder._collect()
     assert "JOIN" in sql
     assert "LEFT" not in sql

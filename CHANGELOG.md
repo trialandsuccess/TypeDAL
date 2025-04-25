@@ -2,6 +2,56 @@
 
 <!--next-version-placeholder-->
 
+## v3.12.2 (2025-04-25)
+
+### Fix
+
+* Pinned slugify at wrong version ([`470c545`](https://github.com/trialandsuccess/TypeDAL/commit/470c545fd503afbd8d787b92fdf977f5e610333a))
+
+## v3.12.1 (2025-04-25)
+
+### Fix
+
+* Support latest pydal version ([`5af1d2b`](https://github.com/trialandsuccess/TypeDAL/commit/5af1d2bbb8cd4188cfab840191816fc0de87cc4a))
+
+## v3.12.0 (2025-04-25)
+
+### Feature
+
+* Support adding a `unique_alias` which improves working with multiple joins. ([`8b2112c`](https://github.com/trialandsuccess/TypeDAL/commit/8b2112cf9c97a00a9610e1af6e80e05fcc296aad))
+
+## v3.11.1 (2025-04-25)
+
+### Fix
+
+* Improved typing (`mypy` is happy again, py4web DAL should be typed better now) ([`b3199cb`](https://github.com/trialandsuccess/TypeDAL/commit/b3199cb423f643b1826fedab45bcaa3063fdc02d))
+* `repr(rows)` crashed when `rows` contained no data ([`cc3b2d0`](https://github.com/trialandsuccess/TypeDAL/commit/cc3b2d0bd332faee579e6fdfb7068bd511f22093))
+
+## v3.11.0 (2025-04-25)
+
+### Fix
+
+* Add `._count()` to get sql for `.count()` ([`6a336e9`](https://github.com/trialandsuccess/TypeDAL/commit/6a336e903017a2fcfac9bea313f150e5af8d77de))
+* Add `.exists()` method on querybuilder to check if there are any rows (using `.count()`) ([`7e54e64`](https://github.com/trialandsuccess/TypeDAL/commit/7e54e64461e04f6e65a9aa4d1736585f088bc9d1))
+
+## v3.10.5 (2025-04-22)
+
+### Fix
+
+* `repr(rows)` crashed when `rows` contained no data ([`cc3b2d0`](https://github.com/trialandsuccess/TypeDAL/commit/cc3b2d0bd332faee579e6fdfb7068bd511f22093))
+
+## v3.10.4 (2025-04-17)
+
+### Fix
+
+* Prevent duplicate callback hooks (before/after insert/update/delete) ([`e8e2271`](https://github.com/trialandsuccess/TypeDAL/commit/e8e2271da87d1993afc586060052dd5d057c28e1))
+
+## v3.10.3 (2025-04-03)
+
+### Fix
+
+* **NativeUUIDField:** Don't try to parse uuid if it is falsey (null) ([`4dbca35`](https://github.com/trialandsuccess/TypeDAL/commit/4dbca3514efa13bdceb4367816f5deabf247de08))
+
 ## v3.10.2 (2025-03-25)
 
 ### Fix

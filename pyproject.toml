@@ -27,14 +27,14 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
-    # "pydal", # core
+    # "pydal <= 20250228.1", # core
     "pydal@git+https://github.com/robinvandernoord/pydal-python3.14@8dac177b68adbbc7a968fc5b9358dffab9cf96b5",
-    # pydal should be <20250215.1 since after that it has breaking changes for joins!
-    "dill", # caching
-    "configuraptor >= 1.27.1", # config
-    "Configurable-JSON", # json dumping
-    "python-slugify",
-    "legacy-cgi; python_version >= '3.13'"
+    "dill < 1", # caching
+    "configuraptor >= 1.27.1, < 2", # config
+    "Configurable-JSON < 2", # json dumping
+    "python-slugify < 9",
+    "legacy-cgi; python_version >= '3.13'",
+    "python-dateutil < 3",
 ]
 
 [project.optional-dependencies]
