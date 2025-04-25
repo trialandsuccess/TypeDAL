@@ -2,6 +2,13 @@
 
 <!--next-version-placeholder-->
 
+## v3.11.1 (2025-04-25)
+
+### Fix
+
+* Improved typing (`mypy` is happy again, py4web DAL should be typed better now) ([`b3199cb`](https://github.com/trialandsuccess/TypeDAL/commit/b3199cb423f643b1826fedab45bcaa3063fdc02d))
+* `repr(rows)` crashed when `rows` contained no data ([`cc3b2d0`](https://github.com/trialandsuccess/TypeDAL/commit/cc3b2d0bd332faee579e6fdfb7068bd511f22093))
+
 ## v3.11.0 (2025-04-25)
 
 ### Fix
