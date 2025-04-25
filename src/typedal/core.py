@@ -1041,6 +1041,12 @@ class TableMeta(type):
         """
         return QueryBuilder(self).count()
 
+    def exists(self: Type[T_MetaInstance]) -> bool:
+        """
+        See QueryBuilder.exists!
+        """
+        return QueryBuilder(self).exists()
+
     def first(self: Type[T_MetaInstance]) -> T_MetaInstance | None:
         """
         See QueryBuilder.first!
@@ -2803,6 +2809,17 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
             query &= relation.condition(model, other)
 
         return db(query).count(distinct)
+
+    def exists(self) -> bool:
+        """
+        Determines if any records exist matching the current query.
+
+        Returns True if one or more records exist; otherwise, False.
+
+        Returns:
+            bool: A boolean indicating whether any records exist.
+        """
+        return bool(self.count())
 
     def __paginate(
         self,
