@@ -2,6 +2,13 @@
 
 <!--next-version-placeholder-->
 
+## v3.11.0 (2025-04-25)
+
+### Fix
+
+* Add `._count()` to get sql for `.count()` ([`6a336e9`](https://github.com/trialandsuccess/TypeDAL/commit/6a336e903017a2fcfac9bea313f150e5af8d77de))
+* Add `.exists()` method on querybuilder to check if there are any rows (using `.count()`) ([`7e54e64`](https://github.com/trialandsuccess/TypeDAL/commit/7e54e64461e04f6e65a9aa4d1736585f088bc9d1))
+
 ## v3.10.4 (2025-04-17)
 
 ### Fix
