@@ -123,6 +123,7 @@ def test_both_styles_for_class():
 
     assert db(old_style).count() == 0
     assert NewStyle.count() == 0
+    assert not NewStyle.exists()
 
     with pytest.raises(Exception):
         old_style.insert(string_field=123, int_field="abc")
