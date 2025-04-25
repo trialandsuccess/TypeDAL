@@ -11,6 +11,7 @@ import math
 import sys
 import types
 import typing
+import uuid
 import warnings
 from collections import defaultdict
 from copy import copy
@@ -1179,10 +1180,20 @@ class TableMeta(type):
         Useful for joins when joining the same table multiple times.
 
         See Also:
-            http://web2py.com/books/default/chapter/29/06/the-database-abstraction-layer?search=export_to_csv_file#One-to-many-relation
+            http://web2py.com/books/default/chapter/29/06/the-database-abstraction-layer#One-to-many-relation
         """
         table = self._ensure_table_defined()
         return typing.cast(Type[T_MetaInstance], table.with_alias(alias))
+
+    def unique_alias(self: Type[T_MetaInstance]) -> Type[T_MetaInstance]:
+        """
+        Generates a unique alias for this table.
+
+        Useful for joins when joining the same table multiple times
+            and you don't want to keep track of aliases yourself.
+        """
+        key = f"{self.__name__.lower()}_{hash(uuid.uuid4())}"
+        return self.with_alias(key)
 
     # hooks:
     def before_insert(
@@ -1270,7 +1281,7 @@ class TypedField(Expression, typing.Generic[T_Value]):  # pragma: no cover
 
     def __init__(
         self,
-        _type: Type[T_Value] | types.UnionType = str, # type: ignore
+        _type: Type[T_Value] | types.UnionType = str,  # type: ignore
         /,
         **settings: Unpack[FieldSettings],
     ) -> None:
@@ -2683,6 +2694,12 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
                 if not isinstance(on, list):  # pragma: no cover
                     on = [on]
 
+                on = [
+                    _
+                    for _ in on
+                    # only allow Expressions (query and such):
+                    if isinstance(_, pydal.objects.Expression)
+                ]
                 left.extend(on)
             elif method == "left":
                 # .on not given, generate it:
@@ -2826,10 +2843,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         db = self._get_db()
         query = self.__count(db, distinct=distinct)
 
-        return typing.cast(
-            str,
-            db(query)._count(distinct)
-        )
+        return typing.cast(str, db(query)._count(distinct))
 
     def exists(self) -> bool:
         """
