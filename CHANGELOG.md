@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.13.0 (2025-04-28)
+
+### Feature
+
+* Adding `_once` hooks ([`a69fbb3`](https://github.com/trialandsuccess/TypeDAL/commit/a69fbb361cdfec9352fca503206299c5bbb940d2))
+
 ## v3.12.2 (2025-04-25)
 
 ### Fix
