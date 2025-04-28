@@ -25,10 +25,11 @@ class TaggableMixin:
         list["Tag"],
         # lambda self, _: (Tagged.entity == self.gid) & (Tagged.tag == Tag.id)
         # doing an .on with and & inside can lead to a cross join,
-        # for relationships with pivot tables a manual on query is prefered:
-        on=lambda entity, _tag: [
-            Tagged.on(Tagged.entity == entity.gid),
-            Tag.on((Tagged.tag == Tag.id)),
+        # for relationships with pivot tables a manual on query with aliases is prefered:
+        on=lambda entity, tag: [
+            tagged := Tagged.unique_alias(),
+            tagged.on(tagged.entity == entity.gid),
+            tag.on((tagged.tag == tag.id)),
         ],
     )
     # tags = relationship(list["Tag"], tagged)
@@ -186,7 +187,6 @@ def test_typedal_way():
         Empty.first_or_fail()
 
     # user through article: 1 - many
-
     all_articles = Article.join().collect().as_dict()
 
     assert all_articles[3]["final_editor"]["name"] == "Editor 1"

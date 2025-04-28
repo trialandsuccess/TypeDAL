@@ -89,6 +89,7 @@ def selects_pydal():
 
 def selects_typedal():
     assert TimeTable.count()
+    assert TimeTable.exists()
     assert TimeTable(1)
     assert TimeTable(id=1)
     assert TimeTable.where(TimeTable.id == 1).first()

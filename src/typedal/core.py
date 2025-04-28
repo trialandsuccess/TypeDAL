@@ -12,6 +12,7 @@ import math
 import sys
 import types
 import typing
+import uuid
 import warnings
 from collections import defaultdict
 from copy import copy
@@ -190,7 +191,7 @@ class Relationship(typing.Generic[To_Type]):
                 and_code = inspect.getsource(c_and).strip()
                 src_code += " AND " + and_code
         else:
-            cls_name = self._type if isinstance(self._type, str) else self._type.__name__  # type: ignore
+            cls_name = self._type if isinstance(self._type, str) else self._type.__name__
             src_code = f"to {cls_name} (missing condition)"
 
         join = f":{self.join}" if self.join else ""
@@ -1046,6 +1047,12 @@ class TableMeta(type):
         """
         return QueryBuilder(self).count()
 
+    def exists(self: Type[T_MetaInstance]) -> bool:
+        """
+        See QueryBuilder.exists!
+        """
+        return QueryBuilder(self).exists()
+
     def first(self: Type[T_MetaInstance]) -> T_MetaInstance | None:
         """
         See QueryBuilder.first!
@@ -1178,10 +1185,20 @@ class TableMeta(type):
         Useful for joins when joining the same table multiple times.
 
         See Also:
-            http://web2py.com/books/default/chapter/29/06/the-database-abstraction-layer?search=export_to_csv_file#One-to-many-relation
+            http://web2py.com/books/default/chapter/29/06/the-database-abstraction-layer#One-to-many-relation
         """
         table = self._ensure_table_defined()
         return typing.cast(Type[T_MetaInstance], table.with_alias(alias))
+
+    def unique_alias(self: Type[T_MetaInstance]) -> Type[T_MetaInstance]:
+        """
+        Generates a unique alias for this table.
+
+        Useful for joins when joining the same table multiple times
+            and you don't want to keep track of aliases yourself.
+        """
+        key = f"{self.__name__.lower()}_{hash(uuid.uuid4())}"
+        return self.with_alias(key)
 
     # hooks:
     def _hook_once(
@@ -1339,9 +1356,9 @@ class TypedField(Expression, typing.Generic[T_Value]):  # pragma: no cover
 
     def __init__(
         self,
-        _type: Type[T_Value] | types.UnionType = str,
+        _type: Type[T_Value] | types.UnionType = str,  # type: ignore
         /,
-        **settings: Unpack[FieldSettings],  # type: ignore
+        **settings: Unpack[FieldSettings],
     ) -> None:
         """
         Typed version of pydal.Field, which will be converted to a normal Field in the background.
@@ -2752,6 +2769,12 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
                 if not isinstance(on, list):  # pragma: no cover
                     on = [on]
 
+                on = [
+                    _
+                    for _ in on
+                    # only allow Expressions (query and such):
+                    if isinstance(_, pydal.objects.Expression)
+                ]
                 left.extend(on)
             elif method == "left":
                 # .on not given, generate it:
@@ -2863,14 +2886,10 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         """
         yield from self.collect()
 
-    def count(self, distinct: bool = None) -> int:
-        """
-        Return the amount of rows matching the current query.
-        """
-        db = self._get_db()
+    def __count(self, db: TypeDAL, distinct: bool = None) -> Query:
+        # internal, shared logic between .count and ._count
         model = self.model
         query = self.query
-
         for key, relation in self.relationships.items():
             if (not relation.condition or relation.join != "inner") and not distinct:
                 continue
@@ -2881,7 +2900,36 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
                 other = other.with_alias(f"{key}_{hash(relation)}")
             query &= relation.condition(model, other)
 
+        return query
+
+    def count(self, distinct: bool = None) -> int:
+        """
+        Return the amount of rows matching the current query.
+        """
+        db = self._get_db()
+        query = self.__count(db, distinct=distinct)
+
         return db(query).count(distinct)
+
+    def _count(self, distinct: bool = None) -> str:
+        """
+        Return the SQL for .count().
+        """
+        db = self._get_db()
+        query = self.__count(db, distinct=distinct)
+
+        return typing.cast(str, db(query)._count(distinct))
+
+    def exists(self) -> bool:
+        """
+        Determines if any records exist matching the current query.
+
+        Returns True if one or more records exist; otherwise, False.
+
+        Returns:
+            bool: A boolean indicating whether any records exist.
+        """
+        return bool(self.count())
 
     def __paginate(
         self,

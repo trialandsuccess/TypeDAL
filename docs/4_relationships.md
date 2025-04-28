@@ -92,16 +92,22 @@ Adding the `Relationship["Sidekick"]` hint is optional, but recommended to impro
 Setting up a relationship that uses a junction/pivot table is slightly harder.
 
 ```python
+
+# with `unique_alias()` which is better if you have multiple joins:
+
 @db.define()
 class Post(TypedTable):
     title: str
     author: Author
 
     tags = relationship(list["Tag"], on=lambda post, tag: [
-        Tagged.on(Tagged.post == post.id),
-        tag.on(tag.id == Tagged.tag),
+        # post and tag already have a unique alias, create one for tagged here:
+        tagged := Tagged.unique_alias(),
+        tagged.on(tagged.post == post.id),
+        tag.on(tag.id == tagged.tag),
     ])
 
+# without unique alias:
 
 @db.define()
 class Tag(TypedTable):

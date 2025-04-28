@@ -24,11 +24,11 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
-    "pydal<20250215.1", # core
-    "dill", # caching
-    "configuraptor >= 1.26.2", # config
-    "Configurable-JSON", # json dumping
-    "python-slugify",
+    "pydal <= 20250228.1", # core
+    "dill < 1", # caching
+    "configuraptor >= 1.26.2, < 2", # config
+    "Configurable-JSON < 2", # json dumping
+    "python-slugify < 9",
     "legacy-cgi; python_version >= '3.13'"
 ]
 
