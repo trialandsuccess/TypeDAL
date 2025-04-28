@@ -1018,6 +1018,15 @@ class TableMeta(type):
         """
         return QueryBuilder(self).select(*a, **kw)
 
+    def column(self: Type[T_MetaInstance], field: "TypedField[T] | T", **options: Unpack[SelectKwargs]) -> list[T]:
+        """
+        Get all values in a specific column.
+
+        Shortcut for `.select(field).execute().column(field)`.
+        """
+
+        return QueryBuilder(self).select(field, **options).execute().column(field)
+
     def paginate(self: Type[T_MetaInstance], limit: int, page: int = 1) -> "PaginatedRows[T_MetaInstance]":
         """
         See QueryBuilder.paginate!
@@ -2695,24 +2704,25 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         return save_to_cache(typed_rows, rows)
 
     @typing.overload
-    def column(self, field: TypedField[T]) -> list[T]:
+    def column(self, field: TypedField[T], **options: Unpack[SelectKwargs]) -> list[T]:
         """
         If a typedfield is passed, the output type can be safely determined.
         """
 
     @typing.overload
-    def column(self, field: T) -> list[T]:
+    def column(self, field: T, **options: Unpack[SelectKwargs]) -> list[T]:
         """
         Otherwise, the output type is loosely determined (assumes `field: type` or Any).
         """
 
-    def column(self, field: TypedField[T] | T) -> list[T]:
+    def column(self, field: TypedField[T] | T, **options: Unpack[SelectKwargs]) -> list[T]:
         """
         Get all values in a specific column.
 
         Shortcut for `.select(field).execute().column(field)`.
         """
-        return self.select(field).execute().column(field)
+
+        return self.select(field, **options).execute().column(field)
 
     def _handle_relationships_pre_select(
         self,
