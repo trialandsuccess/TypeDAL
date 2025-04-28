@@ -510,29 +510,47 @@ def test_hooks_duplicates():
     HookedTableV3.after_insert(increase_counter_v2)  # other hash
 
     HookedTableV3.insert(name="Should increase counter twice")
+    assert counter == 3
 
+    for hook in HookedTableV3._hooks.values():
+        hook.clear()
+
+    HookedTableV3.insert(name="Should NOT increase counter")
     assert counter == 3
 
 
 def test_hooks_once():
     @db.define()
-    class HookedTableV3(TypedTable):
+    class HookedTableV4(TypedTable):
         name: str
 
     counter = 0
 
-    def increase_counter_v2(_, __):
+    def increase_counter_v2(_, __=None):
         nonlocal counter
         counter += 1
 
-    HookedTableV3.after_insert_once(increase_counter_v2)
+    HookedTableV4.before_insert_once(increase_counter_v2)
+    HookedTableV4.after_insert_once(increase_counter_v2)
+    HookedTableV4.before_update_once(increase_counter_v2)
+    HookedTableV4.after_update_once(increase_counter_v2)
+    HookedTableV4.before_delete_once(increase_counter_v2)
+    HookedTableV4.after_delete_once(increase_counter_v2)
 
     assert counter == 0
 
-    HookedTableV3.insert(name="1")
-    assert counter == 1
-    HookedTableV3.insert(name="2")
-    assert counter == 1
+    HookedTableV4.insert(name="1")
+    assert counter == 2
+    row = HookedTableV4.insert(name="2")
+    assert counter == 2
+
+    row.update_record(name="3")
+    assert counter == 4
+    row.update_record(name="4")
+    assert counter == 4
+
+    row.delete_record()
+    assert counter == 6
 
 
 def test_try():

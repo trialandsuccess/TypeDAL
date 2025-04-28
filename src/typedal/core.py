@@ -34,6 +34,7 @@ from .helpers import (
     all_annotations,
     all_dict,
     as_lambda,
+    classproperty,
     extract_type_optional,
     filter_out,
     instanciate,
@@ -1232,7 +1233,7 @@ class TableMeta(type):
         """
         Add a before insert hook that only fires once and then removes itself.
         """
-        return cls._hook_once(cls._before_insert, fn)
+        return cls._hook_once(cls._before_insert, fn)  # type: ignore
 
     def after_insert(
         cls: Type[T_MetaInstance],
@@ -1249,16 +1250,16 @@ class TableMeta(type):
         return cls
 
     def after_insert_once(
-        cls,
+        cls: Type[T_MetaInstance],
         fn: (
             typing.Callable[[T_MetaInstance, Reference], Optional[bool]]
             | typing.Callable[[OpRow, Reference], Optional[bool]]
         ),
-    ):
+    ) -> Type[T_MetaInstance]:
         """
         Add an after insert hook that only fires once and then removes itself.
         """
-        return cls._hook_once(cls._after_insert, fn)
+        return cls._hook_once(cls._after_insert, fn)  # type: ignore
 
     def before_update(
         cls: Type[T_MetaInstance],
@@ -1274,11 +1275,11 @@ class TableMeta(type):
     def before_update_once(
         cls,
         fn: typing.Callable[[Set, T_MetaInstance], Optional[bool]] | typing.Callable[[Set, OpRow], Optional[bool]],
-    ):
+    ) -> Type[T_MetaInstance]:
         """
         Add a before update hook that only fires once and then removes itself.
         """
-        return cls._hook_once(cls._before_update, fn)
+        return cls._hook_once(cls._before_update, fn)  # type: ignore
 
     def after_update(
         cls: Type[T_MetaInstance],
@@ -1292,13 +1293,13 @@ class TableMeta(type):
         return cls
 
     def after_update_once(
-        cls,
-        fn: typing.Callable[[Set, T_MetaInstance], Optional[bool]],
-    ):
+        cls: Type[T_MetaInstance],
+        fn: typing.Callable[[Set, T_MetaInstance], Optional[bool]] | typing.Callable[[Set, OpRow], Optional[bool]],
+    ) -> Type[T_MetaInstance]:
         """
         Add an after update hook that only fires once and then removes itself.
         """
-        return cls._hook_once(cls._after_update, fn)
+        return cls._hook_once(cls._after_update, fn)  # type: ignore
 
     def before_delete(cls: Type[T_MetaInstance], fn: typing.Callable[[Set], Optional[bool]]) -> Type[T_MetaInstance]:
         """
@@ -1309,9 +1310,9 @@ class TableMeta(type):
         return cls
 
     def before_delete_once(
-        cls,
+        cls: Type[T_MetaInstance],
         fn: typing.Callable[[Set], Optional[bool]],
-    ):
+    ) -> Type[T_MetaInstance]:
         """
         Add a before delete hook that only fires once and then removes itself.
         """
@@ -1326,9 +1327,9 @@ class TableMeta(type):
         return cls
 
     def after_delete_once(
-        cls,
+        cls: Type[T_MetaInstance],
         fn: typing.Callable[[Set], Optional[bool]],
-    ):
+    ) -> Type[T_MetaInstance]:
         """
         Add an after delete hook that only fires once and then removes itself.
         """
@@ -1556,6 +1557,17 @@ class _TypedTable:
         This can be useful if you need to add something like requires=IS_NOT_IN_DB(db, "table.field"),
         where you need a reference to the current database, which may not exist yet when defining the model.
         """
+
+    @classproperty
+    def _hooks(cls) -> dict[str, list[typing.Callable[..., Optional[bool]]]]:
+        return {
+            "before_insert": cls._before_insert,
+            "after_insert": cls._after_insert,
+            "before_update": cls._before_update,
+            "after_update": cls._after_update,
+            "before_delete": cls._before_delete,
+            "after_delete": cls._after_delete,
+        }
 
 
 class TypedTable(_TypedTable, metaclass=TableMeta):
