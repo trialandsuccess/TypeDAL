@@ -5,6 +5,7 @@ Core functionality of TypeDAL.
 import contextlib
 import csv
 import datetime as dt
+import functools
 import inspect
 import json
 import math
@@ -795,6 +796,10 @@ class TypeDAL(pydal.DAL):  # type: ignore
         return to_snake(camel)
 
 
+P = typing.ParamSpec("P")
+R = typing.TypeVar("R")
+
+
 class TableMeta(type):
     """
     This metaclass contains functionality on table classes, that doesn't exist on its instances.
@@ -1179,6 +1184,19 @@ class TableMeta(type):
         return typing.cast(Type[T_MetaInstance], table.with_alias(alias))
 
     # hooks:
+    def _hook_once(
+        cls: Type[T_MetaInstance], hooks: list[typing.Callable[P, R]], fn: typing.Callable[P, R]
+    ) -> Type[T_MetaInstance]:
+        @functools.wraps(fn)
+        def wraps(*a: P.args, **kw: P.kwargs) -> R:
+            try:
+                return fn(*a, **kw)
+            finally:
+                hooks.remove(wraps)
+
+        hooks.append(wraps)
+        return cls
+
     def before_insert(
         cls: Type[T_MetaInstance],
         fn: typing.Callable[[T_MetaInstance], Optional[bool]] | typing.Callable[[OpRow], Optional[bool]],
@@ -1189,6 +1207,15 @@ class TableMeta(type):
         if fn not in cls._before_insert:
             cls._before_insert.append(fn)
         return cls
+
+    def before_insert_once(
+        cls: Type[T_MetaInstance],
+        fn: typing.Callable[[T_MetaInstance], Optional[bool]] | typing.Callable[[OpRow], Optional[bool]],
+    ) -> Type[T_MetaInstance]:
+        """
+        Add a before insert hook that only fires once and then removes itself.
+        """
+        return cls._hook_once(cls._before_insert, fn)
 
     def after_insert(
         cls: Type[T_MetaInstance],
@@ -1204,6 +1231,18 @@ class TableMeta(type):
             cls._after_insert.append(fn)
         return cls
 
+    def after_insert_once(
+        cls,
+        fn: (
+            typing.Callable[[T_MetaInstance, Reference], Optional[bool]]
+            | typing.Callable[[OpRow, Reference], Optional[bool]]
+        ),
+    ):
+        """
+        Add an after insert hook that only fires once and then removes itself.
+        """
+        return cls._hook_once(cls._after_insert, fn)
+
     def before_update(
         cls: Type[T_MetaInstance],
         fn: typing.Callable[[Set, T_MetaInstance], Optional[bool]] | typing.Callable[[Set, OpRow], Optional[bool]],
@@ -1214,6 +1253,15 @@ class TableMeta(type):
         if fn not in cls._before_update:
             cls._before_update.append(fn)
         return cls
+
+    def before_update_once(
+        cls,
+        fn: typing.Callable[[Set, T_MetaInstance], Optional[bool]] | typing.Callable[[Set, OpRow], Optional[bool]],
+    ):
+        """
+        Add a before update hook that only fires once and then removes itself.
+        """
+        return cls._hook_once(cls._before_update, fn)
 
     def after_update(
         cls: Type[T_MetaInstance],
@@ -1226,6 +1274,15 @@ class TableMeta(type):
             cls._after_update.append(fn)
         return cls
 
+    def after_update_once(
+        cls,
+        fn: typing.Callable[[Set, T_MetaInstance], Optional[bool]],
+    ):
+        """
+        Add an after update hook that only fires once and then removes itself.
+        """
+        return cls._hook_once(cls._after_update, fn)
+
     def before_delete(cls: Type[T_MetaInstance], fn: typing.Callable[[Set], Optional[bool]]) -> Type[T_MetaInstance]:
         """
         Add a before delete hook.
@@ -1234,6 +1291,15 @@ class TableMeta(type):
             cls._before_delete.append(fn)
         return cls
 
+    def before_delete_once(
+        cls,
+        fn: typing.Callable[[Set], Optional[bool]],
+    ):
+        """
+        Add a before delete hook that only fires once and then removes itself.
+        """
+        return cls._hook_once(cls._before_delete, fn)
+
     def after_delete(cls: Type[T_MetaInstance], fn: typing.Callable[[Set], Optional[bool]]) -> Type[T_MetaInstance]:
         """
         Add an after delete hook.
@@ -1241,6 +1307,15 @@ class TableMeta(type):
         if fn not in cls._after_delete:
             cls._after_delete.append(fn)
         return cls
+
+    def after_delete_once(
+        cls,
+        fn: typing.Callable[[Set], Optional[bool]],
+    ):
+        """
+        Add an after delete hook that only fires once and then removes itself.
+        """
+        return cls._hook_once(cls._after_delete, fn)
 
 
 class TypedField(Expression, typing.Generic[T_Value]):  # pragma: no cover

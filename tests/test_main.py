@@ -514,6 +514,27 @@ def test_hooks_duplicates():
     assert counter == 3
 
 
+def test_hooks_once():
+    @db.define()
+    class HookedTableV3(TypedTable):
+        name: str
+
+    counter = 0
+
+    def increase_counter_v2(_, __):
+        nonlocal counter
+        counter += 1
+
+    HookedTableV3.after_insert_once(increase_counter_v2)
+
+    assert counter == 0
+
+    HookedTableV3.insert(name="1")
+    assert counter == 1
+    HookedTableV3.insert(name="2")
+    assert counter == 1
+
+
 def test_try():
     class SomeTableToRetry(TypedTable):
         key: int
