@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.13.1 (2025-04-28)
+
+### Fix
+
+* Pass select kwargs via `.column()` - so you can do e.g. `distinct=True` ([`e5bc168`](https://github.com/trialandsuccess/TypeDAL/commit/e5bc168b90d6a5d214f049de0ef31e544214cc23))
+
 ## v3.13.0 (2025-04-28)
 
 ### Feature
