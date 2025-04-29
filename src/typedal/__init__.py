@@ -10,4 +10,4 @@ try:
 except ImportError:  # pragma: no cover
     P4W_DAL = None  # type: ignore
 
-__all__ = ["TypeDAL", "TypedTable", "TypedField", "TypedRows", "fields", "Relationship", "relationship"]
+__all__ = ["Relationship", "TypeDAL", "TypedField", "TypedRows", "TypedTable", "fields", "relationship"]
