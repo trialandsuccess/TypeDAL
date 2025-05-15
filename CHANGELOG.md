@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.14.0 (2025-05-15)
+
+### Feature
+
+* `db.find_model` to get the registered TypedTable class for a specific 'table_name' ([`c645303`](https://github.com/trialandsuccess/TypeDAL/commit/c645303a85c96735f48eafaaeb20f867b977686f))
+
 ## v3.13.1 (2025-04-28)
 
 ### Fix
