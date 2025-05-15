@@ -55,7 +55,7 @@ def all_dict(cls: type) -> AnyDict:
     return dict(ChainMap(*(c.__dict__ for c in reversed_mro(cls))))  # type: ignore
 
 
-def all_annotations(cls: type, _except: typing.Iterable[str] = None) -> dict[str, type]:
+def all_annotations(cls: type, _except: typing.Optional[typing.Iterable[str]] = None) -> dict[str, type]:
     """
     Wrapper around `_all_annotations` that filters away any keys in _except.
 
@@ -306,6 +306,10 @@ def get_field(field: "TypedField[typing.Any] | Field") -> "Field":
 
 
 class classproperty:
+    """
+    Combination of @classmethod and @property.
+    """
+
     def __init__(self, fget: typing.Callable[..., typing.Any]) -> None:
         """
         Initialize the classproperty.

@@ -5,7 +5,6 @@ ONLY USE IN COMBINATION WITH PY4WEB!
 import typing
 
 import threadsafevariable
-from configuraptor.abs import AnyType
 from py4web.core import ICECUBE
 from py4web.core import Fixture as _Fixture
 from pydal.base import MetaDAL, hashlib_md5
@@ -68,8 +67,8 @@ def setup_py4web_tables(db: TypeDAL) -> None:
 
 
 __all__ = [
+    "DAL",
     "AuthUser",
     "Fixture",
-    "DAL",
     "setup_py4web_tables",
 ]

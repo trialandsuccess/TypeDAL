@@ -93,10 +93,8 @@ def is_typed_field(cls: Any) -> typing.TypeGuard["TypedField[Any]"]:
 
     Deprecated
     """
-    return (
-        isinstance(cls, TypedField)
-        or isinstance(typing.get_origin(cls), type)
-        and issubclass(typing.get_origin(cls), TypedField)
+    return isinstance(cls, TypedField) or (
+        isinstance(typing.get_origin(cls), type) and issubclass(typing.get_origin(cls), TypedField)
     )
 
 
@@ -698,10 +696,29 @@ class TypeDAL(pydal.DAL):  # type: ignore
         """
         Allows dynamically accessing a table by its name as a string.
 
+        If you need the TypedTable class instead of the pydal table, use find_model instead.
+
         Example:
             db['users'] -> user
         """
         return typing.cast(Table, super().__getitem__(str(key)))
+
+    def find_model(self, table_name: str) -> Type["TypedTable"] | None:
+        """
+        Retrieves a mapped table class by its name.
+
+        This method searches for a table class matching the given table name
+        in the defined class map dictionary. If a match is found, the corresponding
+        table class is returned; otherwise, None is returned, indicating that no
+        table class matches the input name.
+
+        Args:
+            table_name: The name of the table to retrieve the mapped class for.
+
+        Returns:
+            The mapped table class if it exists, otherwise None.
+        """
+        return self._class_map.get(table_name, None)
 
     @classmethod
     def _build_field(cls, name: str, _type: str, **kw: Any) -> Field:
@@ -1024,7 +1041,6 @@ class TableMeta(type):
 
         Shortcut for `.select(field).execute().column(field)`.
         """
-
         return QueryBuilder(self).select(field, **options).execute().column(field)
 
     def paginate(self: Type[T_MetaInstance], limit: int, page: int = 1) -> "PaginatedRows[T_MetaInstance]":
@@ -2721,7 +2737,6 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
         Shortcut for `.select(field).execute().column(field)`.
         """
-
         return self.select(field, **options).execute().column(field)
 
     def _handle_relationships_pre_select(
@@ -2888,7 +2903,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
         return _to(rows, self.model, records, metadata=metadata)
 
-    def collect_or_fail(self, exception: Exception = None) -> "TypedRows[T_MetaInstance]":
+    def collect_or_fail(self, exception: typing.Optional[Exception] = None) -> "TypedRows[T_MetaInstance]":
         """
         Call .collect() and raise an error if nothing found.
 
@@ -2908,7 +2923,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         """
         yield from self.collect()
 
-    def __count(self, db: TypeDAL, distinct: bool = None) -> Query:
+    def __count(self, db: TypeDAL, distinct: typing.Optional[bool] = None) -> Query:
         # internal, shared logic between .count and ._count
         model = self.model
         query = self.query
@@ -2924,7 +2939,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
         return query
 
-    def count(self, distinct: bool = None) -> int:
+    def count(self, distinct: typing.Optional[bool] = None) -> int:
         """
         Return the amount of rows matching the current query.
         """
@@ -2933,7 +2948,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
         return db(query).count(distinct)
 
-    def _count(self, distinct: bool = None) -> str:
+    def _count(self, distinct: typing.Optional[bool] = None) -> str:
         """
         Return the SQL for .count().
         """
@@ -3032,7 +3047,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
     def _first(self) -> str:
         return self._paginate(page=1, limit=1)
 
-    def first_or_fail(self, exception: Exception = None, verbose: bool = False) -> T_MetaInstance:
+    def first_or_fail(self, exception: typing.Optional[Exception] = None, verbose: bool = False) -> T_MetaInstance:
         """
         Call .first() and raise an error if nothing found.
 
@@ -3120,7 +3135,7 @@ class TypedSet(pydal.objects.Set):  # type: ignore # pragma: no cover
     This class is not actually used, only 'cast' by TypeDAL.__call__
     """
 
-    def count(self, distinct: bool = None, cache: AnyDict = None) -> int:
+    def count(self, distinct: typing.Optional[bool] = None, cache: AnyDict = None) -> int:
         """
         Count returns an int.
         """

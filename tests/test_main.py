@@ -166,6 +166,11 @@ def test_mixed_defines(capsys):
 
     assert SecondNewSyntax(1).location == "Rotterdam"
 
+    # test find_model:
+    assert db.find_model("old_syntax") is None
+    assert db.find_model("first_new_syntax") is FirstNewSyntax
+    assert db.find_model("second_new_syntax") is SecondNewSyntax
+
 
 def test_dont_allow_bool_in_query():
     with pytest.raises(ValueError):
