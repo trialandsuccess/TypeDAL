@@ -163,7 +163,11 @@ class SlugMixin(Mixin):
     )  # set via init subclass
 
     def __init_subclass__(
-        cls, slug_field: str = None, slug_suffix_length: int = 0, slug_suffix: Optional[int] = None, **kw: Any
+        cls,
+        slug_field: typing.Optional[str] = None,
+        slug_suffix_length: int = 0,
+        slug_suffix: Optional[int] = None,
+        **kw: Any,
     ) -> None:
         """
         Bind 'slug field' option to be used later (on_define).

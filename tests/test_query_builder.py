@@ -483,6 +483,8 @@ def test_column():
     assert len(rows) == 4
     assert set(rows) == {33}
 
+    assert TestRelationship.column(TestRelationship.value, distinct=True, orderby=~TestRelationship.value) == [33, 3]
+
 
 def test_collect_with_extra_fields():
     _setup_data()

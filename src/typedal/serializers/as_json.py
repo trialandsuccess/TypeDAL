@@ -68,7 +68,7 @@ class SerializedJson(ConfigurableJsonEncoder):
         return _rules.get(_type, JSONRule(transform=self._default) if with_default else None)
 
 
-def encode(something: Any, indent: int = None, **kw: Any) -> str:
+def encode(something: Any, indent: typing.Optional[int] = None, **kw: Any) -> str:
     """
     Encode anything to JSON with some improved defaults.
     """

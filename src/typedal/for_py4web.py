@@ -5,7 +5,6 @@ ONLY USE IN COMBINATION WITH PY4WEB!
 import typing
 
 import threadsafevariable
-from configuraptor.abs import AnyType
 from py4web.core import ICECUBE
 from py4web.core import Fixture as _Fixture
 from pydal.base import MetaDAL, hashlib_md5

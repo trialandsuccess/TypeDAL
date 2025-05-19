@@ -168,6 +168,11 @@ def test_mixed_defines(capsys):
 
     assert SecondNewSyntax(1).location == "Rotterdam"
 
+    # test find_model:
+    assert db.find_model("old_syntax") is None
+    assert db.find_model("first_new_syntax") is FirstNewSyntax
+    assert db.find_model("second_new_syntax") is SecondNewSyntax
+
 
 def test_dont_allow_bool_in_query():
     with pytest.raises(ValueError):
@@ -512,8 +517,47 @@ def test_hooks_duplicates():
     HookedTableV3.after_insert(increase_counter_v2)  # other hash
 
     HookedTableV3.insert(name="Should increase counter twice")
-
     assert counter == 3
+
+    for hook in HookedTableV3._hooks.values():
+        hook.clear()
+
+    HookedTableV3.insert(name="Should NOT increase counter")
+    assert counter == 3
+
+
+def test_hooks_once():
+    @db.define()
+    class HookedTableV4(TypedTable):
+        name: str
+
+    counter = 0
+
+    def increase_counter_v2(_, __=None):
+        nonlocal counter
+        counter += 1
+
+    HookedTableV4.before_insert_once(increase_counter_v2)
+    HookedTableV4.after_insert_once(increase_counter_v2)
+    HookedTableV4.before_update_once(increase_counter_v2)
+    HookedTableV4.after_update_once(increase_counter_v2)
+    HookedTableV4.before_delete_once(increase_counter_v2)
+    HookedTableV4.after_delete_once(increase_counter_v2)
+
+    assert counter == 0
+
+    HookedTableV4.insert(name="1")
+    assert counter == 2
+    row = HookedTableV4.insert(name="2")
+    assert counter == 2
+
+    row.update_record(name="3")
+    assert counter == 4
+    row.update_record(name="4")
+    assert counter == 4
+
+    row.delete_record()
+    assert counter == 6
 
 
 def test_try():

@@ -5,6 +5,7 @@ Core functionality of TypeDAL.
 import contextlib
 import csv
 import datetime as dt
+import functools
 import inspect
 import json
 import math
@@ -35,6 +36,7 @@ from .helpers import (
     all_annotations,
     all_dict,
     as_lambda,
+    classproperty,
     extract_type_optional,
     filter_out,
     instanciate,
@@ -778,10 +780,29 @@ class TypeDAL(pydal.DAL):  # type: ignore
         """
         Allows dynamically accessing a table by its name as a string.
 
+        If you need the TypedTable class instead of the pydal table, use find_model instead.
+
         Example:
             db['users'] -> user
         """
         return typing.cast(Table, super().__getitem__(str(key)))
+
+    def find_model(self, table_name: str) -> Type["TypedTable"] | None:
+        """
+        Retrieves a mapped table class by its name.
+
+        This method searches for a table class matching the given table name
+        in the defined class map dictionary. If a match is found, the corresponding
+        table class is returned; otherwise, None is returned, indicating that no
+        table class matches the input name.
+
+        Args:
+            table_name: The name of the table to retrieve the mapped class for.
+
+        Returns:
+            The mapped table class if it exists, otherwise None.
+        """
+        return self._class_map.get(table_name, None)
 
     @classmethod
     def _build_field(cls, name: str, _type: str, **kw: Any) -> Field:
@@ -880,6 +901,10 @@ class TypeDAL(pydal.DAL):  # type: ignore
         Moved to helpers, kept as a static method for legacy reasons.
         """
         return to_snake(camel)
+
+
+P = typing.ParamSpec("P")
+R = typing.TypeVar("R")
 
 
 class TableMeta(type):
@@ -1099,6 +1124,14 @@ class TableMeta(type):
         """
         return QueryBuilder(self).select(*a, **kw)
 
+    def column(self: Type[T_MetaInstance], field: "TypedField[T] | T", **options: Unpack[SelectKwargs]) -> list[T]:
+        """
+        Get all values in a specific column.
+
+        Shortcut for `.select(field).execute().column(field)`.
+        """
+        return QueryBuilder(self).select(field, **options).execute().column(field)
+
     def paginate(self: Type[T_MetaInstance], limit: int, page: int = 1) -> "PaginatedRows[T_MetaInstance]":
         """
         See QueryBuilder.paginate!
@@ -1283,6 +1316,19 @@ class TableMeta(type):
         return self.with_alias(key)
 
     # hooks:
+    def _hook_once(
+        cls: Type[T_MetaInstance], hooks: list[typing.Callable[P, R]], fn: typing.Callable[P, R]
+    ) -> Type[T_MetaInstance]:
+        @functools.wraps(fn)
+        def wraps(*a: P.args, **kw: P.kwargs) -> R:
+            try:
+                return fn(*a, **kw)
+            finally:
+                hooks.remove(wraps)
+
+        hooks.append(wraps)
+        return cls
+
     def before_insert(
         cls: Type[T_MetaInstance],
         fn: typing.Callable[[T_MetaInstance], Optional[bool]] | typing.Callable[[OpRow], Optional[bool]],
@@ -1293,6 +1339,15 @@ class TableMeta(type):
         if fn not in cls._before_insert:
             cls._before_insert.append(fn)
         return cls
+
+    def before_insert_once(
+        cls: Type[T_MetaInstance],
+        fn: typing.Callable[[T_MetaInstance], Optional[bool]] | typing.Callable[[OpRow], Optional[bool]],
+    ) -> Type[T_MetaInstance]:
+        """
+        Add a before insert hook that only fires once and then removes itself.
+        """
+        return cls._hook_once(cls._before_insert, fn)  # type: ignore
 
     def after_insert(
         cls: Type[T_MetaInstance],
@@ -1308,6 +1363,18 @@ class TableMeta(type):
             cls._after_insert.append(fn)
         return cls
 
+    def after_insert_once(
+        cls: Type[T_MetaInstance],
+        fn: (
+            typing.Callable[[T_MetaInstance, Reference], Optional[bool]]
+            | typing.Callable[[OpRow, Reference], Optional[bool]]
+        ),
+    ) -> Type[T_MetaInstance]:
+        """
+        Add an after insert hook that only fires once and then removes itself.
+        """
+        return cls._hook_once(cls._after_insert, fn)  # type: ignore
+
     def before_update(
         cls: Type[T_MetaInstance],
         fn: typing.Callable[[Set, T_MetaInstance], Optional[bool]] | typing.Callable[[Set, OpRow], Optional[bool]],
@@ -1318,6 +1385,15 @@ class TableMeta(type):
         if fn not in cls._before_update:
             cls._before_update.append(fn)
         return cls
+
+    def before_update_once(
+        cls,
+        fn: typing.Callable[[Set, T_MetaInstance], Optional[bool]] | typing.Callable[[Set, OpRow], Optional[bool]],
+    ) -> Type[T_MetaInstance]:
+        """
+        Add a before update hook that only fires once and then removes itself.
+        """
+        return cls._hook_once(cls._before_update, fn)  # type: ignore
 
     def after_update(
         cls: Type[T_MetaInstance],
@@ -1330,6 +1406,15 @@ class TableMeta(type):
             cls._after_update.append(fn)
         return cls
 
+    def after_update_once(
+        cls: Type[T_MetaInstance],
+        fn: typing.Callable[[Set, T_MetaInstance], Optional[bool]] | typing.Callable[[Set, OpRow], Optional[bool]],
+    ) -> Type[T_MetaInstance]:
+        """
+        Add an after update hook that only fires once and then removes itself.
+        """
+        return cls._hook_once(cls._after_update, fn)  # type: ignore
+
     def before_delete(cls: Type[T_MetaInstance], fn: typing.Callable[[Set], Optional[bool]]) -> Type[T_MetaInstance]:
         """
         Add a before delete hook.
@@ -1338,6 +1423,15 @@ class TableMeta(type):
             cls._before_delete.append(fn)
         return cls
 
+    def before_delete_once(
+        cls: Type[T_MetaInstance],
+        fn: typing.Callable[[Set], Optional[bool]],
+    ) -> Type[T_MetaInstance]:
+        """
+        Add a before delete hook that only fires once and then removes itself.
+        """
+        return cls._hook_once(cls._before_delete, fn)
+
     def after_delete(cls: Type[T_MetaInstance], fn: typing.Callable[[Set], Optional[bool]]) -> Type[T_MetaInstance]:
         """
         Add an after delete hook.
@@ -1345,6 +1439,15 @@ class TableMeta(type):
         if fn not in cls._after_delete:
             cls._after_delete.append(fn)
         return cls
+
+    def after_delete_once(
+        cls: Type[T_MetaInstance],
+        fn: typing.Callable[[Set], Optional[bool]],
+    ) -> Type[T_MetaInstance]:
+        """
+        Add an after delete hook that only fires once and then removes itself.
+        """
+        return cls._hook_once(cls._after_delete, fn)
 
 
 class TypedField(Expression, typing.Generic[T_Value]):  # pragma: no cover
@@ -1568,6 +1671,17 @@ class _TypedTable:
         This can be useful if you need to add something like requires=IS_NOT_IN_DB(db, "table.field"),
         where you need a reference to the current database, which may not exist yet when defining the model.
         """
+
+    @classproperty
+    def _hooks(cls) -> dict[str, list[typing.Callable[..., Optional[bool]]]]:
+        return {
+            "before_insert": cls._before_insert,
+            "after_insert": cls._after_insert,
+            "before_update": cls._before_update,
+            "after_update": cls._after_update,
+            "before_delete": cls._before_delete,
+            "after_delete": cls._after_delete,
+        }
 
 
 class TypedTable(_TypedTable, metaclass=TableMeta):
@@ -2695,24 +2809,24 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         return save_to_cache(typed_rows, rows)
 
     @typing.overload
-    def column(self, field: TypedField[T]) -> list[T]:
+    def column(self, field: TypedField[T], **options: Unpack[SelectKwargs]) -> list[T]:
         """
         If a typedfield is passed, the output type can be safely determined.
         """
 
     @typing.overload
-    def column(self, field: T) -> list[T]:
+    def column(self, field: T, **options: Unpack[SelectKwargs]) -> list[T]:
         """
         Otherwise, the output type is loosely determined (assumes `field: type` or Any).
         """
 
-    def column(self, field: TypedField[T] | T) -> list[T]:
+    def column(self, field: TypedField[T] | T, **options: Unpack[SelectKwargs]) -> list[T]:
         """
         Get all values in a specific column.
 
         Shortcut for `.select(field).execute().column(field)`.
         """
-        return self.select(field).execute().column(field)
+        return self.select(field, **options).execute().column(field)
 
     def _handle_relationships_pre_select(
         self,
@@ -2878,7 +2992,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
         return _to(rows, self.model, records, metadata=metadata)
 
-    def collect_or_fail(self, exception: Exception = None) -> "TypedRows[T_MetaInstance]":
+    def collect_or_fail(self, exception: typing.Optional[Exception] = None) -> "TypedRows[T_MetaInstance]":
         """
         Call .collect() and raise an error if nothing found.
 
@@ -2898,7 +3012,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         """
         yield from self.collect()
 
-    def __count(self, db: TypeDAL, distinct: bool = None) -> Query:
+    def __count(self, db: TypeDAL, distinct: typing.Optional[bool] = None) -> Query:
         # internal, shared logic between .count and ._count
         model = self.model
         query = self.query
@@ -2914,7 +3028,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
         return query
 
-    def count(self, distinct: bool = None) -> int:
+    def count(self, distinct: typing.Optional[bool] = None) -> int:
         """
         Return the amount of rows matching the current query.
         """
@@ -2923,7 +3037,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
         return db(query).count(distinct)
 
-    def _count(self, distinct: bool = None) -> str:
+    def _count(self, distinct: typing.Optional[bool] = None) -> str:
         """
         Return the SQL for .count().
         """
@@ -3022,7 +3136,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
     def _first(self) -> str:
         return self._paginate(page=1, limit=1)
 
-    def first_or_fail(self, exception: Exception = None, verbose: bool = False) -> T_MetaInstance:
+    def first_or_fail(self, exception: typing.Optional[Exception] = None, verbose: bool = False) -> T_MetaInstance:
         """
         Call .first() and raise an error if nothing found.
 
@@ -3110,7 +3224,7 @@ class TypedSet(pydal.objects.Set):  # type: ignore # pragma: no cover
     This class is not actually used, only 'cast' by TypeDAL.__call__
     """
 
-    def count(self, distinct: bool = None, cache: AnyDict = None) -> int:
+    def count(self, distinct: typing.Optional[bool] = None, cache: AnyDict = None) -> int:
         """
         Count returns an int.
         """
