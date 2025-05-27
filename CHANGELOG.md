@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.14.1 (2025-05-27)
+
+### Fix
+
+* Don't force slug if already manually set ([`a33b2b5`](https://github.com/trialandsuccess/TypeDAL/commit/a33b2b523a56ae9adc6fb4c49a5708efe7950977))
+
 ## v3.14.0 (2025-05-15)
 
 ### Feature
