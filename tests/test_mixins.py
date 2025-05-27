@@ -95,13 +95,20 @@ def test_slug(db):
     assert error is None
 
     assert row.name == "Two Words"
-    assert row.slug.startswith("two-words")
+    assert row.slug.startswith("two-words-")
 
     row, error = TableWithSlugSuffix.validate_and_insert(name="Two Words")
     assert error is None
 
     assert row.name == "Two Words"
     assert row.slug.startswith("two-words")
+
+    # test manual slug:
+    manual_slug = "some-other-slug-manually-defined"
+    # validate_and_insert will fail because 'slug' is not writable
+    row = TableWithMixins.insert(name="Some Name", slug=manual_slug)
+
+    assert row.slug == manual_slug
 
 
 def test_timestamps(db):

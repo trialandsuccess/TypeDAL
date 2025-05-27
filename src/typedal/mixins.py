@@ -197,6 +197,10 @@ class SlugMixin(Mixin):
 
     @classmethod
     def __generate_slug_before_insert(cls, row: OpRow) -> None:
+        if row.get("slug"):
+            # manually set -> skip
+            return None
+
         settings = cls.__settings__
 
         text_input = row[settings["slug_field"]]
