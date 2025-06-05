@@ -256,11 +256,34 @@ def TimestampField(**kw: Unpack[FieldSettings]) -> TypedField[dt.datetime]:
     )
 
 
+def safe_decode_native_point(value: str | None):
+    if not value:
+        return ()
+
+    try:
+        return ast.literal_eval(value)
+    except ValueError:  # pragma: no cover
+        # should not happen when inserted with `safe_encode_native_point` but you never know
+        return ()
+
+
+def safe_encode_native_point(value):
+    if not value:
+        return ""
+
+    if isinstance(value, str):
+        value = tuple(float(_) for _ in value.strip("(").strip(")").split(","))
+    if not (isinstance(value, tuple) and len(value) == 2):
+        raise ValueError("Invalid point tuple")
+
+    return str(value)
+
+
 NativePointField = SQLCustomType(
     type="string",
     native="point",
-    encoder=str,
-    decoder=ast.literal_eval,
+    encoder=safe_encode_native_point,
+    decoder=safe_decode_native_point,
 )
 
 
