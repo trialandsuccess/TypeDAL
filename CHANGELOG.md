@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.14.2 (2025-06-05)
+
+### Fix
+
+* **PointField:** Don't crash if invalid point is parsed ([`e14b4a3`](https://github.com/trialandsuccess/TypeDAL/commit/e14b4a349799799cc94e8fb62d9da9a0fafdcd36))
+
 ## v3.14.1 (2025-05-27)
 
 ### Fix
