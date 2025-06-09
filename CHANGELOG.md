@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.14.3 (2025-06-09)
+
+### Fix
+
+* Improved `point` parsing ([`9d8aa8a`](https://github.com/trialandsuccess/TypeDAL/commit/9d8aa8a9e23e09b5818153f0d9674176822d3893))
+
 ## v3.14.2 (2025-06-05)
 
 ### Fix
