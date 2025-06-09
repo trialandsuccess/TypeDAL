@@ -288,7 +288,7 @@ def test_point_fields_psql(at_temp_dir):
 
     db.rollback()
 
-    row3 = OptionalPoint.insert(maybe_pt=())
+    row3 = OptionalPoint.insert(maybe_pt="()")
     assert row3.maybe_pt == ()
 
     assert '"pt" point NOT NULL' in Point._sql()
