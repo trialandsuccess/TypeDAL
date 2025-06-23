@@ -2434,7 +2434,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
     def where(
         self,
-        *queries_or_lambdas: Query | typing.Callable[[Type[T_MetaInstance]], Query],
+        *queries_or_lambdas: Query | typing.Callable[[Type[T_MetaInstance]], Query] | dict,
         **filters: Any,
     ) -> "QueryBuilder[T_MetaInstance]":
         """
@@ -2453,20 +2453,28 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         new_query = self.query
         table = self.model._ensure_table_defined()
 
-        for field, value in filters.items():
-            new_query &= table[field] == value
+        queries_or_lambdas = (
+            *queries_or_lambdas,
+            filters,
+        )
 
         subquery: DummyQuery | Query = DummyQuery()
-        for query_or_lambda in queries_or_lambdas:
-            if isinstance(query_or_lambda, _Query):
-                subquery |= typing.cast(Query, query_or_lambda)
-            elif callable(query_or_lambda):
-                if result := query_or_lambda(self.model):
+        for query_part in queries_or_lambdas:
+            if isinstance(query_part, _Query):
+                subquery |= typing.cast(Query, query_part)
+            elif callable(query_part):
+                if result := query_part(self.model):
                     subquery |= result
-            elif isinstance(query_or_lambda, (Field, _Field)) or is_typed_field(query_or_lambda):
-                subquery |= typing.cast(Query, query_or_lambda != None)
+            elif isinstance(query_part, (Field, _Field)) or is_typed_field(query_part):
+                subquery |= typing.cast(Query, query_part != None)
+            elif isinstance(query_part, dict):
+                subsubquery = DummyQuery()
+                for field, value in query_part.items():
+                    subsubquery &= table[field] == value
+                if subsubquery:
+                    subquery |= subsubquery
             else:
-                raise ValueError(f"Unexpected query type ({type(query_or_lambda)}).")
+                raise ValueError(f"Unexpected query type ({type(query_part)}).")
 
         if subquery:
             new_query &= subquery

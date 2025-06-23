@@ -153,7 +153,25 @@ def test_where_builder():
     # test OR
 
     assert TestQueryTable.where(lambda row: row.id == 1, lambda row: row.id == 2).count() == 2
+    assert (
+        TestQueryTable.where(
+            {"id": 1},
+            {  # OR
+                "id": 2
+            },
+        ).count()
+        == 2
+    )
+
     assert TestQueryTable.where(lambda row: row.id == 1, lambda row: row.id == 99).count() == 1
+    assert (
+        TestQueryTable.where(
+            {"id": 1},
+            # OR
+            {"id": 99},
+        ).count()
+        == 1
+    )
 
     assert TestQueryTable.where(id=-1).first() is None
     with pytest.raises(ValueError):
