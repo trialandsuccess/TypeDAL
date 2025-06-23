@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.15.0 (2025-06-23)
+
+### Feature
+
+* **querybuilder:** Support dictionaries (AND) in where (table.where({"example": "selection, "with": "dictionary")) ([`67837f8`](https://github.com/trialandsuccess/TypeDAL/commit/67837f82b13246ca2a526141e8e3915167fe3369))
+
 ## v3.14.3 (2025-06-09)
 
 ### Fix
