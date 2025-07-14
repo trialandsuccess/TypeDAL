@@ -120,7 +120,8 @@ OnQuery: typing.TypeAlias = typing.Optional[
     ]
 ]
 
-To_Type = typing.TypeVar("To_Type", type[Any], Type[Any], str)
+# To_Type = typing.TypeVar("To_Type", type[Any], Type[Any], str)
+To_Type = typing.TypeVar("To_Type")
 
 
 class Relationship(typing.Generic[To_Type]):
@@ -201,6 +202,7 @@ class Relationship(typing.Generic[To_Type]):
         Get the table this relationship is bound to.
         """
         table = self.table  # can be a string because db wasn't available yet
+
         if isinstance(table, str):
             if mapped := db._class_map.get(table):
                 # yay
@@ -249,7 +251,9 @@ class Relationship(typing.Generic[To_Type]):
             return None
 
 
-def relationship(_type: To_Type, condition: Condition = None, join: JOIN_OPTIONS = None, on: OnQuery = None) -> To_Type:
+def relationship(
+    _type: typing.Type[To_Type], condition: Condition = None, join: JOIN_OPTIONS = None, on: OnQuery = None
+) -> To_Type:
     """
     Define a relationship to another table, when its id is not stored in the current table.
 
@@ -584,7 +588,9 @@ class TypeDAL(pydal.DAL):  # type: ignore
                 # by now, all relationships should be instances!
                 relationships=typing.cast(dict[str, Relationship[Any]], relationships),
             )
+            # map both name and rname:
             self._class_map[str(table)] = cls
+            self._class_map[table._rname] = cls
             cls.__on_define__(self)
         else:
             warnings.warn("db.define used without inheriting TypedTable. This could lead to strange problems!")
@@ -713,7 +719,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
         table class matches the input name.
 
         Args:
-            table_name: The name of the table to retrieve the mapped class for.
+            table_name: The rname of the table to retrieve the mapped class for.
 
         Returns:
             The mapped table class if it exists, otherwise None.

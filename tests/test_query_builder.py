@@ -222,8 +222,12 @@ def test_select():
     assert not partial.number
     assert not partial.yet_another
 
-    assert not partial.relations[0].name
-    assert partial.relations[0].value
+    other = partial.relations[0]
+
+    assert isinstance(other, TestRelationship)
+
+    assert not other.name
+    assert other.value
 
 
 def test_paginate():

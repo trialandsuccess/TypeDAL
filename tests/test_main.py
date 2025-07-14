@@ -171,6 +171,10 @@ def test_mixed_defines(capsys):
     assert db.find_model("first_new_syntax") is FirstNewSyntax
     assert db.find_model("second_new_syntax") is SecondNewSyntax
 
+    assert db.find_model(db.old_syntax._rname) is None
+    assert db.find_model(FirstNewSyntax._rname) is FirstNewSyntax
+    assert db.find_model(SecondNewSyntax._rname) is SecondNewSyntax
+
 
 def test_dont_allow_bool_in_query():
     with pytest.raises(ValueError):
