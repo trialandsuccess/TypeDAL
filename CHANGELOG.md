@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.15.1 (2025-07-14)
+
+### Fix
+
+* **find_model:** Map both name and rname ([`e402d66`](https://github.com/trialandsuccess/TypeDAL/commit/e402d6659516d119fd3bd3fc28cea32b360aa068))
+
 ## v3.15.0 (2025-06-23)
 
 ### Feature
