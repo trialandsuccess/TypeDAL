@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.15.2 (2025-07-24)
+
+### Fix
+
+* Store `._rows` in table entry to access raw data (including untyped relationships via associative table for example) ([`cfdaa09`](https://github.com/trialandsuccess/TypeDAL/commit/cfdaa09c70a7b2056f56b55fbddb6b5e65f9ad33))
+
 ## v3.15.1 (2025-07-14)
 
 ### Fix
