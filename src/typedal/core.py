@@ -9,6 +9,7 @@ import functools
 import inspect
 import json
 import math
+import re
 import sys
 import types
 import typing
@@ -1608,6 +1609,7 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
 
     # set up by 'new':
     _row: Row | None = None
+    _rows: tuple[Row, ...] = ()
 
     _with: list[str]
 
@@ -1980,6 +1982,7 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
         model: Type[T_MetaInstance],
         records: dict[int, T_MetaInstance] = None,
         metadata: Metadata = None,
+        raw: dict[int, list[Row]] = None,
     ) -> None:
         """
         Should not be called manually!
@@ -2005,6 +2008,11 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
                 raise NotImplementedError(f"`id` could not be found for {row}")
 
         records = records or {_get_id(row): model(row) for row in rows}
+        raw = raw or {}
+
+        for idx, entity in records.items():
+            entity._rows = tuple(raw.get(idx, []))
+
         super().__init__(rows.db, records, rows.colnames, rows.compact, rows.response, rows.fields)
         self.model = model
         self.metadata = metadata or {}
@@ -2319,6 +2327,29 @@ from .caching import (  # noqa: E402
     load_from_cache,
     save_to_cache,
 )
+
+
+def normalize_table_keys(row: Row, pattern: re.Pattern = re.compile(r"^([a-zA-Z_]+)_(\d{5,})$")) -> Row:
+    """
+    Normalize table keys in a PyDAL Row object by stripping numeric hash suffixes
+    from table names, only if the suffix is 5 or more digits.
+
+    For example:
+        Row({'articles_12345': {...}}) -> Row({'articles': {...}})
+        Row({'articles_123': {...}})   -> unchanged
+
+    Returns:
+        Row: A new Row object with normalized keys.
+    """
+    new_data: dict[str, Any] = {}
+    for key, value in row.items():
+        if match := pattern.match(key):
+            base, _suffix = match.groups()
+            normalized_key = base
+            new_data[normalized_key] = value
+        else:
+            new_data[key] = value
+    return Row(new_data)
 
 
 class QueryBuilder(typing.Generic[T_MetaInstance]):
@@ -2864,12 +2895,19 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         db = self._get_db()
         main_table = self.model._ensure_table_defined()
 
+        # id: Model
         records = {}
+
+        # id: [Row]
+        raw_per_id = defaultdict(list)
+
         seen_relations: dict[str, set[str]] = defaultdict(set)  # main id -> set of col + id for relation
 
         for row in rows:
             main = row[main_table]
             main_id = main.id
+
+            raw_per_id[main_id].append(normalize_table_keys(row))
 
             if main_id not in records:
                 records[main_id] = self.model(main)
@@ -2915,7 +2953,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
                     # create single T
                     records[main_id][column] = instance
 
-        return _to(rows, self.model, records, metadata=metadata)
+        return _to(rows, self.model, records, metadata=metadata, raw=raw_per_id)
 
     def collect_or_fail(self, exception: typing.Optional[Exception] = None) -> "TypedRows[T_MetaInstance]":
         """
