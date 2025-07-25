@@ -1697,6 +1697,14 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
 
         raise AttributeError(item)
 
+    def keys(self):
+        """
+        Return the combination of row + relationship keys.
+
+        Used by dict(row).
+        """
+        return list(self._row.keys()) + getattr(self, "_with", [])
+
     def get(self, item: str, default: Any = None) -> Any:
         """
         Try to get a column from this instance, else return default.
