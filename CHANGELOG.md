@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.15.3 (2025-07-25)
+
+### Fix
+
+* Support `dict(row)` via `row.keys()`, also returning relationships ([`99fc2ef`](https://github.com/trialandsuccess/TypeDAL/commit/99fc2ef7b398947efae64f9be34770828a8d1730))
+
 ## v3.15.2 (2025-07-24)
 
 ### Fix
