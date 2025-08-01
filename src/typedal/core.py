@@ -121,8 +121,7 @@ OnQuery: typing.TypeAlias = typing.Optional[
     ]
 ]
 
-# To_Type = typing.TypeVar("To_Type", type[Any], Type[Any], str)
-To_Type = typing.TypeVar("To_Type")
+To_Type = typing.TypeVar("To_Type", bound=typing.Type[Any])
 
 
 class Relationship(typing.Generic[To_Type]):
@@ -1697,12 +1696,15 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
 
         raise AttributeError(item)
 
-    def keys(self):
+    def keys(self) -> list[str]:
         """
         Return the combination of row + relationship keys.
 
         Used by dict(row).
         """
+        if not self._row:
+            return []
+
         return list(self._row.keys()) + getattr(self, "_with", [])
 
     def get(self, item: str, default: Any = None) -> Any:
@@ -2135,6 +2137,34 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
 
         return mktable(data, headers)
 
+    def groupby(self, key: str | Field | TypedField[T]) -> "TypedRows[T_MetaInstance]":
+        """
+        Groups rows in the dataset by a specified key.
+
+        This method takes a key and organizes the dataset into groups based on
+        the unique values in that key. It creates a new `TypedRows` object where
+        each group is represented by the rows sharing the same key value. It also
+        keeps track of auxiliary data like raw records if applicable.
+
+        Parameters:
+        key: str | Field
+            The key by which rows are grouped. Can either be a string representing
+            a column name or a Field object.
+
+        Returns:
+        TypedRows
+            A new `TypedRows` object containing grouped rows, associated metadata,
+            and additional optional raw data.
+        """
+        # similar to rows.group_by_value(key, one_result=True) but this returns a new TypedRows instead of a dict.
+        return TypedRows(
+            self,
+            self.model,
+            records={row[key]: row for row in self},
+            metadata=self.metadata,
+            raw={row[key]: row._rows for row in self},
+        )
+
     def group_by_value(
         self, *fields: "str | Field | TypedField[T]", one_result: bool = False, **kwargs: Any
     ) -> dict[T, list[T_MetaInstance]]:
@@ -2153,7 +2183,7 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
 
     def as_dict(
         self,
-        key: str | Field = None,
+        key: str | Field | None = None,
         compact: bool = False,
         storage_to_dict: bool = False,
         datetime_to_str: bool = False,
@@ -2340,7 +2370,7 @@ from .caching import (  # noqa: E402
 )
 
 
-def normalize_table_keys(row: Row, pattern: re.Pattern = re.compile(r"^([a-zA-Z_]+)_(\d{5,})$")) -> Row:
+def normalize_table_keys(row: Row, pattern: re.Pattern[str] = re.compile(r"^([a-zA-Z_]+)_(\d{5,})$")) -> Row:
     """
     Normalize table keys in a PyDAL Row object by stripping numeric hash suffixes
     from table names, only if the suffix is 5 or more digits.
@@ -2482,7 +2512,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
     def where(
         self,
-        *queries_or_lambdas: Query | typing.Callable[[Type[T_MetaInstance]], Query] | dict,
+        *queries_or_lambdas: Query | typing.Callable[[Type[T_MetaInstance]], Query] | dict[str, Any],
         **filters: Any,
     ) -> "QueryBuilder[T_MetaInstance]":
         """

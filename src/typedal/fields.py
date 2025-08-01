@@ -256,12 +256,12 @@ def TimestampField(**kw: Unpack[FieldSettings]) -> TypedField[dt.datetime]:
     )
 
 
-def safe_decode_native_point(value: str | None):
+def safe_decode_native_point(value: str | None) -> tuple[float, float] | tuple[()]:
     if not value:
         return ()
 
     try:
-        return ast.literal_eval(value)
+        return typing.cast(tuple[float, float], ast.literal_eval(value))
     except ValueError:  # pragma: no cover
         # should not happen when inserted with `safe_encode_native_point` but you never know
         return ()
