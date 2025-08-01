@@ -2153,7 +2153,7 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
 
     def as_dict(
         self,
-        key: str = None,
+        key: str | Field = None,
         compact: bool = False,
         storage_to_dict: bool = False,
         datetime_to_str: bool = False,
@@ -2164,6 +2164,9 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
         """
         if any([key, compact, storage_to_dict, datetime_to_str, custom_types]):
             # functionality not guaranteed
+            if isinstance(key, Field):
+                key = key.name
+
             return typing.cast(
                 dict[int, AnyDict],
                 super().as_dict(
