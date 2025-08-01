@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.15.4 (2025-08-01)
+
+### Fix
+
+* Support `.as_dict(Field)` in addtion to just `.as_dict('field')` ([`3951cba`](https://github.com/trialandsuccess/TypeDAL/commit/3951cba06cbaba25137301571490a7149232e385))
+
 ## v3.15.3 (2025-07-25)
 
 ### Fix
