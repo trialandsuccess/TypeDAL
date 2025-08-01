@@ -509,12 +509,16 @@ def test_groupby():
     rows = TestQueryTable.all()
     rows_by_number = rows.groupby(TestQueryTable.number)
 
-    print(1, rows.as_dict())
-    # {1: {'id': 1, 'number': 0, 'other': 'Something', 'yet_another': ['something', 'and', 'other', 'things']}, 2: {'id': 2, 'number': 1, 'other': 'Something', 'yet_another': ['something', 'and', 'other', 'things']}, 3: {'id': 3, 'number': 2, 'other': 'Something', 'yet_another': ['something', 'and', 'other', 'things']}, 4: {'id': 4, 'number': 3, 'other': 'Something', 'yet_another': ['something', 'and', 'other', 'things']}, 5: {'id': 5, 'number': 4, 'other': 'Something', 'yet_another': ['something', 'and', 'other', 'things']}}
+    assert rows_by_number.keys() != rows.keys()
+    assert rows_by_number.values() == rows.values()
 
-    print(
-        2, rows_by_number.as_dict()
-    )  # {0: {'id': 1, 'number': 0, 'other': 'Something', 'yet_another': ['something', 'and', 'other', 'things']}, 1: {'id': 2, 'number': 1, 'other': 'Something', 'yet_another': ['something', 'and', 'other', 'things']}, 2: {'id': 3, 'number': 2, 'other': 'Something', 'yet_another': ['something', 'and', 'other', 'things']}, 3: {'id': 4, 'number': 3, 'other': 'Something', 'yet_another': ['something', 'and', 'other', 'things']}, 4: {'id': 5, 'number': 4, 'other': 'Something', 'yet_another': ['something', 'and', 'other', 'things']}}
+    assert rows.as_dict().keys() != rows_by_number.as_dict().keys()
+    assert rows.as_dict().keys() != rows_by_number.as_dict().keys()
+    assert rows_by_number.as_dict().keys() == rows.group_by_value(TestQueryTable.number).keys()
+    assert rows_by_number.as_dict().values() != rows.group_by_value(TestQueryTable.number).values()
+    assert list(rows_by_number.values()) == list(rows.group_by_value(TestQueryTable.number, one_result=True).values())
 
-    print(3, rows.group_by_value(TestQueryTable.number, one_result=True))
-    # {0: [<TestQueryTable({"id": 1, "number": 0, "other": "Something", "yet_another": ["something", "and", "other", "things"]})>], 1: [<TestQueryTable({"id": 2, "number": 1, "other": "Something", "yet_another": ["something", "and", "other", "things"]})>], 2: [<TestQueryTable({"id": 3, "number": 2, "other": "Something", "yet_another": ["something", "and", "other", "things"]})>], 3: [<TestQueryTable({"id": 4, "number": 3, "other": "Something", "yet_another": ["something", "and", "other", "things"]})>], 4: [<TestQueryTable({"id": 5, "number": 4, "other": "Something", "yet_another": ["something", "and", "other", "things"]})>]}
+    assert rows[1].number != 1
+    assert rows_by_number[1].number == 1
+
+    assert rows_by_number[1] == rows.group_by_value(TestQueryTable.number, one_result=True)[1]

@@ -53,6 +53,7 @@ from .types import (
     Expression,
     Field,
     FieldSettings,
+    HashableComparable,
     Metadata,
     OpRow,
     PaginateDict,
@@ -71,7 +72,7 @@ from .types import (
 T_annotation = Type[Any] | types.UnionType
 T_Query = typing.Union["Table", Query, bool, None, "TypedTable", Type["TypedTable"]]
 T_Value = typing.TypeVar("T_Value")  # actual type of the Field (via Generic)
-T_MetaInstance = typing.TypeVar("T_MetaInstance", bound="TypedTable")  # bound="TypedTable"; bound="TableMeta"
+T_MetaInstance = typing.TypeVar("T_MetaInstance", bound="TypedTable")
 T = typing.TypeVar("T")
 
 BASIC_MAPPINGS: dict[T_annotation, str] = {
@@ -1967,14 +1968,15 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
 
 # backwards compat:
 TypedRow = TypedTable
+KeyedBy = typing.TypeVar("KeyedBy", bound=HashableComparable, default=int)
 
 
-class TypedRows(typing.Collection[T_MetaInstance], Rows):
+class TypedRows(typing.Generic[T_MetaInstance, KeyedBy], Rows):
     """
     Slighly enhaned and typed functionality on top of pydal Rows (the result of a select).
     """
 
-    records: dict[int, T_MetaInstance]
+    records: dict[KeyedBy, T_MetaInstance]
     # _rows: Rows
     model: Type[T_MetaInstance]
     metadata: Metadata
@@ -1990,9 +1992,9 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
         self,
         rows: Rows,
         model: Type[T_MetaInstance],
-        records: dict[int, T_MetaInstance] = None,
+        records: typing.Mapping[KeyedBy, T_MetaInstance] = None,
         metadata: Metadata = None,
-        raw: dict[int, list[Row]] = None,
+        raw: typing.Mapping[KeyedBy, list[Row]] = None,
     ) -> None:
         """
         Should not be called manually!
@@ -2028,6 +2030,12 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
         self.metadata = metadata or {}
         self.colnames = rows.colnames
 
+    def keys(self) -> list[KeyedBy]:
+        return list(self.records.keys())
+
+    def values(self) -> list[T_MetaInstance]:
+        return list(self.records.values())
+
     def __len__(self) -> int:
         """
         Return the count of rows.
@@ -2062,7 +2070,7 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
         if not self.records:
             return None
 
-        max_id = max(self.records.keys())
+        max_id = max(self.keys())
         return self[max_id]
 
     def find(
@@ -2137,7 +2145,7 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
 
         return mktable(data, headers)
 
-    def groupby(self, key: str | Field | TypedField[T]) -> "TypedRows[T_MetaInstance]":
+    def groupby(self, key: str | Field | TypedField[T]) -> "TypedRows[T_MetaInstance, T]":
         """
         Groups rows in the dataset by a specified key.
 
@@ -2239,7 +2247,7 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
 
         return [_.as_dict() for _ in self.records.values()]
 
-    def __getitem__(self, item: int) -> T_MetaInstance:
+    def __getitem__(self, item: KeyedBy) -> T_MetaInstance:
         """
         You can get a specific row by ID from a typedrows by using rows[idx] notation.
 
@@ -2255,7 +2263,7 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
 
             raise e
 
-    def get(self, item: int) -> typing.Optional[T_MetaInstance]:
+    def get(self, item: KeyedBy) -> typing.Optional[T_MetaInstance]:
         """
         Get a row by ID, or receive None if it isn't in this result set.
         """
@@ -3158,7 +3166,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 S = typing.TypeVar("S")
 
 
-class PaginatedRows(TypedRows[T_MetaInstance]):
+class PaginatedRows(TypedRows[T_MetaInstance, KeyedBy]):
     """
     Extension on top of rows that is used when calling .paginate() instead of .collect().
     """
@@ -3168,9 +3176,9 @@ class PaginatedRows(TypedRows[T_MetaInstance]):
     @property
     def data(self) -> list[T_MetaInstance]:
         """
-        Get the underlying data.
+        Get the underlying data (alias for .values()).
         """
-        return list(self.records.values())
+        return self.values()
 
     @property
     def pagination(self) -> Pagination:

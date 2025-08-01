@@ -313,3 +313,16 @@ class FieldSettings(TypedDict, total=False):
     custom_qualifier: Any
     map_none: Any
     rname: str
+
+
+@typing.runtime_checkable
+class SupportsRichComparison(typing.Protocol):
+    def __lt__(self, other: object) -> bool: ...
+    def __le__(self, other: object) -> bool: ...
+    def __gt__(self, other: object) -> bool: ...
+    def __ge__(self, other: object) -> bool: ...
+
+
+@typing.runtime_checkable
+class HashableComparable(SupportsRichComparison, typing.Hashable, typing.Protocol):
+    pass
