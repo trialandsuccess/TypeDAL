@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.15.5 (2025-08-29)
+
+### Fix
+
+* Make `auth_user.email.requires` a list so users can append to it ([`716d511`](https://github.com/trialandsuccess/TypeDAL/commit/716d5115687049c897b2ad5878166a88065027b3))
+
 ## v3.15.4 (2025-08-01)
 
 ### Fix
