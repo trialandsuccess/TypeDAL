@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.16.1 (2025-09-01)
+
+### Fix
+
+* Make `reorder_fields` take fields via * args so you don't have to wrap it in [] ([`625ed31`](https://github.com/trialandsuccess/TypeDAL/commit/625ed3182826725e03e04e9154012ee2e482761e))
+
 ## v3.16.0 (2025-09-01)
 
 ### Feature
