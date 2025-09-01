@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.16.0 (2025-09-01)
+
+### Feature
+
+* Allow reordering table fields via `Table.reorder_fields(...)` ([`79c2c3e`](https://github.com/trialandsuccess/TypeDAL/commit/79c2c3eaf8b44919800e4c12026ab54a2678d141))
+
 ## v3.15.5 (2025-08-29)
 
 ### Fix
