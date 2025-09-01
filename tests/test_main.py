@@ -115,11 +115,19 @@ def test_mixed_defines(capsys):
     ## insert normal
     db.old_syntax.insert(name="First", age=99, location="Norway", relation=db.relation(id=1))
     db.first_new_syntax.insert(
-        name="First", age=99, location="Norway", old_relation=db.relation(id=1), tags=["first", "second"]
+        name="First",
+        age=99,
+        location="Norway",
+        old_relation=db.relation(id=1),
+        tags=["first", "second"],
     )
     # equals
     FirstNewSyntax.insert(
-        name="First", age=99, location="Norway", old_relation=db.relation(id=1), tags=["first", "second"]
+        name="First",
+        age=99,
+        location="Norway",
+        old_relation=db.relation(id=1),
+        tags=["first", "second"],
     )
     # similar
     SecondNewSyntax.insert(
@@ -570,3 +578,24 @@ def test_try():
 
     with pytest.warns(RuntimeWarning):
         assert db.try_define(SomeTableToRetry, verbose=True)
+
+
+def test_reorder_fields():
+    @db.define()
+    class Base(TypedTable):
+        gid: str
+
+    @db.define()
+    class Sub(Base):
+        name: str
+
+    # default order is kinda cursed due to MRO:
+    assert list(Sub) == [Sub.id, Sub.name, Sub.gid]
+
+    # 'name' should come last:
+    Sub.reorder_fields([Sub.id, Sub.gid])
+    assert list(Sub) == [Sub.id, Sub.gid, Sub.name]
+
+    # 'name' should be dropped:
+    Sub.reorder_fields([Sub.id, Sub.gid], keep_others=False)
+    assert list(Sub) == [Sub.id, Sub.gid]

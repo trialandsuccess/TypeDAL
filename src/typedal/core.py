@@ -2,6 +2,8 @@
 Core functionality of TypeDAL.
 """
 
+from __future__ import annotations
+
 import contextlib
 import csv
 import datetime as dt
@@ -826,6 +828,31 @@ P = typing.ParamSpec("P")
 R = typing.TypeVar("R")
 
 
+def reorder_fields(
+    table: pydal.objects.Table, fields: list[str | Field | TypedField], keep_others: bool = True
+) -> None:
+    """
+    Reorder fields of a pydal table.
+
+    Args:
+        table: The pydal table object (e.g., db.mytable).
+        fields: List of field names (str) or Field objects in desired order.
+        keep_others (bool):
+            - True (default): keep other fields at the end, in their original order.
+            - False: remove other fields (only keep what's specified).
+    """
+    # Normalize input to field names
+    desired = [f.name if isinstance(f, (TypedField, Field, pydal.objects.Field)) else str(f) for f in fields]
+
+    new_order = [f for f in desired if f in table._fields]
+
+    if keep_others:
+        # Start with desired fields, then append the rest
+        new_order.extend(f for f in table._fields if f not in desired)
+
+    table._fields = new_order
+
+
 class TableMeta(type):
     """
     This metaclass contains functionality on table classes, that doesn't exist on its instances.
@@ -1366,6 +1393,19 @@ class TableMeta(type):
         Add an after delete hook that only fires once and then removes itself.
         """
         return cls._hook_once(cls._after_delete, fn)
+
+    def reorder_fields(cls, fields: list[str | Field | TypedField], keep_others: bool = True):
+        """
+        Reorder fields of a typedal table.
+
+        Args:
+            fields: List of field names (str) or Field objects in desired order.
+            keep_others (bool):
+                - True (default): keep other fields at the end, in their original order.
+                - False: remove other fields (only keep what's specified).
+        """
+
+        return reorder_fields(cls._table, fields, keep_others=keep_others)
 
 
 class TypedField(Expression, typing.Generic[T_Value]):  # pragma: no cover
