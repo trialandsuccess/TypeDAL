@@ -2,6 +2,24 @@
 
 <!--next-version-placeholder-->
 
+## v3.15.5 (2025-08-29)
+
+### Fix
+
+* Make `auth_user.email.requires` a list so users can append to it ([`716d511`](https://github.com/trialandsuccess/TypeDAL/commit/716d5115687049c897b2ad5878166a88065027b3))
+
+## v3.15.4 (2025-08-01)
+
+### Fix
+
+* Support `.as_dict(Field)` in addtion to just `.as_dict('field')` ([`3951cba`](https://github.com/trialandsuccess/TypeDAL/commit/3951cba06cbaba25137301571490a7149232e385))
+
+## v3.15.3 (2025-07-25)
+
+### Fix
+
+* Support `dict(row)` via `row.keys()`, also returning relationships ([`99fc2ef`](https://github.com/trialandsuccess/TypeDAL/commit/99fc2ef7b398947efae64f9be34770828a8d1730))
+
 ## v3.15.2 (2025-07-24)
 
 ### Fix

@@ -137,6 +137,8 @@ def test_rows():
 
     assert new_rows.as_dict(storage_to_dict=True)
 
+    assert new_rows.as_dict("int_field")[1] == new_rows.as_dict(NewStyleClass.int_field)[1]
+
     assert old_rows.as_json() == new_rows.as_json() == new_rows.json() == old_rows.json()
 
     assert old_rows.as_list()[0]["string_field"] == new_rows.as_list()[0]["string_field"]

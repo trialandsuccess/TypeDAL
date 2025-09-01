@@ -1737,6 +1737,14 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
 
         raise AttributeError(item)
 
+    def keys(self):
+        """
+        Return the combination of row + relationship keys.
+
+        Used by dict(row).
+        """
+        return list(self._row.keys()) + getattr(self, "_with", [])
+
     def get(self, item: str, default: Any = None) -> Any:
         """
         Try to get a column from this instance, else return default.
@@ -2185,7 +2193,7 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
 
     def as_dict(
         self,
-        key: str = None,
+        key: str | Field = None,
         compact: bool = False,
         storage_to_dict: bool = False,
         datetime_to_str: bool = False,
@@ -2196,6 +2204,9 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
         """
         if any([key, compact, storage_to_dict, datetime_to_str, custom_types]):
             # functionality not guaranteed
+            if isinstance(key, Field):
+                key = key.name
+
             return typing.cast(
                 dict[int, AnyDict],
                 super().as_dict(

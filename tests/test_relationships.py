@@ -293,6 +293,12 @@ def test_typedal_way():
 
     assert len(role_writer.users) == 2
 
+    author1 = User.where(id=4).join().first()
+
+    assert (
+        len(author1.as_dict()["articles"]) == len(author1.__dict__["articles"]) == len(dict(author1)["articles"]) == 2
+    )
+
 
 def test_reprs():
     _setup_data()
