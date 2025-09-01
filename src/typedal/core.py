@@ -829,7 +829,7 @@ R = typing.TypeVar("R")
 
 
 def reorder_fields(
-    table: pydal.objects.Table, fields: list[str | Field | TypedField], keep_others: bool = True
+    table: pydal.objects.Table, fields: typing.Iterable[str | Field | TypedField], keep_others: bool = True
 ) -> None:
     """
     Reorder fields of a pydal table.
@@ -1394,7 +1394,7 @@ class TableMeta(type):
         """
         return cls._hook_once(cls._after_delete, fn)
 
-    def reorder_fields(cls, fields: list[str | Field | TypedField], keep_others: bool = True):
+    def reorder_fields(cls, *fields: str | Field | TypedField, keep_others: bool = True):
         """
         Reorder fields of a typedal table.
 

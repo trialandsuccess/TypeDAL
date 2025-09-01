@@ -593,9 +593,9 @@ def test_reorder_fields():
     assert list(Sub) == [Sub.id, Sub.name, Sub.gid]
 
     # 'name' should come last:
-    Sub.reorder_fields([Sub.id, Sub.gid])
+    Sub.reorder_fields(Sub.id, Sub.gid)
     assert list(Sub) == [Sub.id, Sub.gid, Sub.name]
 
     # 'name' should be dropped:
-    Sub.reorder_fields([Sub.id, Sub.gid], keep_others=False)
+    Sub.reorder_fields(Sub.id, Sub.gid, keep_others=False)
     assert list(Sub) == [Sub.id, Sub.gid]
