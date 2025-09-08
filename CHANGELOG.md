@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.16.5 (2025-09-08)
+
+### Fix
+
+* Support `list["String"]` references in `.render()` ([`d3aac39`](https://github.com/trialandsuccess/TypeDAL/commit/d3aac399476916e43ed24be7326755fd88b613f0))
+
 ## v3.16.4 (2025-09-08)
 
 ### Fix
