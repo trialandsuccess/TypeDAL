@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.16.3 (2025-09-08)
+
+### Fix
+
+* Support `.render()` on individual row ([`200a64c`](https://github.com/trialandsuccess/TypeDAL/commit/200a64c0e0c2647c5036dee0476d9ad8ebb416e4))
+
 ## v3.16.2 (2025-09-08)
 
 ### Fix
