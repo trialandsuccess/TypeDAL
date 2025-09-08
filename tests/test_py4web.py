@@ -42,7 +42,7 @@ def test_auth_user():
     requirements = AuthUser.email.requires
 
     assert requirements
-    assert isinstance(requirements, tuple)
+    assert isinstance(requirements, list)
     assert len(requirements) == 2
 
     assert isinstance(requirements[0], IS_EMAIL)
