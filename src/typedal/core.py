@@ -2054,19 +2054,39 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
                 )
             # else: relationship, different logic:
 
-        for relation_name in row._with:
+        for relation_name in getattr(row, "_with", []):
             if relation := self._relationships.get(relation_name):
                 relation_table = relation.table
 
                 relation_row = row[relation_name]
-                for fieldname in relation_row:
-                    field = relation_table[fieldname]
-                    row[relation_name][fieldname] = self._db.represent(
-                        "rows_render",
-                        field,
-                        relation_row[field.name],
-                        relation_row,
-                    )
+
+                if isinstance(relation_row, list):
+                    # list of rows
+                    combined = []
+
+                    for related_og in relation_row:
+                        related = copy.deepcopy(related_og)
+                        for fieldname in related:
+                            field = relation_table[fieldname]
+                            related[field.name] = self._db.represent(
+                                "rows_render",
+                                field,
+                                related[field.name],
+                                related,
+                            )
+                        combined.append(related)
+
+                    row[relation_name] = combined
+                else:
+                    # 1 row
+                    for fieldname in relation_row:
+                        field = relation_table[fieldname]
+                        row[relation_name][fieldname] = self._db.represent(
+                            "rows_render",
+                            field,
+                            relation_row[field.name],
+                            relation_row,
+                        )
 
         if compact and len(keys) == 1 and keys[0] != "_extra":  # pragma: no cover
             return row[keys[0]]

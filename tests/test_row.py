@@ -240,6 +240,11 @@ def test_render():
             condition=lambda this, that: this.normal == that.also_normal,
         )
 
+        related_list = relationship(
+            list[RelatedTable],
+            condition=lambda this, that: this.normal == that.also_normal,
+        )
+
     RelatedTable.insert(also_normal="123")
     RenderTable.insert(normal="123", list_field=["abc", "def"])
 
@@ -261,3 +266,24 @@ def test_render():
     assert rendered_two.normal == "123"
     assert rendered_two.list_field == "abc, def"
     assert rendered_two.related.also_normal == "321"
+
+    # test list:
+
+    rows = RenderTable.select().join("related_list").collect()
+
+    second = rows.first()
+
+    assert second.related_list
+
+    iterator = rows.render()
+    rendered_three = next(iterator)
+
+    assert rendered_three.normal == "123"
+    assert rendered_three.list_field == "abc, def"
+    assert rendered_three.related_list[0].also_normal == "321"
+
+    rendered_four = second.render()
+
+    assert rendered_four.normal == "123"
+    assert rendered_four.list_field == "abc, def"
+    assert rendered_four.related_list[0].also_normal == "321"
