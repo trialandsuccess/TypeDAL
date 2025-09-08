@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.16.4 (2025-09-08)
+
+### Fix
+
+* Support `.render()` with list:str relationships ([`e7d6d82`](https://github.com/trialandsuccess/TypeDAL/commit/e7d6d82de82034eee882ab4bc4e1ebf8178f8639))
+
 ## v3.16.3 (2025-09-08)
 
 ### Fix
