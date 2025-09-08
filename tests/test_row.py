@@ -245,11 +245,19 @@ def test_render():
 
     rows = RenderTable.select().join("related").collect()
 
-    assert rows.first().related
+    first = rows.first()
+
+    assert first.related
 
     iterator = rows.render()
-    first = next(iterator)
+    rendered_one = next(iterator)
 
-    assert first.normal == "123"
-    assert first.list_field == "abc, def"
-    assert first.related.also_normal == "321"
+    assert rendered_one.normal == "123"
+    assert rendered_one.list_field == "abc, def"
+    assert rendered_one.related.also_normal == "321"
+
+    # .render() on one row:
+    rendered_two = first.render()
+    assert rendered_two.normal == "123"
+    assert rendered_two.list_field == "abc, def"
+    assert rendered_two.related.also_normal == "321"

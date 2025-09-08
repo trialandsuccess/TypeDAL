@@ -2037,6 +2037,41 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
 
         return pydal2sql.generate_sql(cls)
 
+    def render(self, fields=None, compact=False) -> Self:
+        row = copy.deepcopy(self)
+        keys = list(row)
+        if not fields:
+            fields = [self._table[f] for f in self._table._fields]
+            fields = [f for f in fields if isinstance(f, Field) and f.represent]
+
+        for field in fields:
+            if field._table == self._table:
+                row[field.name] = self._db.represent(
+                    "rows_render",
+                    field,
+                    row[field.name],
+                    row,
+                )
+            # else: relationship, different logic:
+
+        for relation_name in row._with:
+            if relation := self._relationships.get(relation_name):
+                relation_table = relation.table
+
+                relation_row = row[relation_name]
+                for fieldname in relation_row:
+                    field = relation_table[fieldname]
+                    row[relation_name][fieldname] = self._db.represent(
+                        "rows_render",
+                        field,
+                        relation_row[field.name],
+                        relation_row,
+                    )
+
+        if compact and len(keys) == 1 and keys[0] != "_extra":  # pragma: no cover
+            return row[keys[0]]
+        return row
+
 
 # backwards compat:
 TypedRow = TypedTable
@@ -2431,38 +2466,8 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
                 "Rows.render() needs a `rows_render` representer in DAL instance",
             )
 
-        row = copy.deepcopy(self.records[i])
-        keys = list(row)
-        if not fields:
-            fields = [f for f in self.fields if isinstance(f, Field) and f.represent]
-
-        for field in fields:
-            if field._table == self.model._table:
-                row[field.name] = self.db.represent(
-                    "rows_render",
-                    field,
-                    row[field.name],
-                    row,
-                )
-            # else: relationship, different logic:
-
-        for relation_name in row._with:
-            if relation := self.model._relationships.get(relation_name):
-                relation_table = relation.table
-
-                relation_row = row[relation_name]
-                for fieldname in relation_row:
-                    field = relation_table[fieldname]
-                    row[relation_name][fieldname] = self.db.represent(
-                        "rows_render",
-                        field,
-                        relation_row[field.name],
-                        relation_row,
-                    )
-
-        if self.compact and len(keys) == 1 and keys[0] != "_extra":  # pragma: no cover
-            return row[keys[0]]
-        return row
+        row = self.records[i]
+        return row.render(fields, compact=self.compact)
 
 
 from .caching import (  # noqa: E402
