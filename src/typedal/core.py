@@ -2057,6 +2057,8 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
         for relation_name in getattr(row, "_with", []):
             if relation := self._relationships.get(relation_name):
                 relation_table = relation.table
+                if isinstance(relation_table, str):
+                    relation_table = self._db[relation_table]
 
                 relation_row = row[relation_name]
 

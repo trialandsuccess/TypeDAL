@@ -241,7 +241,7 @@ def test_render():
         )
 
         related_list = relationship(
-            list[RelatedTable],
+            list["RelatedTable"],
             condition=lambda this, that: this.normal == that.also_normal,
         )
 
