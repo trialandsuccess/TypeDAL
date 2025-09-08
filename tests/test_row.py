@@ -172,17 +172,17 @@ def test_rows():
     assert len(old_rows.fields) == len(new_rows.fields) > 0
 
     assert (
-            old_rows.find(lambda row: row.int_field < 3).first().string_field
-            == new_rows.find(lambda row: row.int_field < 3).first().string_field
+        old_rows.find(lambda row: row.int_field < 3).first().string_field
+        == new_rows.find(lambda row: row.int_field < 3).first().string_field
     )
 
     assert len(new_rows.find(lambda row: row.int_field > 0)) == 3
     assert len(new_rows.find(lambda row: row.int_field > 0, limitby=(0, 1))) == 1
 
     assert (
-            len(old_rows.group_by_value("int_field"))
-            == len(new_rows.group_by_value("int_field"))
-            == len(new_rows.group_by_value(NewStyleClass.int_field))
+        len(old_rows.group_by_value("int_field"))
+        == len(new_rows.group_by_value("int_field"))
+        == len(new_rows.group_by_value(NewStyleClass.int_field))
     )
 
     joined_old = old_rows.join(db.to_reference.id).first()

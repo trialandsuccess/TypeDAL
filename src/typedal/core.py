@@ -5,6 +5,7 @@ Core functionality of TypeDAL.
 from __future__ import annotations
 
 import contextlib
+import copy
 import csv
 import datetime as dt
 import functools
@@ -18,7 +19,6 @@ import typing
 import uuid
 import warnings
 from collections import defaultdict
-import copy
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Optional, Type
@@ -246,7 +246,8 @@ class Relationship(typing.Generic[To_Type]):
             return self
 
         warnings.warn(
-            "Trying to get data from a relationship object! Did you forget to join it?", category=RuntimeWarning
+            "Trying to get data from a relationship object! Did you forget to join it?",
+            category=RuntimeWarning,
         )
         if self.multiple:
             return []
@@ -255,7 +256,10 @@ class Relationship(typing.Generic[To_Type]):
 
 
 def relationship(
-    _type: typing.Type[To_Type], condition: Condition = None, join: JOIN_OPTIONS = None, on: OnQuery = None
+    _type: typing.Type[To_Type],
+    condition: Condition = None,
+    join: JOIN_OPTIONS = None,
+    on: OnQuery = None,
 ) -> To_Type:
     """
     Define a relationship to another table, when its id is not stored in the current table.
@@ -737,7 +741,9 @@ class TypeDAL(pydal.DAL):  # type: ignore
 
     @classmethod
     def _annotation_to_pydal_fieldtype(
-        cls, _ftype: T_annotation, mut_kw: typing.MutableMapping[str, Any]
+        cls,
+        _ftype: T_annotation,
+        mut_kw: typing.MutableMapping[str, Any],
     ) -> Optional[str]:
         # ftype can be a union or type. typing.cast is sometimes used to tell mypy when it's not a union.
         ftype = typing.cast(type, _ftype)  # cast from Type to type to make mypy happy)
@@ -823,6 +829,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
         """
         return to_snake(camel)
 
+
 def default_representer(field: TypedField[T], value: T, table: Type[TypedTable]) -> str:
     """
     Simply call field.represent on the value.
@@ -832,6 +839,7 @@ def default_representer(field: TypedField[T], value: T, table: Type[TypedTable])
     else:
         return repr(value)
 
+
 TypeDAL.representers.setdefault("rows_render", default_representer)
 
 P = typing.ParamSpec("P")
@@ -839,7 +847,9 @@ R = typing.TypeVar("R")
 
 
 def reorder_fields(
-    table: pydal.objects.Table, fields: typing.Iterable[str | Field | TypedField], keep_others: bool = True
+    table: pydal.objects.Table,
+    fields: typing.Iterable[str | Field | TypedField],
+    keep_others: bool = True,
 ) -> None:
     """
     Reorder fields of a pydal table.
@@ -997,7 +1007,9 @@ class TableMeta(type):
         return self.where(lambda row: row.id.belongs(result)).collect()
 
     def update_or_insert(
-        self: Type[T_MetaInstance], query: T_Query | AnyDict = DEFAULT, **values: Any
+        self: Type[T_MetaInstance],
+        query: T_Query | AnyDict = DEFAULT,
+        **values: Any,
     ) -> T_MetaInstance:
         """
         Update a row if query matches, else insert a new one.
@@ -1020,7 +1032,8 @@ class TableMeta(type):
         return self(record)
 
     def validate_and_insert(
-        self: Type[T_MetaInstance], **fields: Any
+        self: Type[T_MetaInstance],
+        **fields: Any,
     ) -> tuple[Optional[T_MetaInstance], Optional[dict[str, str]]]:
         """
         Validate input data and then insert a row.
@@ -1035,7 +1048,9 @@ class TableMeta(type):
             return None, result.get("errors")
 
     def validate_and_update(
-        self: Type[T_MetaInstance], query: Query, **fields: Any
+        self: Type[T_MetaInstance],
+        query: Query,
+        **fields: Any,
     ) -> tuple[Optional[T_MetaInstance], Optional[dict[str, str]]]:
         """
         Validate input data and then update max 1 row.
@@ -1055,7 +1070,9 @@ class TableMeta(type):
             return None, None
 
     def validate_and_update_or_insert(
-        self: Type[T_MetaInstance], query: Query, **fields: Any
+        self: Type[T_MetaInstance],
+        query: Query,
+        **fields: Any,
     ) -> tuple[Optional[T_MetaInstance], Optional[dict[str, str]]]:
         """
         Validate input data and then update_and_insert (on max 1 row).
@@ -1272,7 +1289,9 @@ class TableMeta(type):
 
     # hooks:
     def _hook_once(
-        cls: Type[T_MetaInstance], hooks: list[typing.Callable[P, R]], fn: typing.Callable[P, R]
+        cls: Type[T_MetaInstance],
+        hooks: list[typing.Callable[P, R]],
+        fn: typing.Callable[P, R],
     ) -> Type[T_MetaInstance]:
         @functools.wraps(fn)
         def wraps(*a: P.args, **kw: P.kwargs) -> R:
@@ -1466,7 +1485,9 @@ class TypedField(Expression, typing.Generic[T_Value]):  # pragma: no cover
         """
 
     def __get__(
-        self, instance: T_MetaInstance | None, owner: Type[T_MetaInstance]
+        self,
+        instance: T_MetaInstance | None,
+        owner: Type[T_MetaInstance],
     ) -> typing.Union[T_Value, "TypedField[T_Value]"]:
         """
         Since this class is a Descriptor field, \
@@ -1675,7 +1696,9 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
         self.update_record = self._update_record  # type: ignore
 
     def __new__(
-        cls, row_or_id: typing.Union[Row, Query, pydal.objects.Set, int, str, None, "TypedTable"] = None, **filters: Any
+        cls,
+        row_or_id: typing.Union[Row, Query, pydal.objects.Set, int, str, None, "TypedTable"] = None,
+        **filters: Any,
     ) -> Self:
         """
         Create a Typed Rows model instance from an existing row, ID or query.
@@ -1858,7 +1881,9 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
         return typing.cast(str, table.as_yaml(sanitize))
 
     def _as_dict(
-        self, datetime_to_str: bool = False, custom_types: typing.Iterable[type] | type | None = None
+        self,
+        datetime_to_str: bool = False,
+        custom_types: typing.Iterable[type] | type | None = None,
     ) -> AnyDict:
         row = self._ensure_matching_row()
 
@@ -2114,7 +2139,9 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
         return self[max_id]
 
     def find(
-        self, f: typing.Callable[[T_MetaInstance], Query], limitby: tuple[int, int] = None
+        self,
+        f: typing.Callable[[T_MetaInstance], Query],
+        limitby: tuple[int, int] = None,
     ) -> "TypedRows[T_MetaInstance]":
         """
         Returns a new Rows object, a subset of the original object, filtered by the function `f`.
@@ -2186,7 +2213,10 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
         return mktable(data, headers)
 
     def group_by_value(
-        self, *fields: "str | Field | TypedField[T]", one_result: bool = False, **kwargs: Any
+        self,
+        *fields: "str | Field | TypedField[T]",
+        one_result: bool = False,
+        **kwargs: Any,
     ) -> dict[T, list[T_MetaInstance]]:
         """
         Group the rows by a specific field (which will be the dict key).
@@ -2352,7 +2382,10 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
 
     @classmethod
     def from_rows(
-        cls, rows: Rows, model: Type[T_MetaInstance], metadata: Metadata = None
+        cls,
+        rows: Rows,
+        model: Type[T_MetaInstance],
+        metadata: Metadata = None,
     ) -> "TypedRows[T_MetaInstance]":
         """
         Internal method to convert a Rows object to a TypedRows.
@@ -2393,10 +2426,9 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
             # difference: uses .keys() instead of index
             return (self.render(i, fields=fields) for i in self.records.keys())
 
-        if not self.db.has_representer("rows_render"):
+        if not self.db.has_representer("rows_render"):  # pragma: no cover
             raise RuntimeError(
-                "Rows.render() needs a `rows_render` \
-                               representer in DAL instance"
+                "Rows.render() needs a `rows_render` representer in DAL instance",
             )
 
         row = copy.deepcopy(self.records[i])
@@ -2412,32 +2444,26 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
                     row[field.name],
                     row,
                 )
-            else:
-                # relationship
-                # raise ValueError([field, row.__dict__, field._table._raw_rname])
-                pass
+            # else: relationship, different logic:
 
         for relation_name in row._with:
-            relation = self.model._relationships.get(relation_name)
+            if relation := self.model._relationships.get(relation_name):
+                relation_table = relation.table
 
-            if not relation:
-                continue
+                relation_row = row[relation_name]
+                for fieldname in relation_row:
+                    field = relation_table[fieldname]
+                    row[relation_name][fieldname] = self.db.represent(
+                        "rows_render",
+                        field,
+                        relation_row[field.name],
+                        relation_row,
+                    )
 
-            relation_table = relation.table
-
-            relation_row = row[relation_name]
-            for fieldname in relation_row:
-                field = relation_table[fieldname]
-                row[relation_name][fieldname] = self.db.represent(
-                    "rows_render",
-                    field,
-                    relation_row[field.name],
-                    relation_row,
-                )
-
-        if self.compact and len(keys) == 1 and keys[0] != "_extra":
+        if self.compact and len(keys) == 1 and keys[0] != "_extra":  # pragma: no cover
             return row[keys[0]]
         return row
+
 
 from .caching import (  # noqa: E402
     _remove_cache,
@@ -2542,7 +2568,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
                 self.select_kwargs,
                 self.relationships,
                 self.metadata,
-            ]
+            ],
         )
 
     def _extend(
@@ -2701,7 +2727,10 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         return self._extend(relationships=relationships)
 
     def cache(
-        self, *deps: Any, expires_at: Optional[dt.datetime] = None, ttl: Optional[int | dt.timedelta] = None
+        self,
+        *deps: Any,
+        expires_at: Optional[dt.datetime] = None,
+        ttl: Optional[int | dt.timedelta] = None,
     ) -> "QueryBuilder[T_MetaInstance]":
         """
         Enable caching for this query to load repeated calls from a dill row \
@@ -2842,7 +2871,10 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         return db(query).select(*select_args, **select_kwargs)
 
     def collect(
-        self, verbose: bool = False, _to: Type["TypedRows[Any]"] = None, add_id: bool = True
+        self,
+        verbose: bool = False,
+        _to: Type["TypedRows[Any]"] = None,
+        add_id: bool = True,
     ) -> "TypedRows[T_MetaInstance]":
         """
         Execute the built query and turn it into model instances, while handling relationships.
@@ -3008,7 +3040,10 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         return query, select_args
 
     def _collect_with_relationships(
-        self, rows: Rows, metadata: Metadata, _to: Type["TypedRows[Any]"]
+        self,
+        rows: Rows,
+        metadata: Metadata,
+        _to: Type["TypedRows[Any]"],
     ) -> "TypedRows[T_MetaInstance]":
         """
         Transform the raw rows into Typed Table model instances.
