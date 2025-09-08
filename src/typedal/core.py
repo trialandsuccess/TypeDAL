@@ -18,7 +18,7 @@ import typing
 import uuid
 import warnings
 from collections import defaultdict
-from copy import copy
+import copy
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Optional, Type
@@ -546,7 +546,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
 
         for key, field in typedfields.items():
             # clone every property so it can be re-used across mixins:
-            clone = copy(field)
+            clone = copy.copy(field)
             setattr(cls, key, clone)
             typedfields[key] = clone
 
@@ -823,6 +823,16 @@ class TypeDAL(pydal.DAL):  # type: ignore
         """
         return to_snake(camel)
 
+def default_representer(field: TypedField[T], value: T, table: Type[TypedTable]) -> str:
+    """
+    Simply call field.represent on the value.
+    """
+    if represent := getattr(field, "represent", None):
+        return field.represent(value, table)
+    else:
+        return repr(value)
+
+TypeDAL.representers.setdefault("rows_render", default_representer)
 
 P = typing.ParamSpec("P")
 R = typing.TypeVar("R")
@@ -2368,6 +2378,66 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
         self.__dict__.update(state)
         # db etc. set after undill by caching.py
 
+    def render(self, i=None, fields=None) -> typing.Generator[T_MetaInstance, None, None]:
+        """
+        Takes an index and returns a copy of the indexed row with values
+        transformed via the "represent" attributes of the associated fields.
+
+        Args:
+            i: index. If not specified, a generator is returned for iteration
+                over all the rows.
+            fields: a list of fields to transform (if None, all fields with
+                "represent" attributes will be transformed)
+        """
+        if i is None:
+            # difference: uses .keys() instead of index
+            return (self.render(i, fields=fields) for i in self.records.keys())
+
+        if not self.db.has_representer("rows_render"):
+            raise RuntimeError(
+                "Rows.render() needs a `rows_render` \
+                               representer in DAL instance"
+            )
+
+        row = copy.deepcopy(self.records[i])
+        keys = list(row)
+        if not fields:
+            fields = [f for f in self.fields if isinstance(f, Field) and f.represent]
+
+        for field in fields:
+            if field._table == self.model._table:
+                row[field.name] = self.db.represent(
+                    "rows_render",
+                    field,
+                    row[field.name],
+                    row,
+                )
+            else:
+                # relationship
+                # raise ValueError([field, row.__dict__, field._table._raw_rname])
+                pass
+
+        for relation_name in row._with:
+            relation = self.model._relationships.get(relation_name)
+
+            if not relation:
+                continue
+
+            relation_table = relation.table
+
+            relation_row = row[relation_name]
+            for fieldname in relation_row:
+                field = relation_table[fieldname]
+                row[relation_name][fieldname] = self.db.represent(
+                    "rows_render",
+                    field,
+                    relation_row[field.name],
+                    relation_row,
+                )
+
+        if self.compact and len(keys) == 1 and keys[0] != "_extra":
+            return row[keys[0]]
+        return row
 
 from .caching import (  # noqa: E402
     _remove_cache,

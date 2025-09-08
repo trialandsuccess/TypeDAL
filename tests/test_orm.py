@@ -34,35 +34,6 @@ T_Table = typing.TypeVar("T_Table", bound=TypedTable)
 
 TypeTable = typing.Type[T_Table]
 
-# class TypeDAL:
-#     tables: list[typing.Type[TypedTable]]
-#
-#     def __init__(self, conn):
-#         self.tables = []
-#
-#     @typing.overload
-#     def define(self, table: TypeTable) -> TypeTable:
-#         ...
-#
-#     @typing.overload
-#     def define(self, table: None = None) -> typing.Callable[[TypeTable], TypeTable]:
-#         ...
-#
-#     def define(
-#         self, table: typing.Optional[TypeTable] = None
-#     ) -> TypeTable | typing.Callable[[TypeTable], TypeTable]:
-#         if table:  # and issubclass(table, Table)
-#             self.tables.append(table)
-#             table._db = self
-#             return table
-#         else:
-#             # called with ()
-#             def wrapper(table: TypeTable) -> TypeTable:
-#                 return self.define(table)
-#
-#             return wrapper
-
-
 T_Value = typing.TypeVar("T_Value")  # actual type of the Field (via Generic)
 
 # T_Table = typing.TypeVar("T_Table")  # typevar used by __get__
