@@ -43,7 +43,7 @@ py4web = [
 ]
 
 migrations = [
-    "typer",
+    "typer >0.17, <0.18",
     "tabulate",
     "pydal2sql>=1.2.0",
     "edwh-migrate>=0.8.0",
@@ -53,7 +53,7 @@ migrations = [
 
 all = [
     "py4web",
-    "typer",
+    "typer >0.17, <0.18",
     "tabulate",
     "pydal2sql[all]>=1.2.0",
     "edwh-migrate[full]>=0.8.0",
