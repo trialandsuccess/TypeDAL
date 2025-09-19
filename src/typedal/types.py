@@ -19,8 +19,15 @@ from pydal.objects import Table as _Table
 from pydal.validators import Validator as _Validator
 from typing_extensions import NotRequired
 
+try:
+    from string.templatelib import Template
+except ImportError:
+    Template: typing.TypeAlias = str
+
 if typing.TYPE_CHECKING:
     from .core import TypedField
+
+
 
 AnyDict: typing.TypeAlias = dict[str, Any]
 

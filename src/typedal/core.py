@@ -16,7 +16,6 @@ import re
 import sys
 import types
 import typing
-import typing as t
 import uuid
 import warnings
 from collections import defaultdict
@@ -71,6 +70,7 @@ from .types import (
     Set,
     Table,
     Validator,
+    Template,
     _Types,
 )
 
@@ -177,7 +177,7 @@ def resolve_annotation_313(ftype: str) -> type:  # pragma: no cover
 
     Variant for Python 3.13
     """
-    fw_ref: ForwardRef = t.get_args(t.Type[ftype])[0]
+    fw_ref: ForwardRef = typing.get_args(typing.Type[ftype])[0]
     return evaluate_forward_reference(fw_ref)
 
 
@@ -922,7 +922,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
 
     def sql_expression(
         self,
-        sql_fragment: str,
+        sql_fragment: str | Template,
         *raw_args: str,
         output_type: str | None = None,
         **raw_kwargs: str,
@@ -932,6 +932,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
 
         Args:
             sql_fragment: The raw SQL fragment.
+                In python 3.14+, this can also be a t-string. In that case, don't pass other args or kwargs.
             *raw_args: Arguments to be interpolated into the SQL fragment.
             output_type: The expected output type of the expression.
             **raw_kwargs: Keyword arguments to be interpolated into the SQL fragment.

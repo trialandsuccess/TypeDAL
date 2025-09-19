@@ -7,6 +7,7 @@ from __future__ import annotations
 import datetime as dt
 import fnmatch
 import io
+import sys
 import types
 import typing
 from collections import ChainMap
@@ -14,15 +15,17 @@ from typing import Any
 
 from pydal import DAL
 
-from .types import AnyDict, Expression, Field, Table
-
-if typing.TYPE_CHECKING:
-    from . import TypeDAL, TypedField, TypedTable  # noqa: F401
+from .types import AnyDict, Expression, Field, Table, Template
 
 try:
     import annotationlib
 except ImportError:  # pragma: no cover
     annotationlib = None
+
+if typing.TYPE_CHECKING:
+    from . import TypeDAL, TypedField, TypedTable  # noqa: F401
+    from string.templatelib import Interpolation
+
 
 T = typing.TypeVar("T")
 
@@ -356,26 +359,125 @@ class classproperty:
         return self.fget(owner)
 
 
-def sql_escape(db: TypeDAL, sql_fragment: str, *raw_args: Any, **raw_kwargs: Any):
+# https://docs.python.org/3.14/library/string.templatelib.html
+SYSTEM_SUPPORTS_TEMPLATES = sys.version_info > (3, 14)
+
+
+def process_tstring(template: Template, operation: typing.Callable[["Interpolation"], str]):
     """
-    Generates escaped SQL fragments with placeholders.
+    Process a Template string by applying an operation to each interpolation.
+
+    This function iterates through a Template object, which contains both string literals
+    and Interpolation objects. String literals are preserved as-is, while Interpolation
+    objects are transformed using the provided operation function.
 
     Args:
-        db: Database object.
-        sql_fragment: SQL fragment with placeholders.
-        *raw_args: Positional arguments to be escaped.
-        **raw_kwargs: Keyword arguments to be escaped.
+        template: A Template object containing mixed string literals and Interpolation objects.
+        operation: A callable that takes an Interpolation object and returns a string.
+                  This function will be applied to each interpolated value in the template.
 
     Returns:
-        Escaped SQL fragment with placeholders replaced with escaped values.
+        str: The processed string with all interpolations replaced by the results of
+             applying the operation function.
+
+    Example:
+        Basic f-string functionality can be implemented as:
+
+        >>> def fstring_operation(interpolation):
+        ...     return str(interpolation.value)
+        >>> value = "test"
+        >>> template = t"{value = }"  # Template string literal
+        >>> result = process_tstring(template, fstring_operation)
+        >>> print(result)  # "value = test"
+
+    Note:
+        This is a generic template processor. The specific behavior depends entirely
+        on the operation function provided.
+    """
+    return "".join(
+        part if isinstance(part, str) else operation(part) for part in template
+    )
+
+
+def sql_escape_template(db: TypeDAL, sql_fragment: Template):
+    """
+    Safely escape a Template string for SQL execution using database-specific escaping.
+
+    This function processes a Template string (t-string) by escaping all interpolated
+    values using the database adapter's escape mechanism, preventing SQL injection
+    attacks while maintaining the structure of the SQL query.
+
+    Args:
+        db: TypeDAL database connection object that provides the adapter for escaping.
+        sql_fragment: A Template object (t-string) containing SQL with interpolated values.
+                     The interpolated values will be automatically escaped.
+
+    Returns:
+        str: SQL string with all interpolated values properly escaped for safe execution.
+
+    Example:
+        >>> user_input = "'; DROP TABLE users; --"
+        >>> query = t"SELECT * FROM users WHERE name = {user_input}"
+        >>> safe_query = sql_escape_template(db, query)
+        >>> print(safe_query)  # "SELECT * FROM users WHERE name = '\'; DROP TABLE users; --'"
+
+    Security:
+        This function is essential for preventing SQL injection attacks when using
+        user-provided data in SQL queries. All interpolated values are escaped
+        according to the database adapter's rules.
+
+    Note:
+        Only available in Python 3.14+ when SYSTEM_SUPPORTS_TEMPLATES is True.
+        For earlier Python versions, use sql_escape() with string formatting.
+    """
+    return process_tstring(sql_fragment, lambda part: db._adapter.adapt(part.value))
+
+
+def sql_escape(db: TypeDAL, sql_fragment: str | Template, *raw_args: str, **raw_kwargs: str):
+    """
+    Generate escaped SQL fragments with safely substituted placeholders.
+
+    This function provides secure SQL string construction by escaping all provided
+    arguments using the database adapter's escaping mechanism. It supports both
+    traditional string formatting (Python < 3.14) and Template strings (Python 3.14+).
+
+    Args:
+        db: TypeDAL database connection object that provides the adapter for escaping.
+        sql_fragment: SQL fragment with placeholders (%s for positional, %(name)s for named).
+                     In Python 3.14+, this can also be a Template (t-string) with
+                     interpolated values that will be automatically escaped.
+        *raw_args: Positional arguments to be escaped and substituted for %s placeholders.
+                  Only use with string fragments, not Template objects.
+        **raw_kwargs: Keyword arguments to be escaped and substituted for %(name)s placeholders.
+                     Only use with string fragments, not Template objects.
+
+    Returns:
+        str: SQL fragment with all placeholders replaced by properly escaped values.
 
     Raises:
-        ValueError: If both args and kwargs are provided.
+        ValueError: If both positional and keyword arguments are provided simultaneously.
+
+    Examples:
+        Positional arguments:
+        >>> safe_sql = sql_escape(db, "SELECT * FROM users WHERE id = %s", user_id)
+
+        Keyword arguments:
+        >>> safe_sql = sql_escape(db, "SELECT * FROM users WHERE name = %(name)s", name=username)
+
+        Template strings (Python 3.14+):
+        >>> safe_sql = sql_escape(db, t"SELECT * FROM users WHERE id = {user_id}")
+
+    Security:
+        All arguments are escaped using the database adapter's escaping rules to prevent
+        SQL injection attacks. Never concatenate user input directly into SQL strings.
     """
     if raw_args and raw_kwargs:  # pragma: no cover
         raise ValueError("Please provide either args or kwargs, not both.")
 
-    elif raw_args:
+    if SYSTEM_SUPPORTS_TEMPLATES and isinstance(sql_fragment, Template):
+        return sql_escape_template(db, sql_fragment)
+
+    if raw_args:
         # list
         return sql_fragment % tuple(db._adapter.adapt(placeholder) for placeholder in raw_args)
     else:
@@ -384,24 +486,59 @@ def sql_escape(db: TypeDAL, sql_fragment: str, *raw_args: Any, **raw_kwargs: Any
 
 
 def sql_expression(
-    db: TypeDAL,
-    sql_fragment: str,
-    *raw_args: str,
-    output_type: str | None = None,
-    **raw_kwargs: str,
+        db: TypeDAL,
+        sql_fragment: str | Template,
+        *raw_args: str,
+        output_type: str | None = None,
+        **raw_kwargs: str,
 ) -> Expression:
     """
-    Creates a pydal Expression object representing a raw SQL fragment.
+    Create a PyDAL Expression object from a raw SQL fragment with safe parameter substitution.
+
+    This function combines SQL escaping with PyDAL's Expression system, allowing you to
+    create database expressions from raw SQL while maintaining security through proper
+    parameter escaping.
 
     Args:
-        db: The TypeDAL object.
-        sql_fragment: The raw SQL fragment.
-        *raw_args: Arguments to be interpolated into the SQL fragment.
-        output_type: The expected output type of the expression.
-        **raw_kwargs: Keyword arguments to be interpolated into the SQL fragment.
+        db: The TypeDAL database connection object.
+        sql_fragment: Raw SQL fragment with placeholders (%s for positional, %(name)s for named).
+                     In Python 3.14+, this can also be a Template (t-string) with
+                     interpolated values that will be automatically escaped.
+        *raw_args: Positional arguments to be escaped and interpolated into the SQL fragment.
+                  Only use with string fragments, not Template objects.
+        output_type: Optional type hint for the expected output type of the expression.
+                    This can help with query analysis and optimization.
+        **raw_kwargs: Keyword arguments to be escaped and interpolated into the SQL fragment.
+                     Only use with string fragments, not Template objects.
 
     Returns:
-        A pydal Expression object.
+        Expression: A PyDAL Expression object wrapping the safely escaped SQL fragment.
+
+    Examples:
+        Creating a complex WHERE clause:
+        >>> expr = sql_expression(db,
+        ...     "age > %s AND status = %s",
+        ...     18, "active",
+        ...     output_type="boolean")
+        >>> query = db(expr).select()
+
+        Using keyword arguments:
+        >>> expr = sql_expression(db,
+        ...     "EXTRACT(year FROM %(date_col)s) = %(year)s",
+        ...     date_col="created_at", year=2023,
+        ...     output_type="boolean")
+
+        Template strings (Python 3.14+):
+        >>> min_age = 21
+        >>> expr = sql_expression(db, t"age >= {min_age}", output_type="boolean")
+
+    Security:
+        All parameters are escaped using sql_escape() before being wrapped in the Expression,
+        ensuring protection against SQL injection attacks.
+
+    Note:
+        The returned Expression can be used anywhere PyDAL expects an expression,
+        such as in db().select(), .update(), or .delete() operations.
     """
     safe_sql = sql_escape(db, sql_fragment, *raw_args, **raw_kwargs)
 
