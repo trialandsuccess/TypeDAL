@@ -81,25 +81,6 @@ def mypy_test_typedal_define() -> None:
 
 
 @pytest.mark.mypy_testing
-@pytest.mark.skipif(sys.version_info < (3, 13), reason="Python <3.13 uses Union[...]")
-def test_update_classical_union() -> None:
-    query: pydal.objects.Query = MyTable.id == 3
-    new = MyTable.update(query)
-    reveal_type(new)  # R: Union[tests.test_mypy.MyTable, None]
-
-    inst = MyTable(3)  # could also actually be None!
-    reveal_type(inst)  # R: tests.test_mypy.MyTable
-
-    if inst:
-        inst2 = inst._update()  # normally you would just do .update
-        reveal_type(inst2)  # R: tests.test_mypy.MyTable
-
-        inst3 = inst.update_record()
-        reveal_type(inst3)  # R: tests.test_mypy.MyTable
-
-
-@pytest.mark.mypy_testing
-@pytest.mark.skipif(sys.version_info >= (3, 13), reason="Python 3.13+ uses | in reveal_type")
 def test_update_modern_union() -> None:
     query: pydal.objects.Query = MyTable.id == 3
     new = MyTable.update(query)
@@ -117,39 +98,6 @@ def test_update_modern_union() -> None:
 
 
 @pytest.mark.mypy_testing
-@pytest.mark.skipif(sys.version_info < (3, 13), reason="Python <3.13 uses Union[...]")
-def mypy_test_typedset_classical_union() -> None:
-    counted1 = db(MyTable).count()
-    counted2 = db(db.old_style).count()
-    counted3 = db(old_style).count()
-    counted4 = MyTable.count()
-
-    reveal_type(counted1)  # R: builtins.int
-    reveal_type(counted2)  # R: builtins.int
-    reveal_type(counted3)  # R: builtins.int
-    reveal_type(counted4)  # R: builtins.int
-
-    select1 = db(MyTable).select()  # E: [var-annotated]
-    select2: TypedRows[MyTable] = db(MyTable).select()
-    select3 = MyTable.select().collect()
-
-    reveal_type(select1)  # R: typedal.core.TypedRows[Any]
-    reveal_type(select2)  # R: typedal.core.TypedRows[tests.test_mypy.MyTable]
-    reveal_type(select3)  # R: typedal.core.TypedRows[tests.test_mypy.MyTable]
-
-    reveal_type(select1.first())  # R: Union[Any, None]
-    reveal_type(select2.first())  # R: Union[tests.test_mypy.MyTable, None]
-    reveal_type(select3.first())  # R: Union[tests.test_mypy.MyTable, None]
-
-    for row in select2:
-        reveal_type(row)  # R: tests.test_mypy.MyTable
-
-    for row in MyTable.select():
-        reveal_type(row)  # R: tests.test_mypy.MyTable
-
-
-@pytest.mark.mypy_testing
-@pytest.mark.skipif(sys.version_info >= (3, 13), reason="Python 3.13+ uses | in reveal_type")
 def mypy_test_typedset_modern_union() -> None:
     counted1 = db(MyTable).count()
     counted2 = db(db.old_style).count()

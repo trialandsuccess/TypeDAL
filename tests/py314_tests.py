@@ -114,10 +114,17 @@ def test_executesql_with_tstring(database: TypeDAL):
     """)
 
     database.executesql(t"INSERT INTO unhackable(name) VALUES ({bobby_tables})")
+
     rows = database.executesql(t"SELECT * FROM unhackable where name = {bobby_tables}")
 
     assert len(rows) == 1
+    assert rows[0][0] == bobby_tables
 
+    # alternative using magic:
+    name = bobby_tables
+    rows = database.executesql(t"SELECT * FROM unhackable where {name = }")
+
+    assert len(rows) == 1
     assert rows[0][0] == bobby_tables
 
 

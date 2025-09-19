@@ -931,6 +931,34 @@ class TypeDAL(pydal.DAL):  # type: ignore
         colnames=None,
         as_ordered_dict=False,
     ):
+        """Executes a raw SQL statement or a TypeDAL template query.
+
+        If `query` is provided as a `Template` and the system supports template
+        rendering, it will be processed with `sql_escape_template` before being
+        executed. Otherwise, the query is passed to the underlying DAL as-is.
+
+        Args:
+            query (str | Template): The SQL query to execute, either a plain
+                string or a `Template` (created via the `t""` syntax).
+            placeholders (Iterable[str] | dict[str, str] | None, optional):
+                Parameters to substitute into the SQL statement. Can be a sequence
+                (for positional parameters) or a dictionary (for named parameters).
+                Usually not applicable when using a t-string, since template
+                expressions handle interpolation directly.
+            as_dict (bool, optional): If True, return rows as dictionaries keyed by
+                column name. Defaults to False.
+            fields (Iterable[Field | TypedField] | None, optional): Explicit set of
+                fields to map results onto. Defaults to None.
+            colnames (Iterable[str] | None, optional): Explicit column names to use
+                in the result set. Defaults to None.
+            as_ordered_dict (bool, optional): If True, return rows as `OrderedDict`s
+                preserving column order. Defaults to False.
+
+        Returns:
+            list[Any]: The query result set. Typically a list of tuples if
+            `as_dict` and `as_ordered_dict` are False, or a list of dict-like
+            objects if those flags are enabled.
+        """
         if SYSTEM_SUPPORTS_TEMPLATES and isinstance(query, Template):
             query = sql_escape_template(self, query)
 
