@@ -2,6 +2,8 @@
 Helpers that work independently of core.
 """
 
+from __future__ import annotations
+
 import datetime as dt
 import fnmatch
 import io
@@ -12,7 +14,7 @@ from typing import Any
 
 from pydal import DAL
 
-from .types import AnyDict, Field, Table
+from .types import AnyDict, Expression, Field, Table
 
 if typing.TYPE_CHECKING:
     from . import TypeDAL, TypedField, TypedTable  # noqa: F401
@@ -120,12 +122,14 @@ def origin_is_subclass(obj: Any, _type: type) -> bool:
     return bool(
         typing.get_origin(obj)
         and isinstance(typing.get_origin(obj), type)
-        and issubclass(typing.get_origin(obj), _type)
+        and issubclass(typing.get_origin(obj), _type),
     )
 
 
 def mktable(
-    data: dict[Any, Any], header: typing.Optional[typing.Iterable[str] | range] = None, skip_first: bool = True
+    data: dict[Any, Any],
+    header: typing.Optional[typing.Iterable[str] | range] = None,
+    skip_first: bool = True,
 ) -> str:
     """
     Display a table for 'data'.
@@ -350,3 +354,61 @@ class classproperty:
             The value returned by the function.
         """
         return self.fget(owner)
+
+
+def sql_escape(db: TypeDAL, sql_fragment: str, *raw_args: Any, **raw_kwargs: Any):
+    """
+    Generates escaped SQL fragments with placeholders.
+
+    Args:
+        db: Database object.
+        sql_fragment: SQL fragment with placeholders.
+        *raw_args: Positional arguments to be escaped.
+        **raw_kwargs: Keyword arguments to be escaped.
+
+    Returns:
+        Escaped SQL fragment with placeholders replaced with escaped values.
+
+    Raises:
+        ValueError: If both args and kwargs are provided.
+    """
+    if raw_args and raw_kwargs:  # pragma: no cover
+        raise ValueError("Please provide either args or kwargs, not both.")
+
+    elif raw_args:
+        # list
+        return sql_fragment % tuple(db._adapter.adapt(placeholder) for placeholder in raw_args)
+    else:
+        # dict
+        return sql_fragment % {key: db._adapter.adapt(placeholder) for key, placeholder in raw_kwargs.items()}
+
+
+def sql_expression(
+    db: TypeDAL,
+    sql_fragment: str,
+    *raw_args: str,
+    output_type: str | None = None,
+    **raw_kwargs: str,
+) -> Expression:
+    """
+    Creates a pydal Expression object representing a raw SQL fragment.
+
+    Args:
+        db: The TypeDAL object.
+        sql_fragment: The raw SQL fragment.
+        *raw_args: Arguments to be interpolated into the SQL fragment.
+        output_type: The expected output type of the expression.
+        **raw_kwargs: Keyword arguments to be interpolated into the SQL fragment.
+
+    Returns:
+        A pydal Expression object.
+    """
+    safe_sql = sql_escape(db, sql_fragment, *raw_args, **raw_kwargs)
+
+    # create a pydal Expression wrapping a raw SQL fragment + placeholders
+    return Expression(
+        db,
+        db._adapter.dialect.raw,
+        safe_sql,
+        type=output_type,  # optional type hint
+    )
