@@ -7,7 +7,7 @@ from src.typedal.__about__ import __version__
 from src.typedal.cli import app, get_output_format
 
 # by default, click's cli runner mixes stdout and stderr for some reason...
-runner = CliRunner(mix_stderr=False)
+runner = CliRunner()
 
 
 def test_version():

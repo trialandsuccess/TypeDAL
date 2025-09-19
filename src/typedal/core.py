@@ -25,10 +25,12 @@ from typing import Any, Optional, Type
 
 import pydal
 from pydal._globals import DEFAULT
-from pydal.objects import Field as _Field
-from pydal.objects import Query as _Query
+
+# from pydal.objects import Field as _Field
+# from pydal.objects import Query as _Query
 from pydal.objects import Row
-from pydal.objects import Table as _Table
+
+# from pydal.objects import Table as _Table
 from typing_extensions import Self, Unpack
 
 from .config import TypeDALConfig, load_config
@@ -45,6 +47,7 @@ from .helpers import (
     looks_like,
     mktable,
     origin_is_subclass,
+    sql_expression,
     to_snake,
     unwrap_type,
 )
@@ -71,7 +74,7 @@ from .types import (
 
 # use typing.cast(type, ...) to make mypy happy with unions
 T_annotation = Type[Any] | types.UnionType
-T_Query = typing.Union["Table", Query, bool, None, "TypedTable", Type["TypedTable"]]
+T_Query = typing.Union["Table", Query, bool, None, "TypedTable", Type["TypedTable"], Expression]
 T_Value = typing.TypeVar("T_Value")  # actual type of the Field (via Generic)
 T_MetaInstance = typing.TypeVar("T_MetaInstance", bound="TypedTable")  # bound="TypedTable"; bound="TableMeta"
 T = typing.TypeVar("T")
@@ -234,7 +237,7 @@ class Relationship(typing.Generic[To_Type]):
 
         return str(table)
 
-    def __get__(self, instance: Any, owner: Any) -> typing.Optional[list[Any]] | "Relationship[To_Type]":
+    def __get__(self, instance: Any, owner: Any) -> "typing.Optional[list[Any]] | Relationship[To_Type]":
         """
         Relationship is a descriptor class, which can be returned from a class but not an instance.
 
@@ -756,7 +759,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
         if mapping := BASIC_MAPPINGS.get(ftype):
             # basi types
             return mapping
-        elif isinstance(ftype, _Table):
+        elif isinstance(ftype, pydal.objects.Table):
             # db.table
             return f"reference {ftype._tablename}"
         elif issubclass(type(ftype), type) and issubclass(ftype, TypedTable):
@@ -829,13 +832,34 @@ class TypeDAL(pydal.DAL):  # type: ignore
         """
         return to_snake(camel)
 
+    def sql_expression(
+        self,
+        sql_fragment: str,
+        *raw_args: str,
+        output_type: str | None = None,
+        **raw_kwargs: str,
+    ):
+        """
+        Creates a pydal Expression object representing a raw SQL fragment.
+
+        Args:
+            sql_fragment: The raw SQL fragment.
+            *raw_args: Arguments to be interpolated into the SQL fragment.
+            output_type: The expected output type of the expression.
+            **raw_kwargs: Keyword arguments to be interpolated into the SQL fragment.
+
+        Returns:
+            A pydal Expression object.
+        """
+        return sql_expression(self, sql_fragment, *raw_args, output_type=output_type, **raw_kwargs)
+
 
 def default_representer(field: TypedField[T], value: T, table: Type[TypedTable]) -> str:
     """
     Simply call field.represent on the value.
     """
     if represent := getattr(field, "represent", None):
-        return field.represent(value, table)
+        return represent(value, table)
     else:
         return repr(value)
 
@@ -2669,15 +2693,15 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
             filters,
         )
 
-        subquery: DummyQuery | Query = DummyQuery()
+        subquery = typing.cast(Query, DummyQuery())
         for query_part in queries_or_lambdas:
-            if isinstance(query_part, _Query):
+            if isinstance(query_part, (Field, pydal.objects.Field)) or is_typed_field(query_part):
+                subquery |= typing.cast(Query, query_part != None)
+            elif isinstance(query_part, (pydal.objects.Query, Expression, pydal.objects.Expression)):
                 subquery |= typing.cast(Query, query_part)
             elif callable(query_part):
                 if result := query_part(self.model):
                     subquery |= result
-            elif isinstance(query_part, (Field, _Field)) or is_typed_field(query_part):
-                subquery |= typing.cast(Query, query_part != None)
             elif isinstance(query_part, dict):
                 subsubquery = DummyQuery()
                 for field, value in query_part.items():

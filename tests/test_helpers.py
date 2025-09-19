@@ -5,6 +5,7 @@ import pydal
 import pytest
 from pydal import DAL
 
+from src.typedal import TypeDAL, TypedTable, sql_expression
 from src.typedal.caching import get_expire
 from src.typedal.helpers import (
     DummyQuery,
@@ -23,8 +24,7 @@ from src.typedal.helpers import (
     to_snake,
     unwrap_type,
 )
-from typedal import TypeDAL, TypedTable
-from typedal.types import Field
+from src.typedal.types import Field
 
 
 def test_is_union():
@@ -207,3 +207,36 @@ def test_get_functions():
     field = get_field(TestGetFunctions.string)
     print(type(field))
     assert isinstance(field, Field)
+
+
+def test_sql_expression():
+    # note: only %s works since .adapt does something like
+    #  -> "'%s'" % obj.replace("'", "''")
+    #  depending on the driver
+
+    @database.define()
+    class TestSqlExpression(TypedTable):
+        value: str
+
+    TestSqlExpression.insert(value="This value may only be accessed after 2024")
+
+    expr1 = sql_expression(database, "date('now') > %s", "2025-01-01")
+    expr2 = database.sql_expression("date('now') > %(value)s", value="2025-01-01")
+
+    assert expr1 == expr2
+    assert str(expr1) == "date('now') > '2025-01-01'"
+    # past -> should yield result
+    result = database(expr1).select(TestSqlExpression.value, expr2)[0]
+    assert result
+    assert result[TestSqlExpression.value] == "This value may only be accessed after 2024"
+    assert result[expr2] == result[expr1] == 1
+
+    result2 = TestSqlExpression.where(expr1).select(TestSqlExpression.value, expr2).first()
+    assert result2
+    assert result2[TestSqlExpression.value] == "This value may only be accessed after 2024"
+    assert result2[expr2] == result2[expr1] == 1
+
+    expr3 = database.sql_expression("date('now') > %(value)s", value="3000-01-01")
+    # far future -> should not yield result
+    result3 = database(expr3).select(TestSqlExpression.value, expr3).as_list()
+    assert not result3
