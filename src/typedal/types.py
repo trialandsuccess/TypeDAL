@@ -28,7 +28,6 @@ if typing.TYPE_CHECKING:
     from .core import TypedField
 
 
-
 AnyDict: typing.TypeAlias = dict[str, Any]
 
 

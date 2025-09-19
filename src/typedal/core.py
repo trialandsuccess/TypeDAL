@@ -36,6 +36,7 @@ from typing_extensions import Self, Unpack
 # from .annotations import resolve_annotation
 from .config import TypeDALConfig, load_config
 from .helpers import (
+    SYSTEM_SUPPORTS_TEMPLATES,
     DummyQuery,
     all_annotations,
     all_dict,
@@ -48,6 +49,7 @@ from .helpers import (
     looks_like,
     mktable,
     origin_is_subclass,
+    sql_escape_template,
     sql_expression,
     to_snake,
     unwrap_type,
@@ -69,8 +71,8 @@ from .types import (
     SelectKwargs,
     Set,
     Table,
-    Validator,
     Template,
+    Validator,
     _Types,
 )
 
@@ -920,12 +922,33 @@ class TypeDAL(pydal.DAL):  # type: ignore
         """
         return to_snake(camel)
 
+    def executesql(
+        self,
+        query: str | Template,
+        placeholders=None,
+        as_dict=False,
+        fields=None,
+        colnames=None,
+        as_ordered_dict=False,
+    ):
+        if SYSTEM_SUPPORTS_TEMPLATES and isinstance(query, Template):
+            query = sql_escape_template(self, query)
+
+        return super().executesql(
+            query,
+            placeholders=placeholders,
+            as_dict=as_dict,
+            fields=fields,
+            colnames=colnames,
+            as_ordered_dict=as_ordered_dict,
+        )
+
     def sql_expression(
         self,
         sql_fragment: str | Template,
-        *raw_args: str,
+        *raw_args: Any,
         output_type: str | None = None,
-        **raw_kwargs: str,
+        **raw_kwargs: Any,
     ):
         """
         Creates a pydal Expression object representing a raw SQL fragment.

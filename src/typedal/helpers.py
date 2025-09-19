@@ -23,8 +23,9 @@ except ImportError:  # pragma: no cover
     annotationlib = None
 
 if typing.TYPE_CHECKING:
-    from . import TypeDAL, TypedField, TypedTable  # noqa: F401
     from string.templatelib import Interpolation
+
+    from . import TypeDAL, TypedField, TypedTable  # noqa: F401
 
 
 T = typing.TypeVar("T")
@@ -394,9 +395,7 @@ def process_tstring(template: Template, operation: typing.Callable[["Interpolati
         This is a generic template processor. The specific behavior depends entirely
         on the operation function provided.
     """
-    return "".join(
-        part if isinstance(part, str) else operation(part) for part in template
-    )
+    return "".join(part if isinstance(part, str) else operation(part) for part in template)
 
 
 def sql_escape_template(db: TypeDAL, sql_fragment: Template):
@@ -430,10 +429,10 @@ def sql_escape_template(db: TypeDAL, sql_fragment: Template):
         Only available in Python 3.14+ when SYSTEM_SUPPORTS_TEMPLATES is True.
         For earlier Python versions, use sql_escape() with string formatting.
     """
-    return process_tstring(sql_fragment, lambda part: db._adapter.adapt(part.value))
+    return process_tstring(sql_fragment, lambda part: db._adapter.smart_adapt(part.value))
 
 
-def sql_escape(db: TypeDAL, sql_fragment: str | Template, *raw_args: str, **raw_kwargs: str):
+def sql_escape(db: TypeDAL, sql_fragment: str | Template, *raw_args: Any, **raw_kwargs: Any):
     """
     Generate escaped SQL fragments with safely substituted placeholders.
 
@@ -479,18 +478,18 @@ def sql_escape(db: TypeDAL, sql_fragment: str | Template, *raw_args: str, **raw_
 
     if raw_args:
         # list
-        return sql_fragment % tuple(db._adapter.adapt(placeholder) for placeholder in raw_args)
+        return sql_fragment % tuple(db._adapter.smart_adapt(placeholder) for placeholder in raw_args)
     else:
         # dict
-        return sql_fragment % {key: db._adapter.adapt(placeholder) for key, placeholder in raw_kwargs.items()}
+        return sql_fragment % {key: db._adapter.smart_adapt(placeholder) for key, placeholder in raw_kwargs.items()}
 
 
 def sql_expression(
-        db: TypeDAL,
-        sql_fragment: str | Template,
-        *raw_args: str,
-        output_type: str | None = None,
-        **raw_kwargs: str,
+    db: TypeDAL,
+    sql_fragment: str | Template,
+    *raw_args: Any,
+    output_type: str | None = None,
+    **raw_kwargs: Any,
 ) -> Expression:
     """
     Create a PyDAL Expression object from a raw SQL fragment with safe parameter substitution.

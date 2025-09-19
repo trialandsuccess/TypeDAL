@@ -9,6 +9,7 @@ from pydal import DAL
 from src.typedal import TypeDAL, TypedTable, sql_expression
 from src.typedal.caching import get_expire
 from src.typedal.helpers import (
+    SYSTEM_SUPPORTS_TEMPLATES,
     DummyQuery,
     all_annotations,
     as_lambda,
@@ -23,7 +24,7 @@ from src.typedal.helpers import (
     mktable,
     origin_is_subclass,
     to_snake,
-    unwrap_type, SYSTEM_SUPPORTS_TEMPLATES,
+    unwrap_type,
 )
 from src.typedal.types import Field
 
@@ -262,7 +263,9 @@ def test_sql_expression():
     result3 = database(expr3).select(TestSqlExpression.value, expr3).as_list()
     assert not result3
 
+
 @pytest.mark.skipif(not SYSTEM_SUPPORTS_TEMPLATES, reason="t-strings contain breaking syntax!")
 def test_sql_expression_314():
     from .py314_tests import test_sql_expression_314
+
     test_sql_expression_314(database)
