@@ -35,10 +35,10 @@ class AuthUser(TypedTable):
         """
         super().__on_define__(db)
 
-        cls.email.requires = (
+        cls.email.requires = [
             IS_EMAIL(),
             IS_NOT_IN_DB(
                 db,
                 "auth_user.email",
             ),
-        )
+        ]

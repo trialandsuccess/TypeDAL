@@ -2,6 +2,96 @@
 
 <!--next-version-placeholder-->
 
+## v3.16.5 (2025-09-08)
+
+### Fix
+
+* Support `list["String"]` references in `.render()` ([`d3aac39`](https://github.com/trialandsuccess/TypeDAL/commit/d3aac399476916e43ed24be7326755fd88b613f0))
+
+## v3.16.4 (2025-09-08)
+
+### Fix
+
+* Support `.render()` with list:str relationships ([`e7d6d82`](https://github.com/trialandsuccess/TypeDAL/commit/e7d6d82de82034eee882ab4bc4e1ebf8178f8639))
+
+## v3.16.3 (2025-09-08)
+
+### Fix
+
+* Support `.render()` on individual row ([`200a64c`](https://github.com/trialandsuccess/TypeDAL/commit/200a64c0e0c2647c5036dee0476d9ad8ebb416e4))
+
+## v3.16.2 (2025-09-08)
+
+### Fix
+
+* Support `.render()` on rows ([`11e115a`](https://github.com/trialandsuccess/TypeDAL/commit/11e115aceaa0207c1b6a969cd3fec95b5e898970))
+
+## v3.16.1 (2025-09-01)
+
+### Fix
+
+* Make `reorder_fields` take fields via * args so you don't have to wrap it in [] ([`625ed31`](https://github.com/trialandsuccess/TypeDAL/commit/625ed3182826725e03e04e9154012ee2e482761e))
+
+## v3.16.0 (2025-09-01)
+
+### Feature
+
+* Allow reordering table fields via `Table.reorder_fields(...)` ([`79c2c3e`](https://github.com/trialandsuccess/TypeDAL/commit/79c2c3eaf8b44919800e4c12026ab54a2678d141))
+
+## v3.15.5 (2025-08-29)
+
+### Fix
+
+* Make `auth_user.email.requires` a list so users can append to it ([`716d511`](https://github.com/trialandsuccess/TypeDAL/commit/716d5115687049c897b2ad5878166a88065027b3))
+
+## v3.15.4 (2025-08-01)
+
+### Fix
+
+* Support `.as_dict(Field)` in addtion to just `.as_dict('field')` ([`3951cba`](https://github.com/trialandsuccess/TypeDAL/commit/3951cba06cbaba25137301571490a7149232e385))
+
+## v3.15.3 (2025-07-25)
+
+### Fix
+
+* Support `dict(row)` via `row.keys()`, also returning relationships ([`99fc2ef`](https://github.com/trialandsuccess/TypeDAL/commit/99fc2ef7b398947efae64f9be34770828a8d1730))
+
+## v3.15.2 (2025-07-24)
+
+### Fix
+
+* Store `._rows` in table entry to access raw data (including untyped relationships via associative table for example) ([`cfdaa09`](https://github.com/trialandsuccess/TypeDAL/commit/cfdaa09c70a7b2056f56b55fbddb6b5e65f9ad33))
+
+## v3.15.1 (2025-07-14)
+
+### Fix
+
+* **find_model:** Map both name and rname ([`e402d66`](https://github.com/trialandsuccess/TypeDAL/commit/e402d6659516d119fd3bd3fc28cea32b360aa068))
+
+## v3.15.0 (2025-06-23)
+
+### Feature
+
+* **querybuilder:** Support dictionaries (AND) in where (table.where({"example": "selection, "with": "dictionary")) ([`67837f8`](https://github.com/trialandsuccess/TypeDAL/commit/67837f82b13246ca2a526141e8e3915167fe3369))
+
+## v3.14.3 (2025-06-09)
+
+### Fix
+
+* Improved `point` parsing ([`9d8aa8a`](https://github.com/trialandsuccess/TypeDAL/commit/9d8aa8a9e23e09b5818153f0d9674176822d3893))
+
+## v3.14.2 (2025-06-05)
+
+### Fix
+
+* **PointField:** Don't crash if invalid point is parsed ([`e14b4a3`](https://github.com/trialandsuccess/TypeDAL/commit/e14b4a349799799cc94e8fb62d9da9a0fafdcd36))
+
+## v3.14.1 (2025-05-27)
+
+### Fix
+
+* Don't force slug if already manually set ([`a33b2b5`](https://github.com/trialandsuccess/TypeDAL/commit/a33b2b523a56ae9adc6fb4c49a5708efe7950977))
+
 ## v3.14.0 (2025-05-15)
 
 ### Feature

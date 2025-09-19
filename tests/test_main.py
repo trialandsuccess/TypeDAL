@@ -117,11 +117,19 @@ def test_mixed_defines(capsys):
     ## insert normal
     db.old_syntax.insert(name="First", age=99, location="Norway", relation=db.relation(id=1))
     db.first_new_syntax.insert(
-        name="First", age=99, location="Norway", old_relation=db.relation(id=1), tags=["first", "second"]
+        name="First",
+        age=99,
+        location="Norway",
+        old_relation=db.relation(id=1),
+        tags=["first", "second"],
     )
     # equals
     FirstNewSyntax.insert(
-        name="First", age=99, location="Norway", old_relation=db.relation(id=1), tags=["first", "second"]
+        name="First",
+        age=99,
+        location="Norway",
+        old_relation=db.relation(id=1),
+        tags=["first", "second"],
     )
     # similar
     SecondNewSyntax.insert(
@@ -172,6 +180,10 @@ def test_mixed_defines(capsys):
     assert db.find_model("old_syntax") is None
     assert db.find_model("first_new_syntax") is FirstNewSyntax
     assert db.find_model("second_new_syntax") is SecondNewSyntax
+
+    assert db.find_model(db.old_syntax._rname) is None
+    assert db.find_model(FirstNewSyntax._rname) is FirstNewSyntax
+    assert db.find_model(SecondNewSyntax._rname) is SecondNewSyntax
 
 
 def test_dont_allow_bool_in_query():
@@ -607,3 +619,24 @@ def test_forward_reference_class_explicit():
 
     with pytest.raises(NameError):
         assert db.define(WithFakeRef)
+
+
+def test_reorder_fields():
+    @db.define()
+    class Base(TypedTable):
+        gid: str
+
+    @db.define()
+    class Sub(Base):
+        name: str
+
+    # default order is kinda cursed due to MRO:
+    assert list(Sub) == [Sub.id, Sub.name, Sub.gid]
+
+    # 'name' should come last:
+    Sub.reorder_fields(Sub.id, Sub.gid)
+    assert list(Sub) == [Sub.id, Sub.gid, Sub.name]
+
+    # 'name' should be dropped:
+    Sub.reorder_fields(Sub.id, Sub.gid, keep_others=False)
+    assert list(Sub) == [Sub.id, Sub.gid]

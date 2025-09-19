@@ -153,7 +153,25 @@ def test_where_builder():
     # test OR
 
     assert TestQueryTable.where(lambda row: row.id == 1, lambda row: row.id == 2).count() == 2
+    assert (
+        TestQueryTable.where(
+            {"id": 1},
+            {  # OR
+                "id": 2
+            },
+        ).count()
+        == 2
+    )
+
     assert TestQueryTable.where(lambda row: row.id == 1, lambda row: row.id == 99).count() == 1
+    assert (
+        TestQueryTable.where(
+            {"id": 1},
+            # OR
+            {"id": 99},
+        ).count()
+        == 1
+    )
 
     assert TestQueryTable.where(id=-1).first() is None
     with pytest.raises(ValueError):
@@ -204,8 +222,12 @@ def test_select():
     assert not partial.number
     assert not partial.yet_another
 
-    assert not partial.relations[0].name
-    assert partial.relations[0].value
+    other = partial.relations[0]
+
+    assert isinstance(other, TestRelationship)
+
+    assert not other.name
+    assert other.value
 
 
 def test_paginate():

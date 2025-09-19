@@ -293,6 +293,12 @@ def test_typedal_way():
 
     assert len(role_writer.users) == 2
 
+    author1 = User.where(id=4).join().first()
+
+    assert (
+        len(author1.as_dict()["articles"]) == len(author1.__dict__["articles"]) == len(dict(author1)["articles"]) == 2
+    )
+
 
 def test_reprs():
     _setup_data()
@@ -620,3 +626,19 @@ def test_count_with_join():
 
     assert User.where(id=4).join("articles").count(User.id) == 1
     assert User.where(id=4).join("articles").count(Article.id) == 2
+
+
+def test_accessing_raw_data():
+    _setup_data()
+
+    user = User.where(id=4).join("articles").first()
+
+    # <User({"id": 4, "name": "Untagged Author", "roles": [], "gid": "967da807-eb13-46dc-a0f3-d5c04751edf4", "main_role": 2, "extra_roles": []}) + ['articles']>
+    assert user._row
+
+    # one row per user+article combination like how postgres returns it:
+    assert len(user._rows) == 2
+
+    assert {row.user.id for row in user._rows} == {4}
+
+    assert {row.articles.id for row in user._rows} == {1, 2}

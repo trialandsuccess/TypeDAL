@@ -9,7 +9,7 @@ import pydal
 import pytest
 from pydal.objects import Rows
 
-from src.typedal import TypeDAL, TypedField, TypedTable
+from src.typedal import TypeDAL, TypedField, TypedTable, relationship
 from src.typedal.fields import IntegerField, ReferenceField
 
 db = TypeDAL("sqlite:memory")
@@ -137,6 +137,8 @@ def test_rows():
 
     assert new_rows.as_dict(storage_to_dict=True)
 
+    assert new_rows.as_dict("int_field")[1] == new_rows.as_dict(NewStyleClass.int_field)[1]
+
     assert old_rows.as_json() == new_rows.as_json() == new_rows.json() == old_rows.json()
 
     assert old_rows.as_list()[0]["string_field"] == new_rows.as_list()[0]["string_field"]
@@ -218,3 +220,70 @@ def test_rows():
     empty_rows = NewStyleClass.where(NewStyleClass.id < 0).collect()
     assert str(empty_rows)
     assert repr(empty_rows)
+
+
+def test_render():
+    def comma_separated(lst: list[str], _):
+        return ", ".join(lst) if lst else ""
+
+    @db.define()
+    class RelatedTable(TypedTable):
+        also_normal = TypedField(str, represent=lambda value, _: value[::-1])
+
+    @db.define()
+    class RenderTable(TypedTable):
+        normal = TypedField(str)
+        list_field = TypedField(list[str], represent=comma_separated)
+
+        related = relationship(
+            RelatedTable,
+            condition=lambda this, that: this.normal == that.also_normal,
+        )
+
+        related_list = relationship(
+            list["RelatedTable"],
+            condition=lambda this, that: this.normal == that.also_normal,
+        )
+
+    RelatedTable.insert(also_normal="123")
+    RenderTable.insert(normal="123", list_field=["abc", "def"])
+
+    rows = RenderTable.select().join("related").collect()
+
+    first = rows.first()
+
+    assert first.related
+
+    iterator = rows.render()
+    rendered_one = next(iterator)
+
+    assert rendered_one.normal == "123"
+    assert rendered_one.list_field == "abc, def"
+    assert rendered_one.related.also_normal == "321"
+
+    # .render() on one row:
+    rendered_two = first.render()
+    assert rendered_two.normal == "123"
+    assert rendered_two.list_field == "abc, def"
+    assert rendered_two.related.also_normal == "321"
+
+    # test list:
+
+    rows = RenderTable.select().join("related_list").collect()
+
+    second = rows.first()
+
+    assert second.related_list
+
+    iterator = rows.render()
+    rendered_three = next(iterator)
+
+    assert rendered_three.normal == "123"
+    assert rendered_three.list_field == "abc, def"
+    assert rendered_three.related_list[0].also_normal == "321"
+
+    rendered_four = second.render()
+
+    assert rendered_four.normal == "123"
+    assert rendered_four.list_field == "abc, def"
+    assert rendered_four.related_list[0].also_normal == "321"

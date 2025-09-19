@@ -219,7 +219,11 @@ def test_point_fields_sqlite(at_temp_dir):
     class Point(TypedTable):
         pt = PointField()
 
+    class OptionalPoint(TypedTable):
+        maybe_pt = PointField(notnull=False)
+
     db.define(Point)
+    db.define(OptionalPoint)
 
     row1 = Point.insert(pt=(1, 0))
     row2 = Point.insert(pt="(1, 0)")
@@ -236,8 +240,13 @@ def test_point_fields_sqlite(at_temp_dir):
     with pytest.raises(Exception):
         Point.insert(pt="123")
 
-    # note: psql will check this whereas sqlite won't:
-    Point.insert(pt=())
+    with pytest.raises(Exception):
+        Point.insert(pt=())
+
+    db.rollback()
+
+    row3 = OptionalPoint.insert(maybe_pt=())
+    assert row3.maybe_pt == ()
 
     assert '"pt" point NOT NULL' in Point._sql()
 
@@ -253,7 +262,11 @@ def test_point_fields_psql(at_temp_dir):
     class Point(TypedTable):
         pt = PointField()
 
+    class OptionalPoint(TypedTable):
+        maybe_pt = PointField(notnull=False)
+
     db.define(Point)
+    db.define(OptionalPoint)
 
     row1 = Point.insert(pt=(1, 0))
     row2 = Point.insert(pt="(1, 0)")
@@ -270,12 +283,16 @@ def test_point_fields_psql(at_temp_dir):
     with pytest.raises(Exception):
         Point.insert(pt="123")
 
-    # note: psql will check this whereas sqlite won't:
-
     with pytest.raises(Exception):
         Point.insert(pt=())
 
+    db.rollback()
+
+    row3 = OptionalPoint.insert(maybe_pt="()")
+    assert row3.maybe_pt == ()
+
     assert '"pt" point NOT NULL' in Point._sql()
+    assert "NOT NULL" not in OptionalPoint._sql()
 
 
 def test_uuid_fields_psql(at_temp_dir):
