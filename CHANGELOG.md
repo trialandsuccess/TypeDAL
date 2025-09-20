@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.17.0 (2025-09-20)
+
+### Feature
+
+* Improved Expression support via `db.sql_expression` for more flexibility ([`2892aa4`](https://github.com/trialandsuccess/TypeDAL/commit/2892aa452a0b9563ff742a2a7a00927b89b440b9))
+
 ## v3.16.5 (2025-09-08)
 
 ### Fix
