@@ -25,7 +25,7 @@ except ImportError:  # pragma: no cover
 if typing.TYPE_CHECKING:
     from string.templatelib import Interpolation
 
-    from . import TypeDAL, TypedField, TypedTable  # noqa: F401
+    from . import TypeDAL, TypedField, TypedTable
 
 
 T = typing.TypeVar("T")
@@ -360,6 +360,26 @@ class classproperty:
         return self.fget(owner)
 
 
+def smarter_adapt(db: TypeDAL, placeholder: Any) -> str:
+    """
+    Smarter adaptation of placeholder to quote if needed.
+
+    Args:
+        db: Database object.
+        placeholder: Placeholder object.
+
+    Returns:
+        Quoted placeholder if needed, except for numbers (smart_adapt logic)
+            or fields/tables (use already quoted rname).
+    """
+    return typing.cast(
+        str,
+        getattr(placeholder, "sql_shortref", None)  # for tables
+        or getattr(placeholder, "sqlsafe", None)  # for fields
+        or db._adapter.smart_adapt(placeholder),  # for others
+    )
+
+
 # https://docs.python.org/3.14/library/string.templatelib.html
 SYSTEM_SUPPORTS_TEMPLATES = sys.version_info > (3, 14)
 
@@ -429,7 +449,7 @@ def sql_escape_template(db: TypeDAL, sql_fragment: Template):
         Only available in Python 3.14+ when SYSTEM_SUPPORTS_TEMPLATES is True.
         For earlier Python versions, use sql_escape() with string formatting.
     """
-    return process_tstring(sql_fragment, lambda part: db._adapter.smart_adapt(part.value))
+    return process_tstring(sql_fragment, lambda part: smarter_adapt(db, part.value))
 
 
 def sql_escape(db: TypeDAL, sql_fragment: str | Template, *raw_args: Any, **raw_kwargs: Any):
@@ -478,10 +498,10 @@ def sql_escape(db: TypeDAL, sql_fragment: str | Template, *raw_args: Any, **raw_
 
     if raw_args:
         # list
-        return sql_fragment % tuple(db._adapter.smart_adapt(placeholder) for placeholder in raw_args)
+        return sql_fragment % tuple(smarter_adapt(db, placeholder) for placeholder in raw_args)
     else:
         # dict
-        return sql_fragment % {key: db._adapter.smart_adapt(placeholder) for key, placeholder in raw_kwargs.items()}
+        return sql_fragment % {key: smarter_adapt(db, placeholder) for key, placeholder in raw_kwargs.items()}
 
 
 def sql_expression(

@@ -338,7 +338,7 @@ def load_config(
     # combine and fill with fallback values
     # load typedal config or fail
     toml_path, toml = _load_toml(_use_pyproject)
-    dotenv_path, dotenv = _load_dotenv(_use_env)
+    _dotenv_path, dotenv = _load_dotenv(_use_env)
 
     expand_env_vars_into_toml_values(toml, dotenv)
 

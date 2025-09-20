@@ -256,18 +256,50 @@ def TimestampField(**kw: Unpack[FieldSettings]) -> TypedField[dt.datetime]:
     )
 
 
-def safe_decode_native_point(value: str | None):
+def safe_decode_native_point(value: str | None) -> tuple[float, ...]:
+    """
+    Safely decode a string into a tuple of floats.
+
+    The function attempts to parse the input string using `ast.literal_eval`.
+    If the parsing is successful, the function casts the parsed value to a tuple of floats and returns it.
+    Otherwise, the function returns an empty tuple.
+
+    Args:
+        value: The string to decode.
+
+    Returns:
+        A tuple of floats.
+    """
     if not value:
         return ()
 
     try:
-        return ast.literal_eval(value)
+        parsed = ast.literal_eval(value)
+        return typing.cast(tuple[float, ...], parsed)
     except ValueError:  # pragma: no cover
         # should not happen when inserted with `safe_encode_native_point` but you never know
         return ()
 
 
-def safe_encode_native_point(value: tuple[str, str] | str) -> str:
+def safe_encode_native_point(value: tuple[str, str] | tuple[float, float] | str) -> str:
+    """
+
+    Safe encodes a point value.
+
+    The function takes a point value as input.
+    It can be a string in the format "x,y" or a tuple of two numbers.
+    The function converts the string to a tuple if necessary, validates the tuple,
+    and formats it into the expected string format.
+
+    Args:
+        value: The point value to be encoded.
+
+    Returns:
+        The encoded point value as a string in the format "x,y".
+
+    Raises:
+        ValueError: If the input value is not a valid point.
+    """
     if not value:
         return ""
 
@@ -276,13 +308,15 @@ def safe_encode_native_point(value: tuple[str, str] | str) -> str:
         value = value.strip("() ")
         if not value:
             return ""
-        value = tuple(float(x.strip()) for x in value.split(","))
+        value_tup = tuple(float(x.strip()) for x in value.split(","))
+    else:
+        value_tup = value  # type: ignore
 
     # Validate and format
-    if len(value) != 2:
+    if len(value_tup) != 2:
         raise ValueError("Point must have exactly 2 coordinates")
 
-    x, y = value
+    x, y = value_tup
     return f"({x},{y})"
 
 

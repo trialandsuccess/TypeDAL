@@ -25,15 +25,9 @@ from typing import Any, Optional, Type
 
 import pydal
 from pydal._globals import DEFAULT
-
-# from pydal.objects import Field as _Field
-# from pydal.objects import Query as _Query
 from pydal.objects import Row
-
-# from pydal.objects import Table as _Table
 from typing_extensions import Self, Unpack
 
-# from .annotations import resolve_annotation
 from .config import TypeDALConfig, load_config
 from .helpers import (
     SYSTEM_SUPPORTS_TEMPLATES,
@@ -249,7 +243,7 @@ class Relationship(typing.Generic[To_Type]):
     Define a relationship to another table.
     """
 
-    _type: To_Type
+    _type: Type[To_Type]
     table: Type["TypedTable"] | type | str
     condition: Condition
     condition_and: Condition
@@ -259,7 +253,7 @@ class Relationship(typing.Generic[To_Type]):
 
     def __init__(
         self,
-        _type: To_Type,
+        _type: Type[To_Type],
         condition: Condition = None,
         join: JOIN_OPTIONS = None,
         on: OnQuery = None,
@@ -282,7 +276,7 @@ class Relationship(typing.Generic[To_Type]):
             self.table = unwrap_type(args[0])
             self.multiple = True
         else:
-            self.table = _type
+            self.table = typing.cast(type[TypedTable], _type)
             self.multiple = False
 
         if isinstance(self.table, str):
@@ -977,7 +971,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
         *raw_args: Any,
         output_type: str | None = None,
         **raw_kwargs: Any,
-    ):
+    ) -> Expression:
         """
         Creates a pydal Expression object representing a raw SQL fragment.
 
@@ -999,7 +993,7 @@ def default_representer(field: TypedField[T], value: T, table: Type[TypedTable])
     Simply call field.represent on the value.
     """
     if represent := getattr(field, "represent", None):
-        return represent(value, table)
+        return str(represent(value, table))
     else:
         return repr(value)
 
@@ -1012,7 +1006,7 @@ R = typing.TypeVar("R")
 
 def reorder_fields(
     table: pydal.objects.Table,
-    fields: typing.Iterable[str | Field | TypedField],
+    fields: typing.Iterable[str | Field | TypedField[Any]],
     keep_others: bool = True,
 ) -> None:
     """
@@ -1588,7 +1582,7 @@ class TableMeta(type):
         """
         return cls._hook_once(cls._after_delete, fn)
 
-    def reorder_fields(cls, *fields: str | Field | TypedField, keep_others: bool = True):
+    def reorder_fields(cls, *fields: str | Field | TypedField[Any], keep_others: bool = True) -> None:
         """
         Reorder fields of a typedal table.
 
@@ -1598,7 +1592,6 @@ class TableMeta(type):
                 - True (default): keep other fields at the end, in their original order.
                 - False: remove other fields (only keep what's specified).
         """
-
         return reorder_fields(cls._table, fields, keep_others=keep_others)
 
 
@@ -1935,13 +1928,13 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
 
         raise AttributeError(item)
 
-    def keys(self):
+    def keys(self) -> list[str]:
         """
         Return the combination of row + relationship keys.
 
         Used by dict(row).
         """
-        return list(self._row.keys()) + getattr(self, "_with", [])
+        return list(self._row.keys() if self._row else ()) + getattr(self, "_with", [])
 
     def get(self, item: str, default: Any = None) -> Any:
         """
@@ -2202,7 +2195,17 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
 
         return pydal2sql.generate_sql(cls)
 
-    def render(self, fields=None, compact=False) -> Self:
+    def render(self, fields: list[Field] = None, compact: bool = False) -> Self:
+        """
+        Renders a copy of the object with potentially modified values.
+
+        Args:
+            fields: A list of fields to render. Defaults to all representable fields in the table.
+            compact: Whether to return only the value of the first field if there is only one field.
+
+        Returns:
+            A copy of the object with potentially modified values.
+        """
         row = copy.deepcopy(self)
         keys = list(row)
         if not fields:
@@ -2256,7 +2259,7 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
                         )
 
         if compact and len(keys) == 1 and keys[0] != "_extra":  # pragma: no cover
-            return row[keys[0]]
+            return typing.cast(Self, row[keys[0]])
         return row
 
 
@@ -2455,11 +2458,11 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
 
     def as_dict(
         self,
-        key: str | Field = None,
+        key: str | Field | None = None,
         compact: bool = False,
         storage_to_dict: bool = False,
         datetime_to_str: bool = False,
-        custom_types: list[type] = None,
+        custom_types: list[type] | None = None,
     ) -> dict[int, AnyDict]:
         """
         Get the data in a dict of dicts.
@@ -2633,10 +2636,12 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
         self.__dict__.update(state)
         # db etc. set after undill by caching.py
 
-    def render(self, i=None, fields=None) -> typing.Generator[T_MetaInstance, None, None]:
+    def render(
+        self, i: int | None = None, fields: list[Field] | None = None
+    ) -> typing.Generator[T_MetaInstance, None, None]:
         """
-        Takes an index and returns a copy of the indexed row with values
-        transformed via the "represent" attributes of the associated fields.
+        Takes an index and returns a copy of the indexed row with values \
+            transformed via the "represent" attributes of the associated fields.
 
         Args:
             i: index. If not specified, a generator is returned for iteration
@@ -2646,7 +2651,7 @@ class TypedRows(typing.Collection[T_MetaInstance], Rows):
         """
         if i is None:
             # difference: uses .keys() instead of index
-            return (self.render(i, fields=fields) for i in self.records.keys())
+            return (self.render(i, fields=fields) for i in self.records)
 
         if not self.db.has_representer("rows_render"):  # pragma: no cover
             raise RuntimeError(
@@ -2668,10 +2673,10 @@ from .caching import (  # noqa: E402
 )
 
 
-def normalize_table_keys(row: Row, pattern: re.Pattern = re.compile(r"^([a-zA-Z_]+)_(\d{5,})$")) -> Row:
+def normalize_table_keys(row: Row, pattern: re.Pattern[str] = re.compile(r"^([a-zA-Z_]+)_(\d{5,})$")) -> Row:
     """
-    Normalize table keys in a PyDAL Row object by stripping numeric hash suffixes
-    from table names, only if the suffix is 5 or more digits.
+    Normalize table keys in a PyDAL Row object by stripping numeric hash suffixes from table names, \
+    only if the suffix is 5 or more digits.
 
     For example:
         Row({'articles_12345': {...}}) -> Row({'articles': {...}})
@@ -2810,7 +2815,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
     def where(
         self,
-        *queries_or_lambdas: Query | typing.Callable[[Type[T_MetaInstance]], Query] | dict,
+        *queries_or_lambdas: Query | typing.Callable[[Type[T_MetaInstance]], Query] | dict[str, Any],
         **filters: Any,
     ) -> "QueryBuilder[T_MetaInstance]":
         """
@@ -2892,8 +2897,9 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
             if isinstance(condition, pydal.objects.Query):
                 condition = as_lambda(condition)
 
+            to_field = typing.cast(Type[TypedTable], fields[0])
             relationships = {
-                str(fields[0]): Relationship(fields[0], condition=condition, join=method, condition_and=condition_and)
+                str(to_field): Relationship(to_field, condition=condition, join=method, condition_and=condition_and)
             }
         elif on:
             if len(fields) != 1:
@@ -2904,7 +2910,9 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
 
             if isinstance(on, list):
                 on = as_lambda(on)
-            relationships = {str(fields[0]): Relationship(fields[0], on=on, join=method, condition_and=condition_and)}
+
+            to_field = typing.cast(Type[TypedTable], fields[0])
+            relationships = {str(to_field): Relationship(to_field, on=on, join=method, condition_and=condition_and)}
 
         else:
             if fields:
