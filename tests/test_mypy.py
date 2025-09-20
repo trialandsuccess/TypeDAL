@@ -1,3 +1,4 @@
+import sys
 import typing
 
 import pydal.objects
@@ -52,7 +53,7 @@ def mypy_test_typedal_define() -> None:
     reveal_type(MyTable().fancy.lower())  # R: builtins.str
 
     aliased_cls = MyTable.with_alias("---")
-    (reveal_type(aliased_cls),)  # R: type[tests.test_mypy.MyTable]
+    reveal_type(aliased_cls)  # R: type[tests.test_mypy.MyTable]
     aliased_instance = aliased_cls()
     reveal_type(aliased_instance)  # R: tests.test_mypy.MyTable
 
@@ -80,10 +81,10 @@ def mypy_test_typedal_define() -> None:
 
 
 @pytest.mark.mypy_testing
-def test_update() -> None:
+def test_update_modern_union() -> None:
     query: pydal.objects.Query = MyTable.id == 3
     new = MyTable.update(query)
-    reveal_type(new)  # R: Union[tests.test_mypy.MyTable, None]
+    reveal_type(new)  # R: tests.test_mypy.MyTable | None
 
     inst = MyTable(3)  # could also actually be None!
     reveal_type(inst)  # R: tests.test_mypy.MyTable
@@ -97,7 +98,7 @@ def test_update() -> None:
 
 
 @pytest.mark.mypy_testing
-def mypy_test_typedset() -> None:
+def mypy_test_typedset_modern_union() -> None:
     counted1 = db(MyTable).count()
     counted2 = db(db.old_style).count()
     counted3 = db(old_style).count()
@@ -116,9 +117,9 @@ def mypy_test_typedset() -> None:
     reveal_type(select2)  # R: typedal.core.TypedRows[tests.test_mypy.MyTable]
     reveal_type(select3)  # R: typedal.core.TypedRows[tests.test_mypy.MyTable]
 
-    reveal_type(select1.first())  # R: Union[Any, None]
-    reveal_type(select2.first())  # R: Union[tests.test_mypy.MyTable, None]
-    reveal_type(select3.first())  # R: Union[tests.test_mypy.MyTable, None]
+    reveal_type(select1.first())  # R: Any | None
+    reveal_type(select2.first())  # R: tests.test_mypy.MyTable | None
+    reveal_type(select3.first())  # R: tests.test_mypy.MyTable | None
 
     for row in select2:
         reveal_type(row)  # R: tests.test_mypy.MyTable

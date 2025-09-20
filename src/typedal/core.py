@@ -25,16 +25,12 @@ from typing import Any, Optional, Type
 
 import pydal
 from pydal._globals import DEFAULT
-
-# from pydal.objects import Field as _Field
-# from pydal.objects import Query as _Query
 from pydal.objects import Row
-
-# from pydal.objects import Table as _Table
 from typing_extensions import Self, Unpack
 
 from .config import TypeDALConfig, load_config
 from .helpers import (
+    SYSTEM_SUPPORTS_TEMPLATES,
     DummyQuery,
     all_annotations,
     all_dict,
@@ -47,6 +43,7 @@ from .helpers import (
     looks_like,
     mktable,
     origin_is_subclass,
+    sql_escape_template,
     sql_expression,
     to_snake,
     unwrap_type,
@@ -68,9 +65,17 @@ from .types import (
     SelectKwargs,
     Set,
     Table,
+    Template,
     Validator,
     _Types,
 )
+
+try:
+    # python 3.14+
+    from annotationlib import ForwardRef
+except ImportError:  # pragma: no cover
+    # python 3.13-
+    from typing import ForwardRef
 
 # use typing.cast(type, ...) to make mypy happy with unions
 T_annotation = Type[Any] | types.UnionType
@@ -91,6 +96,109 @@ BASIC_MAPPINGS: dict[T_annotation, str] = {
     dt.time: "time",
     dt.datetime: "datetime",
 }
+
+
+# note: these functions can not be moved to a different file,
+#  because then they will have different globals and it breaks!
+
+
+def evaluate_forward_reference_312(fw_ref: ForwardRef, namespace: dict[str, type]) -> type:  # pragma: no cover
+    """
+    Extract the original type from a forward reference string.
+
+    Variant for python 3.12 and below
+    """
+    return typing.cast(
+        type,
+        fw_ref._evaluate(
+            localns=locals(),
+            globalns=globals() | namespace,
+            recursive_guard=frozenset(),
+        ),
+    )
+
+
+def evaluate_forward_reference_313(fw_ref: ForwardRef, namespace: dict[str, type]) -> type:  # pragma: no cover
+    """
+    Extract the original type from a forward reference string.
+
+    Variant for python 3.13
+    """
+    return typing.cast(
+        type,
+        fw_ref._evaluate(
+            localns=locals(),
+            globalns=globals() | namespace,
+            recursive_guard=frozenset(),
+            type_params=(),  # suggested since 3.13 (warning) and not supported before. Mandatory after 1.15!
+        ),
+    )
+
+
+def evaluate_forward_reference_314(fw_ref: ForwardRef, namespace: dict[str, type]) -> type:  # pragma: no cover
+    """
+    Extract the original type from a forward reference string.
+
+    Variant for python 3.14 (and hopefully above)
+    """
+    return typing.cast(
+        type,
+        fw_ref.evaluate(
+            locals=locals(),
+            globals=globals() | namespace,
+            type_params=(),
+        ),
+    )
+
+
+def evaluate_forward_reference(
+    fw_ref: ForwardRef, namespace: dict[str, type] | None = None
+) -> type:  # pragma: no cover
+    """
+    Extract the original type from a forward reference string.
+
+    Automatically chooses strategy based on current Python version.
+    """
+    if sys.version_info.minor < 13:
+        return evaluate_forward_reference_312(fw_ref, namespace=namespace or {})
+    elif sys.version_info.minor == 13:
+        return evaluate_forward_reference_313(fw_ref, namespace=namespace or {})
+    else:
+        return evaluate_forward_reference_314(fw_ref, namespace=namespace or {})
+
+
+def resolve_annotation_313(ftype: str) -> type:  # pragma: no cover
+    """
+    Resolve an annotation that's in string representation.
+
+    Variant for Python 3.13
+    """
+    fw_ref: ForwardRef = typing.get_args(typing.Type[ftype])[0]
+    return evaluate_forward_reference(fw_ref)
+
+
+def resolve_annotation_314(ftype: str) -> type:  # pragma: no cover
+    """
+    Resolve an annotation that's in string representation.
+
+    Variant for Python 3.14 + using annotationlib
+    """
+    fw_ref = ForwardRef(ftype)
+    return evaluate_forward_reference(fw_ref)
+
+
+def resolve_annotation(ftype: str) -> type:  # pragma: no cover
+    """
+    Resolve an annotation that's in string representation.
+
+    Automatically chooses strategy based on current Python version.
+    """
+    if sys.version_info.major != 3:
+        raise EnvironmentError("Only python 3 is supported.")
+    elif sys.version_info.minor <= 13:
+        return resolve_annotation_313(ftype)
+    else:
+        return resolve_annotation_314(ftype)
 
 
 def is_typed_field(cls: Any) -> typing.TypeGuard["TypedField[Any]"]:
@@ -370,22 +478,6 @@ def to_relationship(
     return Relationship(typing.cast(type[TypedTable], field), condition, typing.cast(JOIN_OPTIONS, join))
 
 
-def evaluate_forward_reference(fw_ref: typing.ForwardRef) -> type:
-    """
-    Extract the original type from a forward reference string.
-    """
-    kwargs = dict(
-        localns=locals(),
-        globalns=globals(),
-        recursive_guard=frozenset(),
-    )
-    if sys.version_info >= (3, 13):  # pragma: no cover
-        # suggested since 3.13 (warning) and not supported before. Mandatory after 1.15!
-        kwargs["type_params"] = ()
-
-    return fw_ref._evaluate(**kwargs)  # type: ignore
-
-
 class TypeDAL(pydal.DAL):  # type: ignore
     """
     Drop-in replacement for pyDAL with layer to convert class-based table definitions to classical pydal define_tables.
@@ -510,23 +602,13 @@ class TypeDAL(pydal.DAL):  # type: ignore
         #   - don't add TypedalCacheDependency entry
         #   - don't invalidate other item on new row of this type
 
-        # when __future__.annotations is implemented, cls.__annotations__ will not work anymore as below.
-        # proper way to handle this would be (but gives error right now due to Table implementing magic methods):
-        # typing.get_type_hints(cls, globalns=None, localns=None)
-        # -> ERR e.g. `pytest -svxk cli` -> name 'BestFriend' is not defined
-
-        # dirty way (with evil eval):
-        # [eval(v) for k, v in cls.__annotations__.items()]
-        # this however also stops working when variables outside this scope or even references to other
-        # objects are used. So for now, this package will NOT work when from __future__ import annotations is used,
-        # and might break in the future, when this annotations behavior is enabled by default.
-
         # non-annotated variables have to be passed to define_table as kwargs
         full_dict = all_dict(cls)  # includes properties from parents (e.g. useful for mixins)
 
         tablename = self.to_snake(cls.__name__)
-        # grab annotations of cls and it's parents:
-        annotations = all_annotations(cls)
+        # grab annotations of cls and its parents:
+        annotations = all_annotations(cls)  # has already resolved string/forward references in 3.14+ but not older!
+
         # extend with `prop = TypedField()` 'annotations':
         annotations |= {k: typing.cast(type, v) for k, v in full_dict.items() if is_typed_field(v)}
         # remove internal stuff:
@@ -540,16 +622,12 @@ class TypeDAL(pydal.DAL):  # type: ignore
 
         fields = {fname: self._to_field(fname, ftype) for fname, ftype in annotations.items()}
 
-        # ! dont' use full_dict here:
+        # ! don't use full_dict here:
         other_kwargs = kwargs | {
             k: v for k, v in cls.__dict__.items() if k not in annotations and not k.startswith("_")
         }  # other_kwargs was previously used to pass kwargs to typedal, but use @define(**kwargs) for that.
         #    now it's only used to extract relationships from the object.
         #    other properties of the class (incl methods) should not be touched
-
-        # for key in typedfields.keys() - full_dict.keys():
-        #     # typed fields that don't haven't been added to the object yet
-        #     setattr(cls, key, typedfields[key])
 
         for key, field in typedfields.items():
             # clone every property so it can be re-used across mixins:
@@ -590,6 +668,8 @@ class TypeDAL(pydal.DAL):  # type: ignore
         for name, typed_field in typedfields.items():
             field = fields[name]
             typed_field.bind(field, table)
+            if not field._table:  # pragma: no cover
+                field.bind(table)
 
         if issubclass(cls, TypedTable):
             cls.__set_internals__(
@@ -753,8 +833,12 @@ class TypeDAL(pydal.DAL):  # type: ignore
 
         if isinstance(ftype, str):
             # extract type from string
-            fw_ref: typing.ForwardRef = typing.get_args(Type[ftype])[0]
-            ftype = evaluate_forward_reference(fw_ref)
+            ftype = resolve_annotation(ftype)
+
+        if isinstance(ftype, ForwardRef):
+            known_classes = {table.__name__: table for table in cls._class_map.values()}
+
+            ftype = evaluate_forward_reference(ftype, namespace=known_classes)
 
         if mapping := BASIC_MAPPINGS.get(ftype):
             # basi types
@@ -772,7 +856,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
         elif origin_is_subclass(ftype, TypedField):
             # TypedField[int]
             return cls._annotation_to_pydal_fieldtype(typing.get_args(ftype)[0], mut_kw)
-        elif isinstance(ftype, types.GenericAlias) and typing.get_origin(ftype) in (list, TypedField):
+        elif isinstance(ftype, types.GenericAlias) and typing.get_origin(ftype) in (list, TypedField):  # type: ignore
             # list[str] -> str -> string -> list:string
             _child_type = typing.get_args(ftype)[0]
             _child_type = cls._annotation_to_pydal_fieldtype(_child_type, mut_kw)
@@ -832,9 +916,58 @@ class TypeDAL(pydal.DAL):  # type: ignore
         """
         return to_snake(camel)
 
+    def executesql(
+        self,
+        query: str | Template,
+        placeholders=None,
+        as_dict=False,
+        fields=None,
+        colnames=None,
+        as_ordered_dict=False,
+    ):
+        """Executes a raw SQL statement or a TypeDAL template query.
+
+        If `query` is provided as a `Template` and the system supports template
+        rendering, it will be processed with `sql_escape_template` before being
+        executed. Otherwise, the query is passed to the underlying DAL as-is.
+
+        Args:
+            query (str | Template): The SQL query to execute, either a plain
+                string or a `Template` (created via the `t""` syntax).
+            placeholders (Iterable[str] | dict[str, str] | None, optional):
+                Parameters to substitute into the SQL statement. Can be a sequence
+                (for positional parameters) or a dictionary (for named parameters).
+                Usually not applicable when using a t-string, since template
+                expressions handle interpolation directly.
+            as_dict (bool, optional): If True, return rows as dictionaries keyed by
+                column name. Defaults to False.
+            fields (Iterable[Field | TypedField] | None, optional): Explicit set of
+                fields to map results onto. Defaults to None.
+            colnames (Iterable[str] | None, optional): Explicit column names to use
+                in the result set. Defaults to None.
+            as_ordered_dict (bool, optional): If True, return rows as `OrderedDict`s
+                preserving column order. Defaults to False.
+
+        Returns:
+            list[Any]: The query result set. Typically a list of tuples if
+            `as_dict` and `as_ordered_dict` are False, or a list of dict-like
+            objects if those flags are enabled.
+        """
+        if SYSTEM_SUPPORTS_TEMPLATES and isinstance(query, Template):
+            query = sql_escape_template(self, query)
+
+        return super().executesql(
+            query,
+            placeholders=placeholders,
+            as_dict=as_dict,
+            fields=fields,
+            colnames=colnames,
+            as_ordered_dict=as_ordered_dict,
+        )
+
     def sql_expression(
         self,
-        sql_fragment: str,
+        sql_fragment: str | Template,
         *raw_args: Any,
         output_type: str | None = None,
         **raw_kwargs: Any,
@@ -844,6 +977,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
 
         Args:
             sql_fragment: The raw SQL fragment.
+                In python 3.14+, this can also be a t-string. In that case, don't pass other args or kwargs.
             *raw_args: Arguments to be interpolated into the SQL fragment.
             output_type: The expected output type of the expression.
             **raw_kwargs: Keyword arguments to be interpolated into the SQL fragment.
@@ -1028,6 +1162,7 @@ class TableMeta(type):
         """
         table = self._ensure_table_defined()
         result = table.bulk_insert(items)
+
         return self.where(lambda row: row.id.belongs(result)).collect()
 
     def update_or_insert(
