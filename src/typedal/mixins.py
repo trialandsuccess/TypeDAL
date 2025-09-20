@@ -180,7 +180,7 @@ class SlugMixin(Mixin):
         if slug_field is None:
             raise ValueError(
                 "SlugMixin requires a valid slug_field setting: "
-                "e.g. `class MyClass(TypedTable, SlugMixin, slug_field='title'): ...`"
+                "e.g. `class MyClass(TypedTable, SlugMixin, slug_field='title'): ...`",
             )
 
         if slug_suffix:
@@ -197,7 +197,7 @@ class SlugMixin(Mixin):
 
     @classmethod
     def __generate_slug_before_insert(cls, row: OpRow) -> None:
-        if row.get("slug"):
+        if row.get("slug"):  # type: ignore
             # manually set -> skip
             return None
 

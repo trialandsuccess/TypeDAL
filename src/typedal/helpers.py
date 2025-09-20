@@ -17,7 +17,7 @@ from pydal import DAL
 from .types import AnyDict, Expression, Field, Table
 
 if typing.TYPE_CHECKING:
-    from . import TypeDAL, TypedField, TypedTable  # noqa: F401
+    from . import TypeDAL, TypedField, TypedTable
 
 T = typing.TypeVar("T")
 
@@ -337,7 +337,7 @@ class classproperty:
         return self.fget(owner)
 
 
-def sql_escape(db: TypeDAL, sql_fragment: str, *raw_args: Any, **raw_kwargs: Any):
+def sql_escape(db: TypeDAL, sql_fragment: str, *raw_args: Any, **raw_kwargs: Any) -> str:
     """
     Generates escaped SQL fragments with placeholders.
 
