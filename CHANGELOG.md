@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.17.1 (2025-09-20)
+
+### Fix
+
+* Smarter adapt so Fields and Tables can also be safely inserted in `sql_expression` ([`d5cad6a`](https://github.com/trialandsuccess/TypeDAL/commit/d5cad6a13ddf50ec6e5762075fbeae1e44067da6))
+
 ## v3.17.0 (2025-09-20)
 
 ### Feature
