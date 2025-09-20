@@ -835,10 +835,10 @@ class TypeDAL(pydal.DAL):  # type: ignore
     def sql_expression(
         self,
         sql_fragment: str,
-        *raw_args: str,
+        *raw_args: Any,
         output_type: str | None = None,
-        **raw_kwargs: str,
-    ) -> str:
+        **raw_kwargs: Any,
+    ) -> Expression:
         """
         Creates a pydal Expression object representing a raw SQL fragment.
 

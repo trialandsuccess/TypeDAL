@@ -337,6 +337,26 @@ class classproperty:
         return self.fget(owner)
 
 
+def smarter_adapt(db: TypeDAL, placeholder: Any) -> str:
+    """
+    Smarter adaptation of placeholder to quote if needed.
+
+    Args:
+        db: Database object.
+        placeholder: Placeholder object.
+
+    Returns:
+        Quoted placeholder if needed, except for numbers (smart_adapt logic)
+            or fields/tables (use already quoted rname).
+    """
+    return typing.cast(
+        str,
+        getattr(placeholder, "sql_shortref", None)  # for tables
+        or getattr(placeholder, "sqlsafe", None)  # for fields
+        or db._adapter.smart_adapt(placeholder),  # for others
+    )
+
+
 def sql_escape(db: TypeDAL, sql_fragment: str, *raw_args: Any, **raw_kwargs: Any) -> str:
     """
     Generates escaped SQL fragments with placeholders.
@@ -358,18 +378,18 @@ def sql_escape(db: TypeDAL, sql_fragment: str, *raw_args: Any, **raw_kwargs: Any
 
     elif raw_args:
         # list
-        return sql_fragment % tuple(db._adapter.adapt(placeholder) for placeholder in raw_args)
+        return sql_fragment % tuple(smarter_adapt(db, placeholder) for placeholder in raw_args)
     else:
         # dict
-        return sql_fragment % {key: db._adapter.adapt(placeholder) for key, placeholder in raw_kwargs.items()}
+        return sql_fragment % {key: smarter_adapt(db, placeholder) for key, placeholder in raw_kwargs.items()}
 
 
 def sql_expression(
     db: TypeDAL,
     sql_fragment: str,
-    *raw_args: str,
+    *raw_args: Any,
     output_type: str | None = None,
-    **raw_kwargs: str,
+    **raw_kwargs: Any,
 ) -> Expression:
     """
     Creates a pydal Expression object representing a raw SQL fragment.

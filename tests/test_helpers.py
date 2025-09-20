@@ -223,7 +223,7 @@ def test_sql_expression():
     expr1 = sql_expression(database, "date('now') > %s", "2025-01-01")
     expr2 = database.sql_expression("date('now') > %(value)s", value="2025-01-01")
 
-    assert expr1 == expr2
+    assert str(expr1) == str(expr2)
     assert str(expr1) == "date('now') > '2025-01-01'"
     # past -> should yield result
     result = database(expr1).select(TestSqlExpression.value, expr2)[0]
@@ -240,3 +240,7 @@ def test_sql_expression():
     # far future -> should not yield result
     result3 = database(expr3).select(TestSqlExpression.value, expr3).as_list()
     assert not result3
+
+    # test quoting fields and tables:
+    assert str(database.sql_expression("LOWER(%s)", TestSqlExpression.value)) == 'LOWER("test_sql_expression"."value")'
+    assert str(database.sql_expression("LOWER(%s.value)", TestSqlExpression)) == 'LOWER("test_sql_expression".value)'
