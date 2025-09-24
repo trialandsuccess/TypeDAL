@@ -1281,6 +1281,13 @@ class TableMeta(type):
         """
         return QueryBuilder(self).where(*a, **kw)
 
+    def orderby(self: Type[T_MetaInstance], *a: Any, **kw: Any) -> "QueryBuilder[T_MetaInstance]":
+        """
+        See QueryBuilder.orderby!
+        """
+        return QueryBuilder(self).orderby(*a, **kw)
+
+
     def cache(self: Type[T_MetaInstance], *deps: Any, **kwargs: Any) -> "QueryBuilder[T_MetaInstance]":
         """
         See QueryBuilder.cache!
@@ -2812,6 +2819,21 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
             cache: cache the query result to speed up repeated queries; e.g. (cache=(cache.ram, 3600), cacheable=True)
         """
         return self._extend(select_args=list(fields), select_kwargs=options)
+
+    def orderby(self, *fields: Any):
+        """Order the query results by specified fields.
+
+        Args:
+            fields: field(s) to order by. Supported:
+                table.name - sort by name, ascending
+                ~table.name - sort by name, descending
+                <random> - sort randomly
+                table.name|table.id - sort by two fields (first name, then id)
+
+        Returns:
+            QueryBuilder: A new QueryBuilder instance with the ordering applied.
+        """
+        return self.select(orderby=fields)
 
     def where(
         self,
