@@ -60,6 +60,7 @@ from .types import (
     FieldSettings,
     Metadata,
     OpRow,
+    OrderBy,
     PaginateDict,
     Pagination,
     Query,
@@ -1146,12 +1147,11 @@ class TableMeta(type):
         """
         return QueryBuilder(self).where(*a, **kw)
 
-    def orderby(self: Type[T_MetaInstance], *a: Any, **kw: Any) -> "QueryBuilder[T_MetaInstance]":
+    def orderby(self: Type[T_MetaInstance], *fields: OrderBy) -> "QueryBuilder[T_MetaInstance]":
         """
         See QueryBuilder.orderby!
         """
-        return QueryBuilder(self).orderby(*a, **kw)
-
+        return QueryBuilder(self).orderby(*fields)
 
     def cache(self: Type[T_MetaInstance], *deps: Any, **kwargs: Any) -> "QueryBuilder[T_MetaInstance]":
         """
@@ -2685,8 +2685,9 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
         """
         return self._extend(select_args=list(fields), select_kwargs=options)
 
-    def orderby(self, *fields: Any):
-        """Order the query results by specified fields.
+    def orderby(self, *fields: OrderBy) -> "QueryBuilder[T_MetaInstance]":
+        """
+        Order the query results by specified fields.
 
         Args:
             fields: field(s) to order by. Supported:

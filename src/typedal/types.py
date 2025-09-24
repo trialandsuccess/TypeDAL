@@ -218,6 +218,8 @@ class CacheFn(typing.Protocol):
 CacheModel = typing.Callable[[str, CacheFn, int], Rows]
 CacheTuple = tuple[CacheModel, int]
 
+OrderBy: typing.TypeAlias = Expression | str
+
 
 class SelectKwargs(TypedDict, total=False):
     """
@@ -226,7 +228,7 @@ class SelectKwargs(TypedDict, total=False):
 
     join: Optional[list[Expression]]
     left: Optional[list[Expression]]
-    orderby: Optional[Expression | str | Table]
+    orderby: OrderBy | typing.Iterable[OrderBy] | None
     limitby: Optional[tuple[int, int]]
     distinct: bool | Field | Expression
     orderby_on_limitby: bool
