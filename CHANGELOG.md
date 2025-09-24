@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.17.2 (2025-09-24)
+
+### Fix
+
+* Support .orderby as alias for .select(orderby= ([`be561c5`](https://github.com/trialandsuccess/TypeDAL/commit/be561c500c573a3a45b22f250fe1d2b473b56cc3))
+
 ## v3.17.1 (2025-09-20)
 
 ### Fix
