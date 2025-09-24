@@ -447,7 +447,7 @@ def test_orderby():
 
     assert base_qt.count() == 5
 
-    rows1 = base_qt.select(orderby=TestQueryTable.id).paginate(limit=3, page=1)
+    rows1 = base_qt.orderby(TestQueryTable.id).paginate(limit=3, page=1)
     rows2 = base_qt.select(orderby=TestQueryTable.id, limitby=(0, 3)).collect()
     assert [_.id for _ in rows1] == [_.id for _ in rows2] == [1, 2, 3]
 
