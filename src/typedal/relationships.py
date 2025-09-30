@@ -71,7 +71,7 @@ class Relationship(t.Generic[To_Type]):
             update.get("join") or self.join,
             update.get("on") or self.on,
             update.get("condition_and") or self.condition_and,
-            (self.nested | extra) if (extra := update.get("nested")) else self.nested,
+            (self.nested | extra) if (extra := update.get("nested")) else self.nested,  # type: ignore
         )
 
     def __repr__(self) -> str:
@@ -257,4 +257,4 @@ def to_relationship(
 
 # note: these imports exist at the bottom of this file to prevent circular import issues:
 
-from .tables import TypedTable
+from .tables import TypedTable  # noqa: E402

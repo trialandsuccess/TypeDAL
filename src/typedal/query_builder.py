@@ -210,19 +210,24 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
 
         return self._extend(overwrite_query=new_query)
 
-    def _parse_relationships(self, fields: t.Iterable[str | t.Type[TypedTable]], **update: t.Any):
+    def _parse_relationships(
+        self, fields: t.Iterable[str | t.Type[TypedTable]], **update: t.Any
+    ) -> dict[str, Relationship[t.Any]]:
         """
         Parse relationship fields into a dict of base relationships with nested relationships.
 
         Args:
-            fields: Iterable of relationship field names (e.g., ['relationship', 'relationship.with_nested', 'relationship.no2'])
+            fields: Iterable of relationship field names
+                (e.g., ['relationship', 'relationship.with_nested', 'relationship.no2'])
             condition_and: Optional condition to pass to relationship clones
 
         Returns:
             Dict mapping base relationship names to Relationship objects with nested relationships
-            Example: {'relationship': Relationship('relationship', nested={'with_nested': Relationship(), 'no2': Relationship()})}
+            Example: {'relationship': Relationship('relationship',
+                                                        nested={'with_nested': Relationship(),
+                                                                'no2': Relationship()})}
         """
-        relationships = {}
+        relationships: dict[str, Relationship[t.Any]] = {}
         base_relationships = self.model.get_relationships()
         db = self._get_db()
 
@@ -273,7 +278,6 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         # todo: it would be nice if 'fields' could be an actual relationship
         #   (Article.tags = list[Tag]) and you could change the .condition and .on
         #  this could deprecate condition_and
-        db = self._get_db()
         relationships = self.model.get_relationships()
 
         if condition and on:
@@ -305,9 +309,13 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         else:
             if fields:
                 # join on every relationship
-                # simple: 'relationship' -> {'relationship': Relationship('relationship')}
-                # complex with one: relationship.with_nested -> {'relationship': Relationship('relationship', nested=[Relationship('with_nested')])
-                # complex with two:  relationship.with_nested,  relationship.no2 -> {'relationship': Relationship('relationship', nested=[Relationship('with_nested'), Relationship('no2')])
+                # simple: 'relationship'
+                #   -> {'relationship': Relationship('relationship')}
+                # complex with one: relationship.with_nested
+                #   -> {'relationship': Relationship('relationship', nested=[Relationship('with_nested')])
+                # complex with two:  relationship.with_nested,  relationship.no2
+                #   -> {'relationship': Relationship('relationship',
+                #                           nested=[Relationship('with_nested'), Relationship('no2')])
 
                 relationships = self._parse_relationships(fields, condition_and=condition_and)
 
@@ -315,7 +323,6 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
                 relationships = {
                     str(k): r.clone(join=method, condition_and=condition_and) for k, r in relationships.items()
                 }
-
 
         return self._extend(relationships=relationships)
 
@@ -528,16 +535,13 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         return self.select(field, **options).execute().column(field)
 
     def _handle_relationships_pre_select(
-            self,
-            query: Query,
-            select_args: list[t.Any],
-            select_kwargs: SelectKwargs,
-            metadata: Metadata,
+        self,
+        query: Query,
+        select_args: list[t.Any],
+        select_kwargs: SelectKwargs,
+        metadata: Metadata,
     ) -> tuple[Query, list[t.Any]]:
         """Handle relationship joins and field selection for database query."""
-        db = self._get_db()
-        model = self.model
-
         # Collect all relationship keys including nested ones
         metadata["relationships"] = self._collect_all_relationship_keys()
 
@@ -549,7 +553,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
             select_kwargs["join"] = inner_joins
 
         # Build left joins and handle field selection
-        left_joins = []
+        left_joins: list[Expression] = []
         select_args = self._build_left_joins_and_fields(select_args, left_joins)
 
         select_kwargs["left"] = left_joins
@@ -564,7 +568,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
 
         return keys
 
-    def _collect_nested_keys(self, relation, prefix: str = "") -> set[str]:
+    def _collect_nested_keys(self, relation: Relationship[t.Any], prefix: str = "") -> set[str]:
         """Recursively collect nested relationship keys."""
         keys = set()
 
@@ -577,21 +581,15 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
 
     def _build_inner_joins(self) -> list[t.Any]:
         """Build inner joins for relationships with conditions."""
-        db = self._get_db()
-        model = self.model
         joins = []
 
         for key, relation in self.relationships.items():
-            joins.extend(self._build_inner_joins_recursive(relation, model, key))
+            joins.extend(self._build_inner_joins_recursive(relation, self.model, key))
 
         return joins
 
     def _build_inner_joins_recursive(
-            self,
-            relation,
-            parent_table,
-            key: str,
-            parent_key: str = ""
+        self, relation: Relationship[t.Any], parent_table: t.Type[TypedTable], key: str, parent_key: str = ""
     ) -> list[t.Any]:
         """Recursively build inner joins for a relationship and its nested relationships."""
         db = self._get_db()
@@ -610,17 +608,18 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
 
             # Process nested relationships
             for nested_name, nested in relation.nested.items():
+                # todo: add additional test, deduplicate
                 nested_key = f"{parent_key}.{nested_name}" if parent_key else f"{key}.{nested_name}"
                 joins.extend(self._build_inner_joins_recursive(nested, other, nested_name, nested_key))
 
         return joins
 
     def _apply_limitby_optimization(
-            self,
-            query: Query,
-            select_kwargs: SelectKwargs,
-            joins: list[t.Any],
-            metadata: Metadata,
+        self,
+        query: Query,
+        select_kwargs: SelectKwargs,
+        joins: list[t.Any],
+        metadata: Metadata,
     ) -> Query:
         """Apply limitby optimization when relationships are present."""
         if not (limitby := select_kwargs.pop("limitby", ())):
@@ -641,30 +640,22 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
 
         return query
 
-    def _build_left_joins_and_fields(
-            self,
-            select_args: list[t.Any],
-            left_joins: list[t.Any]
-    ) -> list[t.Any]:
+    def _build_left_joins_and_fields(self, select_args: list[t.Any], left_joins: list[Expression]) -> list[t.Any]:
         """Build left joins and ensure required fields are selected."""
-        db = self._get_db()
-        model = self.model
 
         for key, relation in self.relationships.items():
-            select_args = self._process_relationship_for_left_join(
-                relation, key, select_args, left_joins, model
-            )
+            select_args = self._process_relationship_for_left_join(relation, key, select_args, left_joins, self.model)
 
         return select_args
 
     def _process_relationship_for_left_join(
-            self,
-            relation,
-            key: str,
-            select_args: list[t.Any],
-            left_joins: list[t.Any],
-            parent_table,
-            parent_key: str = "",
+        self,
+        relation: Relationship[t.Any],
+        key: str,
+        select_args: list[t.Any],
+        left_joins: list[Expression],
+        parent_table: t.Type[TypedTable],
+        parent_key: str = "",
     ) -> list[t.Any]:
         """Process a single relationship for left join and field selection."""
         db = self._get_db()
@@ -704,6 +695,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
 
         # Process nested relationships
         for nested_name, nested in relation.nested.items():
+            # todo: add additional test, deduplicate
             nested_key = f"{parent_key}.{nested_name}" if parent_key else f"{key}.{nested_name}"
             select_args = self._process_relationship_for_left_join(
                 nested, nested_name, select_args, left_joins, other, nested_key
@@ -712,10 +704,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         return select_args
 
     def _ensure_relationship_fields(
-            self,
-            select_args: list[t.Any],
-            other,
-            select_fields: str
+        self, select_args: list[t.Any], other: t.Type[TypedTable], select_fields: str
     ) -> list[t.Any]:
         """Ensure required fields from relationship table are selected."""
         if f"{other}." not in select_fields:
@@ -728,10 +717,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         return select_args
 
     def _update_select_args_with_alias(
-            self,
-            select_args: list[t.Any],
-            pre_alias: str,
-            other
+        self, select_args: list[t.Any], pre_alias: str, other: t.Type[TypedTable]
     ) -> list[t.Any]:
         """Update select_args to use aliased table names."""
         post_alias = str(other).split(" AS ")[-1]
@@ -744,10 +730,10 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         return select_args
 
     def _collect_with_relationships(
-            self,
-            rows: Rows,
-            metadata: Metadata,
-            _to: t.Type["TypedRows[T_MetaInstance]"],
+        self,
+        rows: Rows,
+        metadata: Metadata,
+        _to: t.Type["TypedRows[T_MetaInstance]"],
     ) -> "TypedRows[T_MetaInstance]":
         """
         Transform the raw rows into Typed Table model instances with nested relationships.
@@ -793,15 +779,15 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         return _to(rows, self.model, records, metadata=metadata, raw=raw_per_id)
 
     def _process_relationship_data(
-            self,
-            row: t.Any,
-            column: str,
-            relation: "Relationship",
-            parent_record: t.Any,
-            parent_id: t.Any,
-            seen_relations: dict[str, set[str]],
-            db: t.Any,
-            path: str = "",
+        self,
+        row: t.Any,
+        column: str,
+        relation: Relationship[t.Any],
+        parent_record: t.Any,
+        parent_id: t.Any,
+        seen_relations: dict[str, set[str]],
+        db: t.Any,
+        path: str = "",
     ) -> t.Any | None:
         """
         Process relationship data from a row and attach it to the parent record.
@@ -827,11 +813,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         relationship_column = f"{column}_{hash(relation)}"
 
         # Get relation data from row
-        relation_data = (
-            row[relationship_column]
-            if relationship_column in row
-            else row.get(relation.get_table_name())
-        )
+        relation_data = row[relationship_column] if relationship_column in row else row.get(relation.get_table_name())
 
         # Skip if no data or NULL id
         if not relation_data or relation_data.id is None:
@@ -846,11 +828,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
 
         # Create the relationship instance
         relation_table = relation.get_table(db)
-        instance = (
-            relation_table(relation_data)
-            if looks_like(relation_table, TypedTable)
-            else relation_data
-        )
+        instance = relation_table(relation_data) if looks_like(relation_table, TypedTable) else relation_data
 
         # Process nested relationships on this instance
         if relation.nested:
@@ -876,14 +854,14 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         return instance
 
     def _process_nested_relationships(
-            self,
-            row: t.Any,
-            relation: "Relationship",
-            instance: t.Any,
-            parent_id: t.Any,
-            seen_relations: dict[str, set[str]],
-            db: t.Any,
-            path: str,
+        self,
+        row: t.Any,
+        relation: Relationship[t.Any],
+        instance: t.Any,
+        parent_id: t.Any,
+        seen_relations: dict[str, set[str]],
+        db: t.Any,
+        path: str,
     ) -> None:
         """
         Process all nested relationships for a given instance.
@@ -1066,6 +1044,11 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
 
 # note: these imports exist at the bottom of this file to prevent circular import issues:
 
-from .caching import create_and_hash_cache_key, get_expire, load_from_cache, save_to_cache
-from .relationships import Relationship
-from .rows import PaginatedRows, TypedRows
+from .caching import (  # noqa: E402
+    create_and_hash_cache_key,
+    get_expire,
+    load_from_cache,
+    save_to_cache,
+)
+from .relationships import Relationship  # noqa: E402
+from .rows import PaginatedRows, TypedRows  # noqa: E402
