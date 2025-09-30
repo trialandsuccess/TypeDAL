@@ -25,6 +25,7 @@ class Relationship(t.Generic[To_Type]):
     on: OnQuery
     multiple: bool
     join: JOIN_OPTIONS
+    nested: dict[str, t.Self]
 
     def __init__(
         self,
@@ -33,6 +34,7 @@ class Relationship(t.Generic[To_Type]):
         join: JOIN_OPTIONS = None,
         on: OnQuery = None,
         condition_and: Condition = None,
+        nested: dict[str, t.Self] = None,
     ):
         """
         Should not be called directly, use relationship() instead!
@@ -57,6 +59,8 @@ class Relationship(t.Generic[To_Type]):
         if isinstance(self.table, str):
             self.table = TypeDAL.to_snake(self.table)
 
+        self.nested = nested or {}
+
     def clone(self, **update: t.Any) -> "Relationship[To_Type]":
         """
         Create a copy of the relationship, possibly updated.
@@ -67,6 +71,7 @@ class Relationship(t.Generic[To_Type]):
             update.get("join") or self.join,
             update.get("on") or self.on,
             update.get("condition_and") or self.condition_and,
+            (self.nested | extra) if (extra := update.get("nested")) else self.nested,
         )
 
     def __repr__(self) -> str:
