@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v3.17.3 (2025-09-30)
+
+### Fix
+
+* Make `first_or_fail` accept any exception (including BaseException) to support e.g. py4web's HTTP ([`7b42724`](https://github.com/trialandsuccess/TypeDAL/commit/7b42724dbebc8151545c5456cd49fe93ae63157f))
+
 ## v3.17.2 (2025-09-24)
 
 ### Fix
