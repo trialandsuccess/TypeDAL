@@ -1,14 +1,13 @@
 import re
+import typing
 from copy import copy
 from sqlite3 import IntegrityError
 
-import pydal
 import pytest
 
-from src.typedal import *
+from src.typedal import TypedRows
 from src.typedal.__about__ import __version__
 from src.typedal.fields import *
-from typedal.types import Expression
 
 
 def test_about():

@@ -2,16 +2,15 @@
 TypeDAL Library.
 """
 
-from . import fields
-from .core import (
-    Relationship,
-    TypeDAL,
-    TypedField,
-    TypedRows,
-    TypedTable,
-    relationship,
-)
+from .core import TypeDAL
+
+from . import fields  # isort: skip
+from .fields import TypedField
 from .helpers import sql_expression
+from .query_builder import QueryBuilder
+from .relationships import Relationship, relationship
+from .rows import TypedRows
+from .tables import TypedTable
 
 try:
     from .for_py4web import DAL as P4W_DAL
@@ -24,6 +23,7 @@ __all__ = [
     "TypedField",
     "TypedRows",
     "TypedTable",
+    "QueryBuilder",
     "fields",
     "relationship",
     "sql_expression",

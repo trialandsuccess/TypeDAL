@@ -7,19 +7,17 @@ from __future__ import annotations
 import datetime as dt
 import fnmatch
 import io
+import re
 import types
-import typing
+import typing as t
 from collections import ChainMap
-from typing import Any
 
 from pydal import DAL
 
-from .types import AnyDict, Expression, Field, Table
+from .types import AnyDict, Expression, Field, Row, T, Table
 
-if typing.TYPE_CHECKING:
+if t.TYPE_CHECKING:
     from . import TypeDAL, TypedField, TypedTable
-
-T = typing.TypeVar("T")
 
 
 def is_union(some_type: type | types.UnionType) -> bool:
@@ -27,13 +25,13 @@ def is_union(some_type: type | types.UnionType) -> bool:
     Check if a type is some type of Union.
 
     Args:
-        some_type: types.UnionType = type(int | str); typing.Union = typing.Union[int, str]
+        some_type: types.UnionType = type(int | str); t.Union = t.Union[int, str]
 
     """
-    return typing.get_origin(some_type) in (types.UnionType, typing.Union)
+    return t.get_origin(some_type) in (types.UnionType, t.Union)
 
 
-def reversed_mro(cls: type) -> typing.Iterable[type]:
+def reversed_mro(cls: type) -> t.Iterable[type]:
     """
     Get the Method Resolution Order (mro) for a class, in reverse order to be used with ChainMap.
     """
@@ -57,9 +55,9 @@ def all_dict(cls: type) -> AnyDict:
     return dict(ChainMap(*(c.__dict__ for c in reversed_mro(cls))))  # type: ignore
 
 
-def all_annotations(cls: type, _except: typing.Optional[typing.Iterable[str]] = None) -> dict[str, type]:
+def all_annotations(cls: type, _except: t.Optional[t.Iterable[str]] = None) -> dict[str, type]:
     """
-    Wrapper around `_all_annotations` that filters away any keys in _except.
+    Wrapper around `_all_annotations` that filters away t.Any keys in _except.
 
     It also flattens the ChainMap to a regular dict.
     """
@@ -70,7 +68,7 @@ def all_annotations(cls: type, _except: typing.Optional[typing.Iterable[str]] = 
     return {k: v for k, v in _all.items() if k not in _except}
 
 
-def instanciate(cls: typing.Type[T] | T, with_args: bool = False) -> T:
+def instanciate(cls: t.Type[T] | T, with_args: bool = False) -> T:
     """
     Create an instance of T (if it is a class).
 
@@ -80,20 +78,20 @@ def instanciate(cls: typing.Type[T] | T, with_args: bool = False) -> T:
     If with_args: spread the generic args into the class creation
     (needed for e.g. TypedField(str), but not for list[str])
     """
-    if inner_cls := typing.get_origin(cls):
+    if inner_cls := t.get_origin(cls):
         if not with_args:
-            return typing.cast(T, inner_cls())
+            return t.cast(T, inner_cls())
 
-        args = typing.get_args(cls)
-        return typing.cast(T, inner_cls(*args))
+        args = t.get_args(cls)
+        return t.cast(T, inner_cls(*args))
 
     if isinstance(cls, type):
-        return typing.cast(T, cls())
+        return t.cast(T, cls())
 
     return cls
 
 
-def origin_is_subclass(obj: Any, _type: type) -> bool:
+def origin_is_subclass(obj: t.Any, _type: type) -> bool:
     """
     Check if the origin of a generic is a subclass of _type.
 
@@ -101,15 +99,13 @@ def origin_is_subclass(obj: Any, _type: type) -> bool:
         origin_is_subclass(list[str], list) -> True
     """
     return bool(
-        typing.get_origin(obj)
-        and isinstance(typing.get_origin(obj), type)
-        and issubclass(typing.get_origin(obj), _type),
+        t.get_origin(obj) and isinstance(t.get_origin(obj), type) and issubclass(t.get_origin(obj), _type),
     )
 
 
 def mktable(
-    data: dict[Any, Any],
-    header: typing.Optional[typing.Iterable[str] | range] = None,
+    data: dict[t.Any, t.Any],
+    header: t.Optional[t.Iterable[str] | range] = None,
     skip_first: bool = True,
 ) -> str:
     """
@@ -154,11 +150,11 @@ def mktable(
     return output.getvalue()
 
 
-K = typing.TypeVar("K")
-V = typing.TypeVar("V")
+K = t.TypeVar("K")
+V = t.TypeVar("V")
 
 
-def looks_like(v: Any, _type: type[Any]) -> bool:
+def looks_like(v: t.Any, _type: type[t.Any]) -> bool:
     """
     Returns true if v or v's class is of type _type, including if it is a generic.
 
@@ -186,19 +182,19 @@ def unwrap_type(_type: type) -> type:
     Example:
         list[list[str]] -> str
     """
-    while args := typing.get_args(_type):
+    while args := t.get_args(_type):
         _type = args[0]
     return _type
 
 
-@typing.overload
+@t.overload
 def extract_type_optional(annotation: T) -> tuple[T, bool]:
     """
     T -> T is not exactly right because you'll get the inner type, but mypy seems happy with this.
     """
 
 
-@typing.overload
+@t.overload
 def extract_type_optional(annotation: None) -> tuple[None, bool]:
     """
     None leads to None, False.
@@ -212,10 +208,10 @@ def extract_type_optional(annotation: T | None) -> tuple[T | None, bool]:
     if annotation is None:
         return None, False
 
-    if origin := typing.get_origin(annotation):
-        args = typing.get_args(annotation)
+    if origin := t.get_origin(annotation):
+        args = t.get_args(annotation)
 
-        if origin in (typing.Union, types.UnionType, typing.Optional) and args:
+        if origin in (t.Union, types.UnionType, t.Optional) and args:
             # remove None:
             return next(_ for _ in args if _ and _ != types.NoneType and not isinstance(_, types.NoneType)), True
 
@@ -256,7 +252,7 @@ class DummyQuery:
         return False
 
 
-def as_lambda(value: T) -> typing.Callable[..., T]:
+def as_lambda(value: T) -> t.Callable[..., T]:
     """
     Wrap value in a callable.
     """
@@ -289,21 +285,21 @@ def get_db(table: "TypedTable | Table") -> "DAL":
     """
     Get the underlying DAL instance for a pydal or typedal table.
     """
-    return typing.cast("DAL", table._db)
+    return t.cast("DAL", table._db)
 
 
 def get_table(table: "TypedTable | Table") -> "Table":
     """
     Get the underlying pydal table for a typedal table.
     """
-    return typing.cast("Table", table._table)
+    return t.cast("Table", table._table)
 
 
-def get_field(field: "TypedField[typing.Any] | Field") -> "Field":
+def get_field(field: "TypedField[t.Any] | Field") -> "Field":
     """
     Get the underlying pydal field from a typedal field.
     """
-    return typing.cast(
+    return t.cast(
         "Field",
         field,  # Table.field already is a Field, but cast to make sure the editor knows this too.
     )
@@ -314,7 +310,7 @@ class classproperty:
     Combination of @classmethod and @property.
     """
 
-    def __init__(self, fget: typing.Callable[..., typing.Any]) -> None:
+    def __init__(self, fget: t.Callable[..., t.Any]) -> None:
         """
         Initialize the classproperty.
 
@@ -323,7 +319,7 @@ class classproperty:
         """
         self.fget = fget
 
-    def __get__(self, obj: typing.Any, owner: typing.Type[T]) -> typing.Any:
+    def __get__(self, obj: t.Any, owner: t.Type[T]) -> t.Any:
         """
         Retrieve the property value.
 
@@ -337,7 +333,7 @@ class classproperty:
         return self.fget(owner)
 
 
-def smarter_adapt(db: TypeDAL, placeholder: Any) -> str:
+def smarter_adapt(db: TypeDAL, placeholder: t.Any) -> str:
     """
     Smarter adaptation of placeholder to quote if needed.
 
@@ -349,7 +345,7 @@ def smarter_adapt(db: TypeDAL, placeholder: Any) -> str:
         Quoted placeholder if needed, except for numbers (smart_adapt logic)
             or fields/tables (use already quoted rname).
     """
-    return typing.cast(
+    return t.cast(
         str,
         getattr(placeholder, "sql_shortref", None)  # for tables
         or getattr(placeholder, "sqlsafe", None)  # for fields
@@ -357,7 +353,7 @@ def smarter_adapt(db: TypeDAL, placeholder: Any) -> str:
     )
 
 
-def sql_escape(db: TypeDAL, sql_fragment: str, *raw_args: Any, **raw_kwargs: Any) -> str:
+def sql_escape(db: TypeDAL, sql_fragment: str, *raw_args: t.Any, **raw_kwargs: t.Any) -> str:
     """
     Generates escaped SQL fragments with placeholders.
 
@@ -387,9 +383,9 @@ def sql_escape(db: TypeDAL, sql_fragment: str, *raw_args: Any, **raw_kwargs: Any
 def sql_expression(
     db: TypeDAL,
     sql_fragment: str,
-    *raw_args: Any,
+    *raw_args: t.Any,
     output_type: str | None = None,
-    **raw_kwargs: Any,
+    **raw_kwargs: t.Any,
 ) -> Expression:
     """
     Creates a pydal Expression object representing a raw SQL fragment.
@@ -413,3 +409,58 @@ def sql_expression(
         safe_sql,
         type=output_type,  # optional type hint
     )
+
+
+def normalize_table_keys(row: Row, pattern: re.Pattern[str] = re.compile(r"^([a-zA-Z_]+)_(\d{5,})$")) -> Row:
+    """
+    Normalize table keys in a PyDAL Row object by stripping numeric hash suffixes from table names, \
+    only if the suffix is 5 or more digits.
+
+    For example:
+        Row({'articles_12345': {...}}) -> Row({'articles': {...}})
+        Row({'articles_123': {...}})   -> unchanged
+
+    Returns:
+        Row: A new Row object with normalized keys.
+    """
+    new_data: dict[str, t.Any] = {}
+    for key, value in row.items():
+        if match := pattern.match(key):
+            base, _suffix = match.groups()
+            normalized_key = base
+            new_data[normalized_key] = value
+        else:
+            new_data[key] = value
+    return Row(new_data)
+
+
+def default_representer(field: TypedField[T], value: T, table: t.Type[TypedTable]) -> str:
+    """
+    Simply call field.represent on the value.
+    """
+    if represent := getattr(field, "represent", None):
+        return str(represent(value, table))
+    else:
+        return repr(value)
+
+
+def throw(exc: BaseException) -> t.Never:
+    """Raise the given exception.
+
+    This function provides a functional way to raise exceptions, allowing
+    exception raising to be used in expressions where a statement wouldn't work.
+
+    Args:
+        exc: The exception to be raised.
+
+    Returns:
+        Never returns normally as an exception is always raised.
+
+    Raises:
+        BaseException: Always raises the provided exception.
+
+    Examples:
+        >>> value = get_value() or throw(ValueError("No value available"))
+        >>> result = data.get('key') if data else throw(KeyError("Missing data"))
+    """
+    raise exc
