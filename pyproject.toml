@@ -130,6 +130,7 @@ extend-exclude = '''
 [tool.coverage.report]
 exclude_also = [
     "if TYPE_CHECKING:",
+    "if t.TYPE_CHECKING:",
     "if typing.TYPE_CHECKING:",
     "except ImportError as e:",
     "except ImportError:",

@@ -11,7 +11,18 @@ from .helpers import mktable
 from .query_builder import QueryBuilder
 from .serializers import as_json
 from .tables import TypedTable
-from .types import AnyDict, Field, Metadata, Pagination, Query, Row, Rows, T, T_MetaInstance
+from .types import (
+    AnyDict,
+    Field,
+    Metadata,
+    PaginateDict,
+    Pagination,
+    Query,
+    Row,
+    Rows,
+    T,
+    T_MetaInstance,
+)
 
 
 class TypedRows(t.Collection[T_MetaInstance], Rows):
@@ -506,4 +517,4 @@ class TypedSet(pydal.objects.Set):  # type: ignore # pragma: no cover
 
 # note: these imports exist at the bottom of this file to prevent circular import issues:
 
-from .fields import TypedField
+from .fields import TypedField  # noqa: E402

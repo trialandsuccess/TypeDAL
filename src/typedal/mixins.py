@@ -17,11 +17,11 @@ from slugify import slugify
 
 from .core import TypeDAL
 from .fields import DatetimeField, StringField
-from .tables import TypedTable, _TypedTable
+from .tables import _TypedTable
 from .types import OpRow, Set, T_MetaInstance
 
 if typing.TYPE_CHECKING:
-    from .query_builder import QueryBuilder  # noqa
+    from .tables import TypedTable  # noqa: F401
 
 
 class Mixin(_TypedTable):

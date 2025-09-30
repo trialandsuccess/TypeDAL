@@ -1114,5 +1114,5 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
 TypedRow = TypedTable
 
 # note: at the bottom to prevent circular import issues:
-from .fields import TypedField
-from .query_builder import QueryBuilder
+from .fields import TypedField  # noqa: E402
+from .query_builder import QueryBuilder  # noqa: E402

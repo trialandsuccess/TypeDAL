@@ -22,7 +22,6 @@ from .types import (
     Field,
     FieldSettings,
     Query,
-    T,
     T_annotation,
     T_MetaInstance,
     T_subclass,
@@ -574,5 +573,5 @@ def UUIDField(**kw: t.Unpack[FieldSettings]) -> TypedField[uuid.UUID]:
 
 
 # note: import at the end to prevent circular imports:
-from .define import TableDefinitionBuilder
-from .tables import TypedTable
+from .define import TableDefinitionBuilder  # noqa: E402
+from .tables import TypedTable  # noqa: E402
