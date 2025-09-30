@@ -387,12 +387,135 @@ def evaluate_forward_reference(fw_ref: typing.ForwardRef) -> type:
     return fw_ref._evaluate(**kwargs)  # type: ignore
 
 
+class TableDefinitionBuilder:
+    """Handles the conversion of TypedTable classes to pydal tables."""
+
+    def __init__(self, dal: "TypeDAL"):
+        self.dal = dal
+        self.class_map: dict[str, Type["TypedTable"]] = {}
+
+    def define(self, cls: Type[T], **kwargs: Any) -> Type[T]:
+        """Build and register a table from a TypedTable class."""
+        full_dict = all_dict(cls)
+        tablename = to_snake(cls.__name__)
+        annotations = all_annotations(cls)
+        annotations |= {k: typing.cast(type, v) for k, v in full_dict.items() if is_typed_field(v)}
+        annotations = {k: v for k, v in annotations.items() if not k.startswith("_")}
+
+        typedfields: dict[str, TypedField[Any]] = {
+            k: instanciate(v, True) for k, v in annotations.items() if is_typed_field(v)
+        }
+
+        relationships: dict[str, type[Relationship[Any]]] = filter_out(annotations, Relationship)
+        fields = {fname: self.to_field(fname, ftype) for fname, ftype in annotations.items()}
+
+        other_kwargs = kwargs | {
+            k: v for k, v in cls.__dict__.items() if k not in annotations and not k.startswith("_")
+        }
+
+        for key, field in typedfields.items():
+            clone = copy.copy(field)
+            setattr(cls, key, clone)
+            typedfields[key] = clone
+
+        relationships = filter_out(full_dict, Relationship) | relationships | filter_out(other_kwargs, Relationship)
+
+        reference_field_keys = [
+            k for k, v in fields.items() if str(v.type).split(" ")[0] in ("list:reference", "reference")
+        ]
+
+        relationships |= {
+            k: new_relationship
+            for k in reference_field_keys
+            if k not in relationships and (new_relationship := to_relationship(cls, k, annotations[k]))
+        }
+
+        cache_dependency = self.dal._config.caching and kwargs.pop("cache_dependency", True)
+        table: Table = self.dal.define_table(tablename, *fields.values(), **kwargs)
+
+        for name, typed_field in typedfields.items():
+            field = fields[name]
+            typed_field.bind(field, table)
+
+        if issubclass(cls, TypedTable):
+            cls.__set_internals__(
+                db=self.dal,
+                table=table,
+                relationships=typing.cast(dict[str, Relationship[Any]], relationships),
+            )
+            self.class_map[str(table)] = cls
+            self.class_map[table._rname] = cls
+            cls.__on_define__(self.dal)
+        else:
+            warnings.warn("db.define used without inheriting TypedTable. This could lead to strange problems!")
+
+        if not tablename.startswith("typedal_") and cache_dependency:
+            table._before_update.append(lambda s, _: _remove_cache(s, tablename))
+            table._before_delete.append(lambda s: _remove_cache(s, tablename))
+
+        return cls
+
+    @classmethod
+    def to_field(cls, fname: str, ftype: type, **kw: Any) -> Field:
+        """Convert annotation to pydal Field."""
+        fname = to_snake(fname)
+        if converted_type := cls.annotation_to_pydal_fieldtype(ftype, kw):
+            return cls.build_field(fname, converted_type, **kw)
+        else:
+            raise NotImplementedError(f"Unsupported type {ftype}/{type(ftype)}")
+
+    @classmethod
+    def annotation_to_pydal_fieldtype(
+            cls,
+            ftype_annotation: T_annotation,
+            mut_kw: typing.MutableMapping[str, Any],
+    ) -> Optional[str]:
+        """Convert Python type annotation to pydal field type string."""
+        ftype = typing.cast(type, ftype_annotation)
+
+        if isinstance(ftype, str):
+            fw_ref: typing.ForwardRef = typing.get_args(Type[ftype])[0]
+            ftype = evaluate_forward_reference(fw_ref)
+
+        if mapping := BASIC_MAPPINGS.get(ftype):
+            return mapping
+        elif isinstance(ftype, pydal.objects.Table):
+            return f"reference {ftype._tablename}"
+        elif issubclass(type(ftype), type) and issubclass(ftype, TypedTable):
+            snakename = to_snake(ftype.__name__)
+            return f"reference {snakename}"
+        elif isinstance(ftype, TypedField):
+            return ftype._to_field(mut_kw)
+        elif origin_is_subclass(ftype, TypedField):
+            return cls.annotation_to_pydal_fieldtype(typing.get_args(ftype)[0], mut_kw)
+        elif isinstance(ftype, types.GenericAlias) and typing.get_origin(ftype) in (list, TypedField):
+            child_type = typing.get_args(ftype)[0]
+            child_type = cls.annotation_to_pydal_fieldtype(child_type, mut_kw)
+            return f"list:{child_type}"
+        elif is_union(ftype):
+            match typing.get_args(ftype):
+                case (child_type, _Types.NONETYPE) | (_Types.NONETYPE, child_type):
+                    mut_kw["notnull"] = False
+                    return cls.annotation_to_pydal_fieldtype(child_type, mut_kw)
+                case _:
+                    return None
+        else:
+            return None
+
+    @classmethod
+    def build_field(cls, name: str, field_type: str, **kw: Any) -> Field:
+        """Create a pydal Field with default kwargs."""
+        kw_combined = TypeDAL.default_kwargs | kw
+        return Field(name, field_type, **kw_combined)
+
+
 class TypeDAL(pydal.DAL):  # type: ignore
     """
     Drop-in replacement for pyDAL with layer to convert class-based table definitions to classical pydal define_tables.
     """
 
     _config: TypeDALConfig
+    _builder: TableDefinitionBuilder
 
     def __init__(
         self,
@@ -443,6 +566,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
 
         self._config = config
         self.db = self
+        self._builder = TableDefinitionBuilder(self)
 
         if config.folder:
             Path(config.folder).mkdir(exist_ok=True)
@@ -500,118 +624,6 @@ class TypeDAL(pydal.DAL):  # type: ignore
         "notnull": True,
     }
 
-    # maps table name to typedal class, for resolving future references
-    _class_map: typing.ClassVar[dict[str, Type["TypedTable"]]] = {}
-
-    def _define(self, cls: Type[T], **kwargs: Any) -> Type[T]:
-        # todo: new relationship item added should also invalidate (previously unrelated) cache result
-
-        # todo: option to enable/disable cache dependency behavior:
-        #   - don't set _before_update and _before_delete
-        #   - don't add TypedalCacheDependency entry
-        #   - don't invalidate other item on new row of this type
-
-        # when __future__.annotations is implemented, cls.__annotations__ will not work anymore as below.
-        # proper way to handle this would be (but gives error right now due to Table implementing magic methods):
-        # typing.get_type_hints(cls, globalns=None, localns=None)
-        # -> ERR e.g. `pytest -svxk cli` -> name 'BestFriend' is not defined
-
-        # dirty way (with evil eval):
-        # [eval(v) for k, v in cls.__annotations__.items()]
-        # this however also stops working when variables outside this scope or even references to other
-        # objects are used. So for now, this package will NOT work when from __future__ import annotations is used,
-        # and might break in the future, when this annotations behavior is enabled by default.
-
-        # non-annotated variables have to be passed to define_table as kwargs
-        full_dict = all_dict(cls)  # includes properties from parents (e.g. useful for mixins)
-
-        tablename = self.to_snake(cls.__name__)
-        # grab annotations of cls and it's parents:
-        annotations = all_annotations(cls)
-        # extend with `prop = TypedField()` 'annotations':
-        annotations |= {k: typing.cast(type, v) for k, v in full_dict.items() if is_typed_field(v)}
-        # remove internal stuff:
-        annotations = {k: v for k, v in annotations.items() if not k.startswith("_")}
-
-        typedfields: dict[str, TypedField[Any]] = {
-            k: instanciate(v, True) for k, v in annotations.items() if is_typed_field(v)
-        }
-
-        relationships: dict[str, type[Relationship[Any]]] = filter_out(annotations, Relationship)
-
-        fields = {fname: self._to_field(fname, ftype) for fname, ftype in annotations.items()}
-
-        # ! dont' use full_dict here:
-        other_kwargs = kwargs | {
-            k: v for k, v in cls.__dict__.items() if k not in annotations and not k.startswith("_")
-        }  # other_kwargs was previously used to pass kwargs to typedal, but use @define(**kwargs) for that.
-        #    now it's only used to extract relationships from the object.
-        #    other properties of the class (incl methods) should not be touched
-
-        # for key in typedfields.keys() - full_dict.keys():
-        #     # typed fields that don't haven't been added to the object yet
-        #     setattr(cls, key, typedfields[key])
-
-        for key, field in typedfields.items():
-            # clone every property so it can be re-used across mixins:
-            clone = copy.copy(field)
-            setattr(cls, key, clone)
-            typedfields[key] = clone
-
-        # start with base classes and overwrite with current class:
-        relationships = filter_out(full_dict, Relationship) | relationships | filter_out(other_kwargs, Relationship)
-
-        # DEPRECATED: Relationship as annotation is currently not supported!
-        # ensure they are all instances and
-        # not mix of instances (`= relationship()`) and classes (`: Relationship[...]`):
-        # relationships = {
-        #     k: v if isinstance(v, Relationship) else to_relationship(cls, k, v) for k, v in relationships.items()
-        # }
-
-        # keys of implicit references (also relationships):
-        reference_field_keys = [
-            k for k, v in fields.items() if str(v.type).split(" ")[0] in ("list:reference", "reference")
-        ]
-
-        # add implicit relationships:
-        # User; list[User]; TypedField[User]; TypedField[list[User]]; TypedField(User); TypedField(list[User])
-        relationships |= {
-            k: new_relationship
-            for k in reference_field_keys
-            if k not in relationships and (new_relationship := to_relationship(cls, k, annotations[k]))
-        }
-
-        # fixme: list[Reference] is recognized as relationship,
-        #        TypedField(list[Reference]) is NOT recognized!!!
-
-        cache_dependency = self._config.caching and kwargs.pop("cache_dependency", True)
-
-        table: Table = self.define_table(tablename, *fields.values(), **kwargs)
-
-        for name, typed_field in typedfields.items():
-            field = fields[name]
-            typed_field.bind(field, table)
-
-        if issubclass(cls, TypedTable):
-            cls.__set_internals__(
-                db=self,
-                table=table,
-                # by now, all relationships should be instances!
-                relationships=typing.cast(dict[str, Relationship[Any]], relationships),
-            )
-            # map both name and rname:
-            self._class_map[str(table)] = cls
-            self._class_map[table._rname] = cls
-            cls.__on_define__(self)
-        else:
-            warnings.warn("db.define used without inheriting TypedTable. This could lead to strange problems!")
-
-        if not tablename.startswith("typedal_") and cache_dependency:
-            table._before_update.append(lambda s, _: _remove_cache(s, tablename))
-            table._before_delete.append(lambda s: _remove_cache(s, tablename))
-
-        return cls
-
     @typing.overload
     def define(self, maybe_cls: None = None, **kwargs: Any) -> typing.Callable[[Type[T]], Type[T]]:
         """
@@ -654,36 +666,12 @@ class TypeDAL(pydal.DAL):  # type: ignore
         """
 
         def wrapper(cls: Type[T]) -> Type[T]:
-            return self._define(cls, **kwargs)
+            return self._builder.define(cls, **kwargs)
 
         if maybe_cls:
             return wrapper(maybe_cls)
 
         return wrapper
-
-    # def drop(self, table_name: str) -> None:
-    #     """
-    #     Remove a table by name (both on the database level and the typedal level).
-    #     """
-    #     # drop calls TypedTable.drop() and removes it from the `_class_map`
-    #     if cls := self._class_map.pop(table_name, None):
-    #         cls.drop()
-
-    # def drop_all(self, max_retries: int = None) -> None:
-    #     """
-    #     Remove all tables and keep doing so until everything is gone!
-    #     """
-    #     retries = 0
-    #     if max_retries is None:
-    #         max_retries = len(self.tables)
-    #
-    #     while self.tables:
-    #         retries += 1
-    #         for table in self.tables:
-    #             self.drop(table)
-    #
-    #         if retries > max_retries:
-    #             raise RuntimeError("Could not delete all tables")
 
     def __call__(self, *_args: T_Query, **kwargs: Any) -> "TypedSet":
         """
@@ -735,96 +723,13 @@ class TypeDAL(pydal.DAL):  # type: ignore
         Returns:
             The mapped table class if it exists, otherwise None.
         """
-        return self._class_map.get(table_name, None)
+        return self._builder.class_map.get(table_name, None)
 
-    @classmethod
-    def _build_field(cls, name: str, _type: str, **kw: Any) -> Field:
-        # return Field(name, _type, **{**cls.default_kwargs, **kw})
-        kw_combined = cls.default_kwargs | kw
-        return Field(name, _type, **kw_combined)
+    @property
+    def _class_map(self):
+        # alias for backward-compatibility
+        return self._builder.class_map
 
-    @classmethod
-    def _annotation_to_pydal_fieldtype(
-        cls,
-        _ftype: T_annotation,
-        mut_kw: typing.MutableMapping[str, Any],
-    ) -> Optional[str]:
-        # ftype can be a union or type. typing.cast is sometimes used to tell mypy when it's not a union.
-        ftype = typing.cast(type, _ftype)  # cast from Type to type to make mypy happy)
-
-        if isinstance(ftype, str):
-            # extract type from string
-            fw_ref: typing.ForwardRef = typing.get_args(Type[ftype])[0]
-            ftype = evaluate_forward_reference(fw_ref)
-
-        if mapping := BASIC_MAPPINGS.get(ftype):
-            # basi types
-            return mapping
-        elif isinstance(ftype, pydal.objects.Table):
-            # db.table
-            return f"reference {ftype._tablename}"
-        elif issubclass(type(ftype), type) and issubclass(ftype, TypedTable):
-            # SomeTable
-            snakename = cls.to_snake(ftype.__name__)
-            return f"reference {snakename}"
-        elif isinstance(ftype, TypedField):
-            # FieldType(type, ...)
-            return ftype._to_field(mut_kw)
-        elif origin_is_subclass(ftype, TypedField):
-            # TypedField[int]
-            return cls._annotation_to_pydal_fieldtype(typing.get_args(ftype)[0], mut_kw)
-        elif isinstance(ftype, types.GenericAlias) and typing.get_origin(ftype) in (list, TypedField):
-            # list[str] -> str -> string -> list:string
-            _child_type = typing.get_args(ftype)[0]
-            _child_type = cls._annotation_to_pydal_fieldtype(_child_type, mut_kw)
-            return f"list:{_child_type}"
-        elif is_union(ftype):
-            # str | int -> UnionType
-            # typing.Union[str | int] -> typing._UnionGenericAlias
-
-            # Optional[type] == type | None
-
-            match typing.get_args(ftype):
-                case (_child_type, _Types.NONETYPE) | (_Types.NONETYPE, _child_type):
-                    # good union of Nullable
-
-                    # if a field is optional, it is nullable:
-                    mut_kw["notnull"] = False
-                    return cls._annotation_to_pydal_fieldtype(_child_type, mut_kw)
-                case _:
-                    # two types is not supported by the db!
-                    return None
-        else:
-            return None
-
-    @classmethod
-    def _to_field(cls, fname: str, ftype: type, **kw: Any) -> Field:
-        """
-        Convert a annotation into a pydal Field.
-
-        Args:
-            fname: name of the property
-            ftype: annotation of the property
-            kw: when using TypedField or a function returning it (e.g. StringField),
-                keyword args can be used to pass any other settings you would normally to a pydal Field
-
-        -> pydal.Field(fname, ftype, **kw)
-
-        Example:
-            class MyTable:
-                fname: ftype
-                id: int
-                name: str
-                reference: Table
-                other: TypedField(str, default="John Doe")  # default will be in kwargs
-        """
-        fname = cls.to_snake(fname)
-
-        # note: 'kw' is updated in `_annotation_to_pydal_fieldtype` by the kwargs provided to the TypedField(...)
-        if converted_type := cls._annotation_to_pydal_fieldtype(ftype, kw):
-            return cls._build_field(fname, converted_type, **kw)
-        else:
-            raise NotImplementedError(f"Unsupported type {ftype}/{type(ftype)}")
 
     @staticmethod
     def to_snake(camel: str) -> str:
@@ -853,7 +758,6 @@ class TypeDAL(pydal.DAL):  # type: ignore
             A pydal Expression object.
         """
         return sql_expression(self, sql_fragment, *raw_args, output_type=output_type, **raw_kwargs)
-
 
 def default_representer(field: TypedField[T], value: T, table: Type[TypedTable]) -> str:
     """
@@ -1578,7 +1482,7 @@ class TypedField(Expression, typing.Generic[T_Value]):  # pragma: no cover
         """
         other_kwargs = self.kwargs.copy()
         extra_kwargs.update(other_kwargs)  # <- modifies and overwrites the default kwargs with user-specified ones
-        return extra_kwargs.pop("type", False) or TypeDAL._annotation_to_pydal_fieldtype(self._type, extra_kwargs)
+        return extra_kwargs.pop("type", False) or TableDefinitionBuilder.annotation_to_pydal_fieldtype(self._type, extra_kwargs)
 
     def bind(self, field: pydal.objects.Field, table: pydal.objects.Table) -> None:
         """
