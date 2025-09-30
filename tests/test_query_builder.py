@@ -521,9 +521,15 @@ def test_collect_with_extra_fields():
 
     assert builder.execute()
 
-    row = builder.first_or_fail()
+    class HTTP(BaseException):
+        ...
+
+    row = builder.first_or_fail(HTTP(404))
 
     assert row.id
     assert row.name
     assert row._extra
     assert row[TestRelationship.querytable.count()]
+
+    with pytest.raises(HTTP):
+        TestRelationship.where(TestRelationship.id == 3245892384).first_or_fail(HTTP(404))

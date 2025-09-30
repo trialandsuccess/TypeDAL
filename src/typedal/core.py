@@ -3343,7 +3343,7 @@ class QueryBuilder(typing.Generic[T_MetaInstance]):
     def _first(self) -> str:
         return self._paginate(page=1, limit=1)
 
-    def first_or_fail(self, exception: typing.Optional[Exception] = None, verbose: bool = False) -> T_MetaInstance:
+    def first_or_fail(self, exception: typing.Optional[BaseException] = None, verbose: bool = False) -> T_MetaInstance:
         """
         Call .first() and raise an error if nothing found.
 
