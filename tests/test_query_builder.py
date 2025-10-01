@@ -521,8 +521,7 @@ def test_collect_with_extra_fields():
 
     assert builder.execute()
 
-    class HTTP(BaseException):
-        ...
+    class HTTP(BaseException): ...
 
     row = builder.first_or_fail(HTTP(404))
 

@@ -1,5 +1,5 @@
+import sys
 import typing
-from datetime import datetime, timedelta
 
 import pydal
 import pytest
@@ -8,6 +8,7 @@ from pydal import DAL
 from src.typedal import TypeDAL, TypedTable, sql_expression
 from src.typedal.caching import get_expire
 from src.typedal.helpers import (
+    SYSTEM_SUPPORTS_TEMPLATES,
     DummyQuery,
     all_annotations,
     as_lambda,
@@ -26,6 +27,7 @@ from src.typedal.helpers import (
 )
 from src.typedal.types import Field
 
+import datetime as dt
 
 def test_is_union():
     assert is_union(int | str)
@@ -140,11 +142,11 @@ def test_as_lambda():
 
 
 def test_get_expire():
-    now = datetime(year=2023, hour=12, minute=1, second=1, month=1, day=1)
+    now = dt.datetime(year=2023, hour=12, minute=1, second=1, month=1, day=1)
 
     assert get_expire() is None
-    assert get_expire(ttl=2, now=now) == datetime(year=2023, hour=12, minute=1, second=3, month=1, day=1)
-    assert get_expire(ttl=timedelta(seconds=2), now=now) == datetime(
+    assert get_expire(ttl=2, now=now) == dt.datetime(year=2023, hour=12, minute=1, second=3, month=1, day=1)
+    assert get_expire(ttl=dt.timedelta(seconds=2), now=now) == dt.datetime(
         year=2023, hour=12, minute=1, second=3, month=1, day=1
     )
 
@@ -209,6 +211,26 @@ def test_get_functions():
     assert isinstance(field, Field)
 
 
+def test_forward_reference_annotation_314():
+    if sys.version_info.minor < 14:
+        return
+
+    class WithForwardRef:
+        fwd: Future
+
+    class Future: ...
+
+    assert all_annotations(WithForwardRef)
+
+    print(all_annotations(WithForwardRef))
+
+    class WithFakeForwardRef:
+        fwd: Fake
+
+    with pytest.raises(NameError):
+        all_annotations(WithFakeForwardRef)
+
+
 def test_sql_expression():
     # note: only %s works since .adapt does something like
     #  -> "'%s'" % obj.replace("'", "''")
@@ -244,3 +266,9 @@ def test_sql_expression():
     # test quoting fields and tables:
     assert str(database.sql_expression("LOWER(%s)", TestSqlExpression.value)) == 'LOWER("test_sql_expression"."value")'
     assert str(database.sql_expression("LOWER(%s.value)", TestSqlExpression)) == 'LOWER("test_sql_expression".value)'
+
+@pytest.mark.skipif(not SYSTEM_SUPPORTS_TEMPLATES, reason="t-strings contain breaking syntax!")
+def test_sql_expression_314():
+    from .py314_tests import test_sql_expression_314
+
+    test_sql_expression_314(database)

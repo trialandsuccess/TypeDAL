@@ -6,7 +6,7 @@ import datetime as dt
 
 from pydal.validators import IS_NOT_IN_DB
 
-from .core import TypeDAL, TypedField, TypedTable
+from . import TypeDAL, TypedField, TypedTable
 from .fields import TextField
 from .web2py_py4web_shared import AuthUser
 

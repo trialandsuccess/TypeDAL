@@ -87,7 +87,8 @@ class Tagged(TypedTable):  # pivot table
 
 
 @db.define()
-class Empty(TypedTable): ...
+class Empty(TypedTable):
+    ...
 
 
 def _setup_data():
@@ -108,7 +109,7 @@ def _setup_data():
             {"name": "Reader 1", "roles": [reader], "main_role": reader, "extra_roles": []},
             {"name": "Writer 1", "roles": [reader, writer], "main_role": writer, "extra_roles": []},
             {"name": "Editor 1", "roles": [reader, writer, editor], "main_role": editor, "extra_roles": []},
-        ]
+        ],
     )
 
     # no relationships:
@@ -122,7 +123,7 @@ def _setup_data():
         [
             {"title": "Article 1", "author": writer, "final_editor": editor},
             {"title": "Article 2", "author": editor, "secondary_author": editor},
-        ]
+        ],
     )
 
     # tags
@@ -134,7 +135,7 @@ def _setup_data():
             {"name": "breaking-news"},
             {"name": "trending"},
             {"name": "off-topic"},
-        ]
+        ],
     )
 
     # tagged
@@ -150,7 +151,7 @@ def _setup_data():
             {"entity": writer.gid, "tag": tag_trending},
             # tags
             {"entity": tag_offtopic.gid, "tag": tag_draft},
-        ]
+        ],
     )
 
     BestFriend.insert(friend=reader, name="Reader's Bestie")
@@ -296,7 +297,8 @@ def test_typedal_way():
     author1 = User.where(id=4).join().first()
 
     assert (
-        len(author1.as_dict()["articles"]) == len(author1.__dict__["articles"]) == len(dict(author1)["articles"]) == 2
+            len(author1.as_dict()["articles"]) == len(author1.__dict__["articles"]) == len(
+        dict(author1)["articles"]) == 2
     )
 
 
@@ -384,7 +386,7 @@ def test_join_with_different_condition():
     assert role_with_users.users[0].name == "Reader 1"
 
     role_with_users = Role.join(
-        "users", method="inner", condition_and=lambda role, user: ~user.name.like("Reader%")
+        "users", method="inner", condition_and=lambda role, user: ~user.name.like("Reader%"),
     ).first()
 
     assert role_with_users.users
@@ -392,7 +394,7 @@ def test_join_with_different_condition():
 
     # left:
     role_with_users = Role.join(
-        "users", method="left", condition_and=lambda role, user: ~user.name.like("Reader%")
+        "users", method="left", condition_and=lambda role, user: ~user.name.like("Reader%"),
     ).first()
 
     assert role_with_users.users
@@ -429,12 +431,12 @@ def test_caching():
     cached_user_only2 = User.join().cache(User.id).collect_or_fail()
 
     assert (
-        len(uncached2)
-        == len(uncached)
-        == len(cached2)
-        == len(cached)
-        == len(cached_user_only2)
-        == len(cached_user_only)
+            len(uncached2)
+            == len(uncached)
+            == len(cached2)
+            == len(cached)
+            == len(cached_user_only2)
+            == len(cached_user_only)
     )
 
     assert uncached.as_json() == uncached2.as_json() == cached.as_json() == cached2.as_json()
@@ -442,9 +444,9 @@ def test_caching():
     assert cached.first().gid == cached2.first().gid
 
     assert (
-        [_.name for _ in uncached2.first().roles]
-        == [_.name for _ in cached.first().roles]
-        == [_.name for _ in cached2.first().roles]
+            [_.name for _ in uncached2.first().roles]
+            == [_.name for _ in cached.first().roles]
+            == [_.name for _ in cached2.first().roles]
     )
 
     assert not uncached2.metadata.get("cache", {}).get("enabled")
@@ -552,7 +554,7 @@ def test_caching_dependencies():
         [
             {"name": "een"},
             {"name": "twee"},
-        ]
+        ],
     )
 
     CacheTwoRelationships.insert(first=first_one, second=second_one)
@@ -582,7 +584,6 @@ def test_caching_dependencies():
 
 def test_illegal():
     with pytest.raises(ValueError), pytest.warns(UserWarning):
-
         class HasRelationship:
             something = relationship("...", condition=lambda: 1, on=lambda: 2)
 
@@ -642,3 +643,43 @@ def test_accessing_raw_data():
     assert {row.user.id for row in user._rows} == {4}
 
     assert {row.articles.id for row in user._rows} == {1, 2}
+
+
+def test_nested_relationships():
+    _setup_data()
+
+    # old:
+    users = Role.where(name="reader").join("users").first().users
+    # 2 queries
+    old_besties = {
+        user.name: user.bestie.name if user.bestie else "-"
+        for user in User.where(User.id.belongs(u.id for u in users)).join("bestie").orderby(User.name)
+    }
+
+    # new:
+
+    new_besties = {
+        user.name: user.bestie.name if user.bestie else "-"
+        for user in Role.where(name="reader").join("users.bestie", "users.articles").first().users  # 1 query
+    }
+
+    # check:
+
+    assert old_besties == new_besties == {"Editor 1": "-", "Reader 1": "Reader's Bestie", "Writer 1": "-"}
+
+
+    # more complex:
+    role = Role.where(name="reader").join("users.bestie", "users.articles.final_editor", "users.articles.secondary_author")
+
+    nested_article = role.first().users[2].articles[0]
+
+    assert nested_article.title == "Article 2"
+
+    assert nested_article.secondary_author
+    assert not nested_article.final_editor
+
+    # complex, inner:
+    role_inner = Role.where(name="reader").join("users.bestie", "users.articles.final_editor", "users.articles.secondary_author", method="inner")
+
+    # no final_editor -> inner join should fail:
+    assert not role_inner.first()

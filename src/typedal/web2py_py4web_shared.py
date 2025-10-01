@@ -6,7 +6,7 @@ import datetime as dt
 
 from pydal.validators import CRYPT, IS_EMAIL, IS_NOT_EMPTY, IS_NOT_IN_DB, IS_STRONG
 
-from .core import TypeDAL, TypedField, TypedTable
+from . import TypeDAL, TypedField, TypedTable
 from .fields import PasswordField
 
 

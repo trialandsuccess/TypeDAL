@@ -4,11 +4,10 @@ TypeDAL can be configured by a combination of pyproject.toml (static), env (dyna
 
 import os
 import re
-import typing
+import typing as t
 import warnings
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Optional
 
 import tomli
 from configuraptor import TypedConfig, alias
@@ -17,7 +16,7 @@ from dotenv import dotenv_values, find_dotenv
 
 from .types import AnyDict
 
-if typing.TYPE_CHECKING:
+if t.TYPE_CHECKING:
     from edwh_migrate import Config as MigrateConfig
     from pydal2sql.typer_support import Config as P2SConfig
 
@@ -41,15 +40,15 @@ class TypeDALConfig(TypedConfig):
     output: str = ""
     noop: bool = False
     magic: bool = True
-    tables: Optional[list[str]] = None
+    tables: t.Optional[list[str]] = None
     function: str = "define_tables"
 
     # edwh-migrate:
     # migrate uri = database
-    database_to_restore: Optional[str]
-    migrate_cat_command: Optional[str]
-    schema_version: Optional[str]
-    redis_host: Optional[str]
+    database_to_restore: t.Optional[str]
+    migrate_cat_command: t.Optional[str]
+    schema_version: t.Optional[str]
+    redis_host: t.Optional[str]
     migrate_table: str = "typedal_implemented_features"
     flag_location: str
     create_flag_location: bool = True
@@ -148,7 +147,7 @@ def _load_toml(path: str | bool | Path | None = True) -> tuple[str, AnyDict]:
         with open(toml_path, "rb") as f:
             data = tomli.load(f)
 
-        return str(toml_path) or "", typing.cast(AnyDict, data["tool"]["typedal"])
+        return str(toml_path) or "", t.cast(AnyDict, data["tool"]["typedal"])
     except Exception as e:
         warnings.warn(f"Could not load typedal config toml: {e}", source=e)
         return str(toml_path) or "", {}
@@ -194,7 +193,7 @@ def get_db_for_alias(db_name: str) -> str:
     return DB_ALIASES.get(db_name, db_name)
 
 
-DEFAULTS: dict[str, Any | typing.Callable[[AnyDict], Any]] = {
+DEFAULTS: dict[str, t.Any | t.Callable[[AnyDict], t.Any]] = {
     "database": lambda data: data.get("db_uri") or "sqlite:memory",
     "dialect": lambda data: (
         get_db_for_alias(data["database"].split(":")[0]) if ":" in data["database"] else data.get("db_type")
@@ -208,7 +207,7 @@ DEFAULTS: dict[str, Any | typing.Callable[[AnyDict], Any]] = {
 }
 
 
-def _fill_defaults(data: AnyDict, prop: str, fallback: Any = None) -> None:
+def _fill_defaults(data: AnyDict, prop: str, fallback: t.Any = None) -> None:
     default = DEFAULTS.get(prop, fallback)
     if callable(default):
         default = default(data)
@@ -223,7 +222,7 @@ def fill_defaults(data: AnyDict, prop: str) -> None:
         _fill_defaults(data, prop)
 
 
-TRANSFORMS: dict[str, typing.Callable[[AnyDict], Any]] = {
+TRANSFORMS: dict[str, t.Callable[[AnyDict], t.Any]] = {
     "database": lambda data: (
         data["database"]
         if (":" in data["database"] or not data.get("dialect"))
@@ -264,7 +263,7 @@ def expand_posix_vars(posix_expr: str, context: dict[str, str]) -> str:
     # Regular expression to match "${VAR:default}" pattern
     pattern = r"\$\{([^}]+)\}"
 
-    def replace_var(match: re.Match[Any]) -> str:
+    def replace_var(match: re.Match[t.Any]) -> str:
         var_with_default = match.group(1)
         var_name, default_value = var_with_default.split(":") if ":" in var_with_default else (var_with_default, "")
         return env.get(var_name.lower(), default_value)
@@ -325,10 +324,10 @@ def expand_env_vars_into_toml_values(toml: AnyDict, env: AnyDict) -> None:
 
 
 def load_config(
-    connection_name: Optional[str] = None,
+    connection_name: t.Optional[str] = None,
     _use_pyproject: bool | str | None = True,
     _use_env: bool | str | None = True,
-    **fallback: Any,
+    **fallback: t.Any,
 ) -> TypeDALConfig:
     """
     Combines multiple sources of config into one config instance.
@@ -338,7 +337,7 @@ def load_config(
     # combine and fill with fallback values
     # load typedal config or fail
     toml_path, toml = _load_toml(_use_pyproject)
-    dotenv_path, dotenv = _load_dotenv(_use_env)
+    _dotenv_path, dotenv = _load_dotenv(_use_env)
 
     expand_env_vars_into_toml_values(toml, dotenv)
 
