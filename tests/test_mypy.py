@@ -44,9 +44,9 @@ def mypy_test_typedal_define() -> None:
 
     reveal_type(MyTable.normal)  # R: builtins.str
     reveal_type(MyTable().normal)  # R: builtins.str
-    reveal_type(MyTable.fancy)  # R: typedal.core.TypedField[builtins.str]
+    reveal_type(MyTable.fancy)  # R: typedal.fields.TypedField[builtins.str]
     reveal_type(MyTable().fancy)  # R: builtins.str
-    reveal_type(MyTable.options)  # R: typedal.core.TypedField[builtins.str]
+    reveal_type(MyTable.options)  # R: typedal.fields.TypedField[builtins.str]
     reveal_type(MyTable().options)  # R: builtins.str
 
     reveal_type(MyTable.fancy.lower())  # R: typedal.types.Expression
@@ -113,9 +113,9 @@ def mypy_test_typedset_modern_union() -> None:
     select2: TypedRows[MyTable] = db(MyTable).select()
     select3 = MyTable.select().collect()
 
-    reveal_type(select1)  # R: typedal.core.TypedRows[Any]
-    reveal_type(select2)  # R: typedal.core.TypedRows[tests.test_mypy.MyTable]
-    reveal_type(select3)  # R: typedal.core.TypedRows[tests.test_mypy.MyTable]
+    reveal_type(select1)  # R: typedal.rows.TypedRows[Any]
+    reveal_type(select2)  # R: typedal.rows.TypedRows[tests.test_mypy.MyTable]
+    reveal_type(select3)  # R: typedal.rows.TypedRows[tests.test_mypy.MyTable]
 
     reveal_type(select1.first())  # R: Any | None
     reveal_type(select2.first())  # R: tests.test_mypy.MyTable | None

@@ -467,9 +467,11 @@ def test_orderby():
     rows2 = joined_qt.select(orderby=TestQueryTable.id, limitby=(0, 3)).collect()
     assert [_.id for _ in rows1] == [_.id for _ in rows2] == [1, 2, 3]
 
-    rows1 = joined_qt.select(orderby=TestQueryTable.number).paginate(limit=3, page=1)
-    rows2 = joined_qt.select(orderby=TestQueryTable.number, limitby=(0, 3)).collect()
+    rows1 = joined_qt.orderby(TestQueryTable.number, TestQueryTable.other).paginate(limit=3, page=1)
+    rows2 = joined_qt.select(orderby=TestQueryTable.number | TestQueryTable.other, limitby=(0, 3)).collect()
     assert [_.number for _ in rows1] == [_.number for _ in rows2] == [0, 1, 2]
+
+    assert rows1.metadata["sql"] == rows2.metadata["sql"]
 
     rows1 = joined_qt.select(orderby=~TestQueryTable.number).paginate(limit=3, page=1)
     rows2 = joined_qt.select(orderby=~TestQueryTable.number, limitby=(0, 3)).collect()
@@ -478,6 +480,11 @@ def test_orderby():
     rows1 = joined_qt.select(orderby=~TestQueryTable.number).paginate(limit=100, page=1)
     rows2 = joined_qt.select(orderby=~TestQueryTable.number, limitby=(0, 100)).collect()
     assert [_.number for _ in rows1] == [_.number for _ in rows2] == [4, 3, 2, 1, 0]
+
+    assert (
+        TestQueryTable.orderby(TestQueryTable.yet_another, TestQueryTable.number).to_sql()
+        == TestQueryTable.select(orderby=TestQueryTable.yet_another | TestQueryTable.number).to_sql()
+    )
 
 
 def test_execute():
@@ -514,9 +521,14 @@ def test_collect_with_extra_fields():
 
     assert builder.execute()
 
-    row = builder.first_or_fail()
+    class HTTP(BaseException): ...
+
+    row = builder.first_or_fail(HTTP(404))
 
     assert row.id
     assert row.name
     assert row._extra
     assert row[TestRelationship.querytable.count()]
+
+    with pytest.raises(HTTP):
+        TestRelationship.where(TestRelationship.id == 3245892384).first_or_fail(HTTP(404))

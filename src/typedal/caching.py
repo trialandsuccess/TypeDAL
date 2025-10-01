@@ -12,7 +12,9 @@ from typing import Any, Iterable, Mapping, Optional, TypeVar
 import dill  # nosec
 from pydal.objects import Field, Rows, Set
 
-from .core import TypedField, TypedRows, TypedTable
+from .fields import TypedField
+from .rows import TypedRows
+from .tables import TypedTable
 from .types import Query
 
 if typing.TYPE_CHECKING:

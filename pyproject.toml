@@ -119,7 +119,7 @@ badge = true
 mypy = "--disable-error-code misc"
 
 [tool.black]
-target-version = ["py314"]
+target-version = ["py313"]
 line-length = 120
 # 'extend-exclude' excludes files or directories in addition to the defaults
 extend-exclude = '''
@@ -135,6 +135,7 @@ extend-exclude = '''
 [tool.coverage.report]
 exclude_also = [
     "if TYPE_CHECKING:",
+    "if t.TYPE_CHECKING:",
     "if typing.TYPE_CHECKING:",
     "except ImportError as e:",
     "except ImportError:",

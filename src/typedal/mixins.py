@@ -15,16 +15,13 @@ from pydal import DAL
 from pydal.validators import IS_NOT_IN_DB, ValidationError
 from slugify import slugify
 
-from .core import (  # noqa F401 - used by example in docstring
-    QueryBuilder,
-    T_MetaInstance,
-    TableMeta,
-    TypeDAL,
-    TypedTable,
-    _TypedTable,
-)
+from .core import TypeDAL
 from .fields import DatetimeField, StringField
-from .types import OpRow, Set
+from .tables import _TypedTable
+from .types import OpRow, Set, T_MetaInstance
+
+if typing.TYPE_CHECKING:
+    from .tables import TypedTable  # noqa: F401
 
 
 class Mixin(_TypedTable):
