@@ -1,3 +1,7 @@
+"""
+Constants values.
+"""
+
 import datetime as dt
 import typing as t
 from decimal import Decimal

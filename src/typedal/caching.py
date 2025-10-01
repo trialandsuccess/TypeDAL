@@ -3,11 +3,10 @@ Helpers to facilitate db-based caching.
 """
 
 import contextlib
+import datetime as dt
 import hashlib
 import json
-import typing
-from datetime import datetime, timedelta, timezone
-from typing import Any, Iterable, Mapping, Optional, TypeVar
+import typing as t
 
 import dill  # nosec
 from pydal.objects import Field, Rows, Set
@@ -17,15 +16,15 @@ from .rows import TypedRows
 from .tables import TypedTable
 from .types import Query
 
-if typing.TYPE_CHECKING:
+if t.TYPE_CHECKING:
     from .core import TypeDAL
 
 
-def get_now(tz: timezone = timezone.utc) -> datetime:
+def get_now(tz: dt.timezone = dt.timezone.utc) -> dt.datetime:
     """
     Get the default datetime, optionally in a specific timezone.
     """
-    return datetime.now(tz)
+    return dt.datetime.now(tz)
 
 
 class _TypedalCache(TypedTable):
@@ -35,8 +34,8 @@ class _TypedalCache(TypedTable):
 
     key: TypedField[str]
     data: TypedField[bytes]
-    cached_at = TypedField(datetime, default=get_now)
-    expires_at: TypedField[datetime | None]
+    cached_at = TypedField(dt.datetime, default=get_now)
+    expires_at: TypedField[dt.datetime | None]
 
 
 class _TypedalCacheDependency(TypedTable):
@@ -49,7 +48,7 @@ class _TypedalCacheDependency(TypedTable):
     idx: TypedField[int]
 
 
-def prepare(field: Any) -> str:
+def prepare(field: t.Any) -> str:
     """
     Prepare data to be used in a cache key.
 
@@ -58,10 +57,10 @@ def prepare(field: Any) -> str:
     """
     if isinstance(field, str):
         return field
-    elif isinstance(field, (dict, Mapping)):
+    elif isinstance(field, (dict, t.Mapping)):
         data = {str(k): prepare(v) for k, v in field.items()}
         return json.dumps(data, sort_keys=True)
-    elif isinstance(field, Iterable):
+    elif isinstance(field, t.Iterable):
         return ",".join(sorted([prepare(_) for _ in field]))
     elif isinstance(field, bool):
         return str(int(field))
@@ -69,7 +68,7 @@ def prepare(field: Any) -> str:
         return str(field)
 
 
-def create_cache_key(*fields: Any) -> str:
+def create_cache_key(*fields: t.Any) -> str:
     """
     Turn any fields of data into a string.
     """
@@ -85,7 +84,7 @@ def hash_cache_key(cache_key: str | bytes) -> str:
     return h.hexdigest()
 
 
-def create_and_hash_cache_key(*fields: Any) -> tuple[str, str]:
+def create_and_hash_cache_key(*fields: t.Any) -> tuple[str, str]:
     """
     Combine the input fields into one key and hash it with SHA 256.
     """
@@ -114,7 +113,7 @@ def _get_dependency_ids(rows: Rows, dependency_keys: list[tuple[Field, str]]) ->
     return dependencies
 
 
-def _determine_dependencies_auto(_: TypedRows[Any], rows: Rows) -> DependencyTupleSet:
+def _determine_dependencies_auto(_: TypedRows[t.Any], rows: Rows) -> DependencyTupleSet:
     dependency_keys = []
     for field in rows.fields:
         if str(field).endswith(".id"):
@@ -125,7 +124,7 @@ def _determine_dependencies_auto(_: TypedRows[Any], rows: Rows) -> DependencyTup
     return _get_dependency_ids(rows, dependency_keys)
 
 
-def _determine_dependencies(instance: TypedRows[Any], rows: Rows, depends_on: list[Any]) -> DependencyTupleSet:
+def _determine_dependencies(instance: TypedRows[t.Any], rows: Rows, depends_on: list[t.Any]) -> DependencyTupleSet:
     if not depends_on:
         return _determine_dependencies_auto(instance, rows)
 
@@ -146,11 +145,11 @@ def _determine_dependencies(instance: TypedRows[Any], rows: Rows, depends_on: li
     return _get_dependency_ids(rows, dependency_keys)
 
 
-def remove_cache(idx: int | Iterable[int], table: str) -> None:
+def remove_cache(idx: int | t.Iterable[int], table: str) -> None:
     """
     Remove any cache entries that are dependant on one or multiple indices of a table.
     """
-    if not isinstance(idx, Iterable):
+    if not isinstance(idx, t.Iterable):
         idx = [idx]
 
     related = (
@@ -186,12 +185,14 @@ def _remove_cache(s: Set, tablename: str) -> None:
     remove_cache(indeces, tablename)
 
 
-T_TypedTable = TypeVar("T_TypedTable", bound=TypedTable)
+T_TypedTable = t.TypeVar("T_TypedTable", bound=TypedTable)
 
 
 def get_expire(
-    expires_at: Optional[datetime] = None, ttl: Optional[int | timedelta] = None, now: Optional[datetime] = None
-) -> datetime | None:
+    expires_at: t.Optional[dt.datetime] = None,
+    ttl: t.Optional[int | dt.timedelta] = None,
+    now: t.Optional[dt.datetime] = None,
+) -> dt.datetime | None:
     """
     Based on an expires_at date or a ttl (in seconds or a time delta), determine the expire date.
     """
@@ -199,10 +200,10 @@ def get_expire(
 
     if expires_at and ttl:
         raise ValueError("Please only supply an `expired at` date or a `ttl` in seconds!")
-    elif isinstance(ttl, timedelta):
+    elif isinstance(ttl, dt.timedelta):
         return now + ttl
     elif ttl:
-        return now + timedelta(seconds=ttl)
+        return now + dt.timedelta(seconds=ttl)
     elif expires_at:
         return expires_at
 
@@ -212,8 +213,8 @@ def get_expire(
 def save_to_cache(
     instance: TypedRows[T_TypedTable],
     rows: Rows,
-    expires_at: Optional[datetime] = None,
-    ttl: Optional[int | timedelta] = None,
+    expires_at: t.Optional[dt.datetime] = None,
+    ttl: t.Optional[int | dt.timedelta] = None,
 ) -> TypedRows[T_TypedTable]:
     """
     Save a typedrows result to the database, and save dependencies from rows.
@@ -239,13 +240,13 @@ def save_to_cache(
     return instance
 
 
-def _load_from_cache(key: str, db: "TypeDAL") -> Any | None:
+def _load_from_cache(key: str, db: "TypeDAL") -> t.Any | None:
     if not (row := _TypedalCache.where(key=key).first()):
         return None
 
     now = get_now()
 
-    expires = row.expires_at.replace(tzinfo=timezone.utc) if row.expires_at else None
+    expires = row.expires_at.replace(tzinfo=dt.timezone.utc) if row.expires_at else None
 
     if expires and now >= expires:
         row.delete_record()
@@ -263,7 +264,7 @@ def _load_from_cache(key: str, db: "TypeDAL") -> Any | None:
     return inst
 
 
-def load_from_cache(key: str, db: "TypeDAL") -> Any | None:
+def load_from_cache(key: str, db: "TypeDAL") -> t.Any | None:
     """
     If 'key' matches a non-expired row in the database, try to load the dill.
 
@@ -304,10 +305,10 @@ def _expired_and_valid_query() -> tuple[str, str]:
     return expired_items, valid_items
 
 
-T = typing.TypeVar("T")
-Stats = typing.TypedDict("Stats", {"total": T, "valid": T, "expired": T})
+T = t.TypeVar("T")
+Stats = t.TypedDict("Stats", {"total": T, "valid": T, "expired": T})
 
-RowStats = typing.TypedDict(
+RowStats = t.TypedDict(
     "RowStats",
     {
         "Dependent Cache Entries": int,
@@ -340,7 +341,7 @@ def row_stats(db: "TypeDAL", table: str, row_id: str) -> Stats[RowStats]:
     }
 
 
-TableStats = typing.TypedDict(
+TableStats = t.TypedDict(
     "TableStats",
     {
         "Dependent Cache Entries": int,
@@ -373,7 +374,7 @@ def table_stats(db: "TypeDAL", table: str) -> Stats[TableStats]:
     }
 
 
-GenericStats = typing.TypedDict(
+GenericStats = t.TypedDict(
     "GenericStats",
     {
         "entries": int,

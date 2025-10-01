@@ -5,11 +5,10 @@ Mixins can add reusable fields and behavior (optimally both, otherwise it doesn'
 """
 
 import base64
+import datetime as dt
 import os
-import typing
+import typing as t
 import warnings
-from datetime import datetime
-from typing import Any, Optional
 
 from pydal import DAL
 from pydal.validators import IS_NOT_IN_DB, ValidationError
@@ -20,7 +19,7 @@ from .fields import DatetimeField, StringField
 from .tables import _TypedTable
 from .types import OpRow, Set, T_MetaInstance
 
-if typing.TYPE_CHECKING:
+if t.TYPE_CHECKING:
     from .tables import TypedTable  # noqa: F401
 
 
@@ -35,9 +34,9 @@ class Mixin(_TypedTable):
         ('inconsistent method resolution' or 'metaclass conflicts')
     """
 
-    __settings__: typing.ClassVar[dict[str, Any]]
+    __settings__: t.ClassVar[dict[str, t.Any]]
 
-    def __init_subclass__(cls, **kwargs: Any):
+    def __init_subclass__(cls, **kwargs: t.Any):
         """
         Ensures __settings__ exists for other mixins.
         """
@@ -49,8 +48,8 @@ class TimestampsMixin(Mixin):
     A Mixin class for adding timestamp fields to a model.
     """
 
-    created_at = DatetimeField(default=datetime.now, writable=False)
-    updated_at = DatetimeField(default=datetime.now, writable=False)
+    created_at = DatetimeField(default=dt.datetime.now, writable=False)
+    updated_at = DatetimeField(default=dt.datetime.now, writable=False)
 
     @classmethod
     def __on_define__(cls, db: TypeDAL) -> None:
@@ -70,7 +69,7 @@ class TimestampsMixin(Mixin):
                 _: Set: Unused parameter.
                 row (OpRow): The row to update.
             """
-            row["updated_at"] = datetime.now()
+            row["updated_at"] = dt.datetime.now()
 
         cls._before_update.append(set_updated_at)
 
@@ -86,7 +85,7 @@ def slug_random_suffix(length: int = 8) -> str:
     return base64.urlsafe_b64encode(os.urandom(length)).rstrip(b"=").decode().strip("=")
 
 
-T = typing.TypeVar("T")
+T = t.TypeVar("T")
 
 
 # noinspection PyPep8Naming
@@ -109,7 +108,7 @@ class HAS_UNIQUE_SLUG(IS_NOT_IN_DB):
         """
         super().__init__(db, field, error_message)
 
-    def validate(self, original: T, record_id: Optional[int] = None) -> T:
+    def validate(self, original: T, record_id: t.Optional[int] = None) -> T:
         """
         Performs checks to see if the slug already exists for a different row.
         """
@@ -151,7 +150,7 @@ class SlugMixin(Mixin):
     # pub:
     slug = StringField(unique=True, writable=False)
     # priv:
-    __settings__: typing.TypedDict(  # type: ignore
+    __settings__: t.TypedDict(  # type: ignore
         "SlugFieldSettings",
         {
             "slug_field": str,
@@ -161,10 +160,10 @@ class SlugMixin(Mixin):
 
     def __init_subclass__(
         cls,
-        slug_field: typing.Optional[str] = None,
+        slug_field: t.Optional[str] = None,
         slug_suffix_length: int = 0,
-        slug_suffix: Optional[int] = None,
-        **kw: Any,
+        slug_suffix: t.Optional[int] = None,
+        **kw: t.Any,
     ) -> None:
         """
         Bind 'slug field' option to be used later (on_define).
@@ -232,7 +231,7 @@ class SlugMixin(Mixin):
             slug_field.requires = current_requires
 
     @classmethod
-    def from_slug(cls: typing.Type[T_MetaInstance], slug: str, join: bool = True) -> Optional[T_MetaInstance]:
+    def from_slug(cls: t.Type[T_MetaInstance], slug: str, join: bool = True) -> t.Optional[T_MetaInstance]:
         """
         Find a row by its slug.
         """
@@ -243,7 +242,7 @@ class SlugMixin(Mixin):
         return builder.first()
 
     @classmethod
-    def from_slug_or_fail(cls: typing.Type[T_MetaInstance], slug: str, join: bool = True) -> T_MetaInstance:
+    def from_slug_or_fail(cls: t.Type[T_MetaInstance], slug: str, join: bool = True) -> T_MetaInstance:
         """
         Find a row by its slug, or raise an error if it doesn't exist.
         """

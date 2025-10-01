@@ -1,3 +1,7 @@
+"""
+Contains base functionality related to the Query Builder.
+"""
+
 from __future__ import annotations
 
 import datetime as dt
@@ -211,7 +215,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         return self._extend(overwrite_query=new_query)
 
     def _parse_relationships(
-        self, fields: t.Iterable[str | t.Type[TypedTable]], **update: t.Any
+        self, fields: t.Iterable[str | t.Type[TypedTable]], method: JOIN_OPTIONS = None, **update: t.Any
     ) -> dict[str, Relationship[t.Any]]:
         """
         Parse relationship fields into a dict of base relationships with nested relationships.
@@ -238,7 +242,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
 
             # Create base relationship if it doesn't exist
             if base_name not in relationships:
-                relationships[base_name] = base_relationships[base_name].clone(**update)
+                relationships[base_name] = base_relationships[base_name].clone(join=method, **update)
 
             # If this is a nested relationship, traverse and add it
             if len(parts) > 1:
@@ -248,7 +252,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
                     # Check if this nested relationship already exists
                     if level not in current.nested:
                         # Create new nested relationship
-                        subrelationship = current.get_table(db).get_relationships()[level].clone()
+                        subrelationship = current.get_table(db).get_relationships()[level].clone(join=method)
                         current.nested[level] = subrelationship
 
                     current = current.nested[level]
@@ -317,7 +321,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
                 #   -> {'relationship': Relationship('relationship',
                 #                           nested=[Relationship('with_nested'), Relationship('no2')])
 
-                relationships = self._parse_relationships(fields, condition_and=condition_and)
+                relationships = self._parse_relationships(fields, method=method, condition_and=condition_and)
 
             if method:
                 relationships = {
@@ -641,8 +645,9 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         return query
 
     def _build_left_joins_and_fields(self, select_args: list[t.Any], left_joins: list[Expression]) -> list[t.Any]:
-        """Build left joins and ensure required fields are selected."""
-
+        """
+        Build left joins and ensure required fields are selected.
+        """
         for key, relation in self.relationships.items():
             select_args = self._process_relationship_for_left_join(relation, key, select_args, left_joins, self.model)
 
@@ -791,6 +796,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
     ) -> t.Any | None:
         """
         Process relationship data from a row and attach it to the parent record.
+
         Returns the created instance (for nested processing).
 
         Args:
@@ -844,9 +850,9 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
 
         # Attach to parent
         if relation.multiple:
-            current_value = parent_record.get(column)
-            if not isinstance(current_value, list):
-                setattr(parent_record, column, [])
+            # current_value = parent_record.get(column)
+            # if not isinstance(current_value, list):
+            #     setattr(parent_record, column, [])
             parent_record[column].append(instance)
         else:
             parent_record[column] = instance
@@ -900,7 +906,6 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
 
         Basically unwraps t.Optional type.
         """
-
         return self.collect() or throw(exception or ValueError("Nothing found!"))
 
     def __iter__(self) -> t.Generator[T_MetaInstance, None, None]:

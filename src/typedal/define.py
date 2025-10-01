@@ -1,10 +1,15 @@
+"""
+Seperates the table definition code from core DAL code.
+
+Since otherwise helper methods would clutter up the TypeDAl class.
+"""
+
 from __future__ import annotations
 
 import copy
 import types
-import typing
+import typing as t
 import warnings
-from typing import Any, Optional, Type
 
 import pydal
 
@@ -41,23 +46,26 @@ except ImportError:  # pragma: no cover
 class TableDefinitionBuilder:
     """Handles the conversion of TypedTable classes to pydal tables."""
 
-    def __init__(self, dal: "TypeDAL"):
-        self.dal = dal
-        self.class_map: dict[str, Type["TypedTable"]] = {}
+    def __init__(self, db: "TypeDAL"):
+        """
+        Before, the `class_map` was a singleton on the pydal class; now it's per database.
+        """
+        self.db = db
+        self.class_map: dict[str, t.Type["TypedTable"]] = {}
 
-    def define(self, cls: Type[T], **kwargs: Any) -> Type[T]:
+    def define(self, cls: t.Type[T], **kwargs: t.Any) -> t.Type[T]:
         """Build and register a table from a TypedTable class."""
         full_dict = all_dict(cls)
         tablename = to_snake(cls.__name__)
         annotations = all_annotations(cls)
-        annotations |= {k: typing.cast(type, v) for k, v in full_dict.items() if is_typed_field(v)}
+        annotations |= {k: t.cast(type, v) for k, v in full_dict.items() if is_typed_field(v)}
         annotations = {k: v for k, v in annotations.items() if not k.startswith("_")}
 
-        typedfields: dict[str, TypedField[Any]] = {
+        typedfields: dict[str, TypedField[t.Any]] = {
             k: instanciate(v, True) for k, v in annotations.items() if is_typed_field(v)
         }
 
-        relationships: dict[str, type[Relationship[Any]]] = filter_out(annotations, Relationship)
+        relationships: dict[str, type[Relationship[t.Any]]] = filter_out(annotations, Relationship)
         fields = {fname: self.to_field(fname, ftype) for fname, ftype in annotations.items()}
 
         other_kwargs = kwargs | {
@@ -81,8 +89,8 @@ class TableDefinitionBuilder:
             if k not in relationships and (new_relationship := to_relationship(cls, k, annotations[k]))
         }
 
-        cache_dependency = self.dal._config.caching and kwargs.pop("cache_dependency", True)
-        table: Table = self.dal.define_table(tablename, *fields.values(), **kwargs)
+        cache_dependency = self.db._config.caching and kwargs.pop("cache_dependency", True)
+        table: Table = self.db.define_table(tablename, *fields.values(), **kwargs)
 
         for name, typed_field in typedfields.items():
             field = fields[name]
@@ -90,13 +98,13 @@ class TableDefinitionBuilder:
 
         if issubclass(cls, TypedTable):
             cls.__set_internals__(
-                db=self.dal,
+                db=self.db,
                 table=table,
-                relationships=typing.cast(dict[str, Relationship[Any]], relationships),
+                relationships=t.cast(dict[str, Relationship[t.Any]], relationships),
             )
             self.class_map[str(table)] = cls
             self.class_map[table._rname] = cls
-            cls.__on_define__(self.dal)
+            cls.__on_define__(self.db)
         else:
             warnings.warn("db.define used without inheriting TypedTable. This could lead to strange problems!")
 
@@ -108,7 +116,7 @@ class TableDefinitionBuilder:
 
         return cls
 
-    def to_field(self, fname: str, ftype: type, **kw: Any) -> Field:
+    def to_field(self, fname: str, ftype: type, **kw: t.Any) -> Field:
         """Convert annotation to pydal Field."""
         fname = to_snake(fname)
         if converted_type := self.annotation_to_pydal_fieldtype(ftype, kw):
@@ -119,10 +127,10 @@ class TableDefinitionBuilder:
     def annotation_to_pydal_fieldtype(
         self,
         ftype_annotation: T_annotation,
-        mut_kw: typing.MutableMapping[str, Any],
-    ) -> Optional[str]:
+        mut_kw: t.MutableMapping[str, t.Any],
+    ) -> t.Optional[str]:
         """Convert Python type annotation to pydal field type string."""
-        ftype = typing.cast(type, ftype_annotation)  # cast from Type to type to make mypy happy)
+        ftype = t.cast(type, ftype_annotation)  # cast from Type to type to make mypy happy)
 
         if isinstance(ftype, str):
             # extract type from string
@@ -148,10 +156,10 @@ class TableDefinitionBuilder:
             return ftype._to_field(mut_kw, self)
         elif origin_is_subclass(ftype, TypedField):
             # TypedField[int]
-            return self.annotation_to_pydal_fieldtype(typing.get_args(ftype)[0], mut_kw)
-        elif isinstance(ftype, types.GenericAlias) and typing.get_origin(ftype) in (list, TypedField):  # type: ignore
+            return self.annotation_to_pydal_fieldtype(t.get_args(ftype)[0], mut_kw)
+        elif isinstance(ftype, types.GenericAlias) and t.get_origin(ftype) in (list, TypedField):  # type: ignore
             # list[str] -> str -> string -> list:string
-            _child_type = typing.get_args(ftype)[0]
+            _child_type = t.get_args(ftype)[0]
             _child_type = self.annotation_to_pydal_fieldtype(_child_type, mut_kw)
             return f"list:{_child_type}"
         elif is_union(ftype):
@@ -160,7 +168,7 @@ class TableDefinitionBuilder:
 
             # Optional[type] == type | None
 
-            match typing.get_args(ftype):
+            match t.get_args(ftype):
                 case (_child_type, _Types.NONETYPE) | (_Types.NONETYPE, _child_type):
                     # good union of Nullable
 
@@ -174,7 +182,7 @@ class TableDefinitionBuilder:
             return None
 
     @classmethod
-    def build_field(cls, name: str, field_type: str, **kw: Any) -> Field:
+    def build_field(cls, name: str, field_type: str, **kw: t.Any) -> Field:
         """Create a pydal Field with default kwargs."""
         kw_combined = TypeDAL.default_kwargs | kw
         return Field(name, field_type, **kw_combined)

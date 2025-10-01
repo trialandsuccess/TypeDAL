@@ -3,8 +3,7 @@ Replacement for pydal's json serializer.
 """
 
 import json
-import typing
-from typing import Any
+import typing as t
 
 from configurablejson import ConfigurableJsonEncoder, JSONRule
 
@@ -14,7 +13,7 @@ class SerializedJson(ConfigurableJsonEncoder):
     Custom encoder class with slightly improved defaults.
     """
 
-    def _default(self, o: Any) -> Any:  # pragma: no cover
+    def _default(self, o: t.Any) -> t.Any:  # pragma: no cover
         if hasattr(o, "as_dict"):
             return o.as_dict()
         elif hasattr(o, "asdict"):
@@ -41,25 +40,25 @@ class SerializedJson(ConfigurableJsonEncoder):
 
         return str(o)
 
-    @typing.overload
-    def rules(self, o: Any, with_default: typing.Literal[False]) -> JSONRule | None:
+    @t.overload
+    def rules(self, o: t.Any, with_default: t.Literal[False]) -> JSONRule | None:
         """
         If you pass with_default=False, you could get a None result.
         """
 
-    @typing.overload
-    def rules(self, o: Any, with_default: typing.Literal[True] = True) -> JSONRule:
+    @t.overload
+    def rules(self, o: t.Any, with_default: t.Literal[True] = True) -> JSONRule:
         """
         If you don't pass with_default=False, you will always get a JSONRule result.
         """
 
-    def rules(self, o: Any, with_default: bool = True) -> JSONRule | None:
+    def rules(self, o: t.Any, with_default: bool = True) -> JSONRule | None:
         """
         Custom rules, such as set to list and as_dict/__json__ etc. lookups.
         """
         _type = type(o)
 
-        _rules: dict[type[Any], JSONRule] = {
+        _rules: dict[type[t.Any], JSONRule] = {
             # convert set to list
             set: JSONRule(preprocess=lambda o: list(o)),
         }
@@ -68,7 +67,7 @@ class SerializedJson(ConfigurableJsonEncoder):
         return _rules.get(_type, JSONRule(transform=self._default) if with_default else None)
 
 
-def encode(something: Any, indent: typing.Optional[int] = None, **kw: Any) -> str:
+def encode(something: t.Any, indent: t.Optional[int] = None, **kw: t.Any) -> str:
     """
     Encode anything to JSON with some improved defaults.
     """

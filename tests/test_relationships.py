@@ -666,3 +666,20 @@ def test_nested_relationships():
     # check:
 
     assert old_besties == new_besties == {"Editor 1": "-", "Reader 1": "Reader's Bestie", "Writer 1": "-"}
+
+
+    # more complex:
+    role = Role.where(name="reader").join("users.bestie", "users.articles.final_editor", "users.articles.secondary_author")
+
+    nested_article = role.first().users[2].articles[0]
+
+    assert nested_article.title == "Article 2"
+
+    assert nested_article.secondary_author
+    assert not nested_article.final_editor
+
+    # complex, inner:
+    role_inner = Role.where(name="reader").join("users.bestie", "users.articles.final_editor", "users.articles.secondary_author", method="inner")
+
+    # no final_editor -> inner join should fail:
+    assert not role_inner.first()

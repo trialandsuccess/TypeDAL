@@ -1,3 +1,7 @@
+"""
+Contains base functionality related to Relationships.
+"""
+
 import inspect
 import typing as t
 import warnings

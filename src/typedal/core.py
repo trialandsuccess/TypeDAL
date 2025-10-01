@@ -5,10 +5,10 @@ Core functionality of TypeDAL.
 from __future__ import annotations
 
 import sys
-import typing
+import typing as t
 import warnings
 from pathlib import Path
-from typing import Any, Optional, Type
+from typing import Optional
 
 import pydal
 
@@ -20,7 +20,7 @@ from .helpers import (
     sql_expression,
     to_snake,
 )
-from .types import Template
+from .types import Field, T, Template  # type: ignore
 
 try:
     # python 3.14+
@@ -29,8 +29,9 @@ except ImportError:  # pragma: no cover
     # python 3.13-
     from typing import ForwardRef
 
-if typing.TYPE_CHECKING:
-    from .types import AnyDict, Expression, T, T_Query, Table
+if t.TYPE_CHECKING:
+    from .fields import TypedField
+    from .types import AnyDict, Expression, T_Query, Table
 
 
 # note: these functions can not be moved to a different file,
@@ -43,7 +44,7 @@ def evaluate_forward_reference_312(fw_ref: ForwardRef, namespace: dict[str, type
 
     Variant for python 3.12 and below
     """
-    return typing.cast(
+    return t.cast(
         type,
         fw_ref._evaluate(
             localns=locals(),
@@ -59,7 +60,7 @@ def evaluate_forward_reference_313(fw_ref: ForwardRef, namespace: dict[str, type
 
     Variant for python 3.13
     """
-    return typing.cast(
+    return t.cast(
         type,
         fw_ref._evaluate(
             localns=locals(),
@@ -76,7 +77,7 @@ def evaluate_forward_reference_314(fw_ref: ForwardRef, namespace: dict[str, type
 
     Variant for python 3.14 (and hopefully above)
     """
-    return typing.cast(
+    return t.cast(
         type,
         fw_ref.evaluate(
             locals=locals(),
@@ -87,7 +88,8 @@ def evaluate_forward_reference_314(fw_ref: ForwardRef, namespace: dict[str, type
 
 
 def evaluate_forward_reference(
-    fw_ref: ForwardRef, namespace: dict[str, type] | None = None
+    fw_ref: ForwardRef,
+    namespace: dict[str, type] | None = None,
 ) -> type:  # pragma: no cover
     """
     Extract the original type from a forward reference string.
@@ -108,7 +110,7 @@ def resolve_annotation_313(ftype: str) -> type:  # pragma: no cover
 
     Variant for Python 3.13
     """
-    fw_ref: ForwardRef = typing.get_args(typing.Type[ftype])[0]
+    fw_ref: ForwardRef = t.get_args(t.Type[ftype])[0]
     return evaluate_forward_reference(fw_ref)
 
 
@@ -164,7 +166,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
         debug: bool = False,
         lazy_tables: bool = False,
         db_uid: Optional[str] = None,
-        after_connection: typing.Callable[..., Any] = None,
+        after_connection: t.Callable[..., t.Any] = None,
         tables: Optional[list[str]] = None,
         ignore_field_case: bool = True,
         entity_quoting: bool = True,
@@ -228,7 +230,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
             self.try_define(_TypedalCache)
             self.try_define(_TypedalCacheDependency)
 
-    def try_define(self, model: Type[T], verbose: bool = False) -> Type[T]:
+    def try_define(self, model: t.Type[T], verbose: bool = False) -> t.Type[T]:
         """
         Try to define a model with migrate or fall back to fake migrate.
         """
@@ -246,13 +248,13 @@ class TypeDAL(pydal.DAL):  # type: ignore
             # try again:
             return self.define(model, migrate=True, fake_migrate=True, redefine=True)
 
-    default_kwargs: typing.ClassVar[AnyDict] = {
+    default_kwargs: t.ClassVar[AnyDict] = {
         # fields are 'required' (notnull) by default:
         "notnull": True,
     }
 
-    @typing.overload
-    def define(self, maybe_cls: None = None, **kwargs: Any) -> typing.Callable[[Type[T]], Type[T]]:
+    @t.overload
+    def define(self, maybe_cls: None = None, **kwargs: t.Any) -> t.Callable[[t.Type[T]], t.Type[T]]:
         """
         Typing Overload for define without a class.
 
@@ -260,8 +262,8 @@ class TypeDAL(pydal.DAL):  # type: ignore
         class MyTable(TypedTable): ...
         """
 
-    @typing.overload
-    def define(self, maybe_cls: Type[T], **kwargs: Any) -> Type[T]:
+    @t.overload
+    def define(self, maybe_cls: t.Type[T], **kwargs: t.Any) -> t.Type[T]:
         """
         Typing Overload for define with a class.
 
@@ -269,7 +271,11 @@ class TypeDAL(pydal.DAL):  # type: ignore
         class MyTable(TypedTable): ...
         """
 
-    def define(self, maybe_cls: Type[T] | None = None, **kwargs: Any) -> Type[T] | typing.Callable[[Type[T]], Type[T]]:
+    def define(
+        self,
+        maybe_cls: t.Type[T] | None = None,
+        **kwargs: t.Any,
+    ) -> t.Type[T] | t.Callable[[t.Type[T]], t.Type[T]]:
         """
         Can be used as a decorator on a class that inherits `TypedTable`, \
           or as a regular method if you need to define your classes before you have access to a 'db' instance.
@@ -292,7 +298,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
             the result of pydal.define_table
         """
 
-        def wrapper(cls: Type[T]) -> Type[T]:
+        def wrapper(cls: t.Type[T]) -> t.Type[T]:
             return self._builder.define(cls, **kwargs)
 
         if maybe_cls:
@@ -300,7 +306,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
 
         return wrapper
 
-    def __call__(self, *_args: T_Query, **kwargs: Any) -> "TypedSet":
+    def __call__(self, *_args: T_Query, **kwargs: t.Any) -> "TypedSet":
         """
         A db instance can be called directly to perform a query.
 
@@ -318,11 +324,11 @@ class TypeDAL(pydal.DAL):  # type: ignore
 
             if isinstance(cls, type) and issubclass(type(cls), type) and issubclass(cls, TypedTable):
                 # table defined without @db.define decorator!
-                _cls: Type[TypedTable] = cls
+                _cls: t.Type[TypedTable] = cls
                 args[0] = _cls.id != None
 
         _set = super().__call__(*args, **kwargs)
-        return typing.cast(TypedSet, _set)
+        return t.cast(TypedSet, _set)
 
     def __getitem__(self, key: str) -> "Table":
         """
@@ -333,9 +339,9 @@ class TypeDAL(pydal.DAL):  # type: ignore
         Example:
             db['users'] -> user
         """
-        return typing.cast(Table, super().__getitem__(str(key)))
+        return t.cast(Table, super().__getitem__(str(key)))
 
-    def find_model(self, table_name: str) -> Type["TypedTable"] | None:
+    def find_model(self, table_name: str) -> t.Type["TypedTable"] | None:
         """
         Retrieves a mapped table class by its name.
 
@@ -353,7 +359,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
         return self._builder.class_map.get(table_name, None)
 
     @property
-    def _class_map(self) -> dict[str, Type["TypedTable"]]:
+    def _class_map(self) -> dict[str, t.Type["TypedTable"]]:
         # alias for backward-compatibility
         return self._builder.class_map
 
@@ -367,13 +373,14 @@ class TypeDAL(pydal.DAL):  # type: ignore
     def executesql(
         self,
         query: str | Template,
-        placeholders=None,
-        as_dict=False,
-        fields=None,
-        colnames=None,
-        as_ordered_dict=False,
-    ):
-        """Executes a raw SQL statement or a TypeDAL template query.
+        placeholders: t.Iterable[str] | dict[str, str] | None = None,
+        as_dict: bool = False,
+        fields: t.Iterable[Field | TypedField[t.Any]] | None = None,
+        colnames: t.Iterable[str] | None = None,
+        as_ordered_dict: bool = False,
+    ) -> list[t.Any]:
+        """
+        Executes a raw SQL statement or a TypeDAL template query.
 
         If `query` is provided as a `Template` and the system supports template
         rendering, it will be processed with `sql_escape_template` before being
@@ -397,14 +404,14 @@ class TypeDAL(pydal.DAL):  # type: ignore
                 preserving column order. Defaults to False.
 
         Returns:
-            list[Any]: The query result set. Typically a list of tuples if
+            list[t.Any]: The query result set. Typically a list of tuples if
             `as_dict` and `as_ordered_dict` are False, or a list of dict-like
             objects if those flags are enabled.
         """
-        if SYSTEM_SUPPORTS_TEMPLATES and isinstance(query, Template):
+        if SYSTEM_SUPPORTS_TEMPLATES and isinstance(query, Template):  # pragma: no cover
             query = sql_escape_template(self, query)
 
-        return super().executesql(
+        rows: list[t.Any] = super().executesql(
             query,
             placeholders=placeholders,
             as_dict=as_dict,
@@ -413,12 +420,14 @@ class TypeDAL(pydal.DAL):  # type: ignore
             as_ordered_dict=as_ordered_dict,
         )
 
+        return rows
+
     def sql_expression(
         self,
         sql_fragment: str | Template,
-        *raw_args: Any,
+        *raw_args: t.Any,
         output_type: str | None = None,
-        **raw_kwargs: Any,
+        **raw_kwargs: t.Any,
     ) -> Expression:
         """
         Creates a pydal Expression object representing a raw SQL fragment.

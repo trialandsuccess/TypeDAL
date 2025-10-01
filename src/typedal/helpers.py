@@ -15,7 +15,7 @@ from collections import ChainMap
 
 from pydal import DAL
 
-from .types import AnyDict, Expression, Field, Row, T, Table, Template
+from .types import AnyDict, Expression, Field, Row, T, Table, Template  # type: ignore
 
 try:
     import annotationlib
@@ -54,7 +54,8 @@ def _cls_annotations(c: type) -> dict[str, type]:  # pragma: no cover
     """
     if annotationlib:
         return t.cast(
-            dict[str, type], annotationlib.get_annotations(c, format=annotationlib.Format.VALUE, eval_str=True)
+            dict[str, type],
+            annotationlib.get_annotations(c, format=annotationlib.Format.VALUE, eval_str=True),
         )
     else:
         return getattr(c, "__annotations__", {})
@@ -379,7 +380,7 @@ def smarter_adapt(db: TypeDAL, placeholder: t.Any) -> str:
 SYSTEM_SUPPORTS_TEMPLATES = sys.version_info > (3, 14)
 
 
-def process_tstring(template: Template, operation: t.Callable[["Interpolation"], str]):
+def process_tstring(template: Template, operation: t.Callable[["Interpolation"], str]) -> str:  # pragma: no cover
     """
     Process a Template string by applying an operation to each interpolation.
 
@@ -413,8 +414,8 @@ def process_tstring(template: Template, operation: t.Callable[["Interpolation"],
     return "".join(part if isinstance(part, str) else operation(part) for part in template)
 
 
-def sql_escape_template(db: TypeDAL, sql_fragment: Template):
-    """
+def sql_escape_template(db: TypeDAL, sql_fragment: Template) -> str:  # pragma: no cover
+    r"""
     Safely escape a Template string for SQL execution using database-specific escaping.
 
     This function processes a Template string (t-string) by escaping all interpolated
@@ -447,7 +448,7 @@ def sql_escape_template(db: TypeDAL, sql_fragment: Template):
     return process_tstring(sql_fragment, lambda part: smarter_adapt(db, part.value))
 
 
-def sql_escape(db: TypeDAL, sql_fragment: str | Template, *raw_args: t.Any, **raw_kwargs: t.Any):
+def sql_escape(db: TypeDAL, sql_fragment: str | Template, *raw_args: t.Any, **raw_kwargs: t.Any) -> str:
     """
     Generate escaped SQL fragments with safely substituted placeholders.
 
@@ -488,7 +489,7 @@ def sql_escape(db: TypeDAL, sql_fragment: str | Template, *raw_args: t.Any, **ra
     if raw_args and raw_kwargs:  # pragma: no cover
         raise ValueError("Please provide either args or kwargs, not both.")
 
-    if SYSTEM_SUPPORTS_TEMPLATES and isinstance(sql_fragment, Template):
+    if SYSTEM_SUPPORTS_TEMPLATES and isinstance(sql_fragment, Template):  # pragma: no cover
         return sql_escape_template(db, sql_fragment)
 
     if raw_args:
@@ -599,7 +600,8 @@ def default_representer(field: TypedField[T], value: T, table: t.Type[TypedTable
 
 
 def throw(exc: BaseException) -> t.Never:
-    """Raise the given exception.
+    """
+    Raise the given exception.
 
     This function provides a functional way to raise exceptions, allowing
     exception raising to be used in expressions where a statement wouldn't work.

@@ -1,3 +1,7 @@
+"""
+Contains base functionality related to Tables.
+"""
+
 from __future__ import annotations
 
 import copy

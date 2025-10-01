@@ -30,13 +30,12 @@ from pydal.validators import Validator as _Validator
 try:
     from string.templatelib import Template
 except ImportError:
-    Template: t.TypeAlias = str
+    Template: t.TypeAlias = str  # type: ignore
 
 # Internal references
 if t.TYPE_CHECKING:
     from .fields import TypedField
     from .tables import TypedTable
-
 
 # ---------------------------------------------------------------------------
 # Aliases
@@ -56,7 +55,10 @@ class TableProtocol(t.Protocol):  # pragma: no cover
 
     id: "TypedField[int]"
 
-    def __getitem__(self, item: str) -> "Field": ...
+    def __getitem__(self, item: str) -> "Field":
+        """
+        Tables have table[field] syntax.
+        """
 
 
 class CacheFn(t.Protocol):
@@ -70,13 +72,15 @@ class CacheFn(t.Protocol):
         fields: t.Iterable[str] = (),
         attributes: t.Iterable[str] = (),
         colnames: t.Iterable[str] = (),
-    ) -> "Rows": ...
+    ) -> "Rows":
+        """Signature for calling this object."""
 
 
 class FileSystemLike(t.Protocol):  # pragma: no cover
     """Protocol for any class that has an 'open' function (e.g. OSFS)."""
 
-    def open(self, file: str, mode: str = "r") -> t.IO[t.Any]: ...
+    def open(self, file: str, mode: str = "r") -> t.IO[t.Any]:
+        """We assume every object with an open function this shape, is basically a file."""
 
 
 # ---------------------------------------------------------------------------
@@ -103,8 +107,11 @@ if t.TYPE_CHECKING:
         Pydal OpRow object for typing (otherwise mypy thinks it's Any).
         """
 
-        def __getitem__(self, item: str) -> t.Any: ...
-        def __setitem__(self, key: str, value: t.Any) -> None: ...
+        def __getitem__(self, item: str) -> t.Any:
+            """row.item syntax."""
+
+        def __setitem__(self, key: str, value: t.Any) -> None:
+            """row.item = key syntax."""
 
         # more methods could be added
 
@@ -135,7 +142,8 @@ class Rows(_Rows):  # type: ignore
         return [r[str(column) if column else self.colnames[0]] for r in self]
 
 
-class Row(_Row): ...
+class Row(_Row):
+    """Pydal Row object. Make mypy happy."""
 
 
 class Validator(_Validator):  # type: ignore
@@ -233,6 +241,7 @@ class Metadata(t.TypedDict):
 class FieldSettings(t.TypedDict, total=False):
     """
     The supported keyword arguments for `pydal.Field()`.
+
     Other arguments can be passed.
     """
 

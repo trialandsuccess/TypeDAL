@@ -1,3 +1,7 @@
+"""
+Contains base functionality related to Rows (raw result of a database query).
+"""
+
 from __future__ import annotations
 
 import csv

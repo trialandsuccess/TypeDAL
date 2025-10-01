@@ -1,6 +1,5 @@
 import sys
 import typing
-from datetime import datetime, timedelta
 
 import pydal
 import pytest
@@ -28,6 +27,7 @@ from src.typedal.helpers import (
 )
 from src.typedal.types import Field
 
+import datetime as dt
 
 def test_is_union():
     assert is_union(int | str)
@@ -142,11 +142,11 @@ def test_as_lambda():
 
 
 def test_get_expire():
-    now = datetime(year=2023, hour=12, minute=1, second=1, month=1, day=1)
+    now = dt.datetime(year=2023, hour=12, minute=1, second=1, month=1, day=1)
 
     assert get_expire() is None
-    assert get_expire(ttl=2, now=now) == datetime(year=2023, hour=12, minute=1, second=3, month=1, day=1)
-    assert get_expire(ttl=timedelta(seconds=2), now=now) == datetime(
+    assert get_expire(ttl=2, now=now) == dt.datetime(year=2023, hour=12, minute=1, second=3, month=1, day=1)
+    assert get_expire(ttl=dt.timedelta(seconds=2), now=now) == dt.datetime(
         year=2023, hour=12, minute=1, second=3, month=1, day=1
     )
 
