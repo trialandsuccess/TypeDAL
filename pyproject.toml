@@ -27,8 +27,7 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
-    # "pydal <= 20250228.1", # core
-    "pydal@git+https://github.com/robinvandernoord/pydal-python3.14@8dac177b68adbbc7a968fc5b9358dffab9cf96b5",
+    "pydal >= 20251012.3", # core
     "dill < 1", # caching
     "configuraptor >= 1.27.1, < 2", # config
     "Configurable-JSON < 2", # json dumping
