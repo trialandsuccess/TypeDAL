@@ -2,12 +2,15 @@
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.metadata]
+allow-direct-references = true
+
 [project]
 name = "TypeDAL"
 dynamic = ["version"]
 description = 'Typing support for PyDAL'
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license-expression = "MIT"
 keywords = []
 authors = [
@@ -16,20 +19,21 @@ authors = [
 classifiers = [
     "Development Status :: 4 - Beta",
     "Programming Language :: Python",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
-    "pydal <= 20250228.1", # core
+    "pydal >= 20251012.3", # core
     "dill < 1", # caching
-    "configuraptor >= 1.26.2, < 2", # config
+    "configuraptor >= 1.27.1, < 2", # config
     "Configurable-JSON < 2", # json dumping
     "python-slugify < 9",
-    "legacy-cgi; python_version >= '3.13'"
+    "legacy-cgi; python_version >= '3.13'",
+    "python-dateutil < 3",
 ]
 
 [project.optional-dependencies]
@@ -38,7 +42,7 @@ py4web = [
 ]
 
 migrations = [
-    "typer",
+    "typer >=0.18, <0.19",
     "tabulate",
     "pydal2sql>=1.2.0",
     "edwh-migrate>=0.8.0",
@@ -48,7 +52,7 @@ migrations = [
 
 all = [
     "py4web",
-    "typer",
+    "typer >=0.18, <0.19",
     "tabulate",
     "pydal2sql[all]>=1.2.0",
     "edwh-migrate[full]>=0.8.0",
@@ -114,7 +118,7 @@ badge = true
 mypy = "--disable-error-code misc"
 
 [tool.black]
-target-version = ["py310"]
+target-version = ["py313"]
 line-length = 120
 # 'extend-exclude' excludes files or directories in addition to the defaults
 extend-exclude = '''
@@ -130,6 +134,7 @@ extend-exclude = '''
 [tool.coverage.report]
 exclude_also = [
     "if TYPE_CHECKING:",
+    "if t.TYPE_CHECKING:",
     "if typing.TYPE_CHECKING:",
     "except ImportError as e:",
     "except ImportError:",
@@ -156,7 +161,7 @@ strict = true
 exclude = ["venv", ".bak"]
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py313"
 line-length = 120
 
 extend-exclude = ["*.bak/", "venv*/"]

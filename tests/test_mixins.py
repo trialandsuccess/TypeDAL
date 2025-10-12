@@ -1,12 +1,9 @@
 import time
-import uuid
-from datetime import datetime
 from typing import Optional
 
 import pytest
 
 from src.typedal import TypeDAL, TypedTable
-from src.typedal.fields import StringField, TypedField, UUIDField
 from src.typedal.mixins import Mixin, SlugMixin, TimestampsMixin
 
 
