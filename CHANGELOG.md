@@ -2,6 +2,31 @@
 
 <!--next-version-placeholder-->
 
+## v4.0.0 (2025-10-12)
+
+### Feature
+
+* Continued work for nested joins like .join('relationship.with_relationship'), still some todo's for test coverage ([`2a57301`](https://github.com/trialandsuccess/TypeDAL/commit/2a57301bdb7f6e3075bd156a3e79f7f8c922382f))
+* Support nested joins like .join('relationship.with_relationship') ([`6ac30d0`](https://github.com/trialandsuccess/TypeDAL/commit/6ac30d0ad8f0c4e2cb67de92852c917b3c8bb94e))
+* T-string support for `sql_expression` and `executesql` in Python 3.14 ([`7d21200`](https://github.com/trialandsuccess/TypeDAL/commit/7d2120062021579b1dee4a46fde6e6da61b62671))
+* Extend Expression functionality with Python 3.14 template strings (t-string) ([`b902005`](https://github.com/trialandsuccess/TypeDAL/commit/b902005f378f2fe7cfe89feb3a76bb6e079edc7b))
+
+### Fix
+
+* Bump pydal to version that supports 3.14 ([`b4c836c`](https://github.com/trialandsuccess/TypeDAL/commit/b4c836c3a6a0363ac3e9f3c2018147b15b639016))
+* Support .orderby as alias for .select(orderby= ([`e6d33e6`](https://github.com/trialandsuccess/TypeDAL/commit/e6d33e608c37d0e594881594b869063557b18758))
+* Fix 3.14-related issues in tests and bump typer to specific version to prevent breaking changes (clirunner in test) ([`1c23954`](https://github.com/trialandsuccess/TypeDAL/commit/1c2395486d1a6d7990ccabaaf016e378e6aff5e0))
+* Don't force slug if already manually set ([`f14962c`](https://github.com/trialandsuccess/TypeDAL/commit/f14962c1b1bb7b6f659071f97ec2bf3d8287e609))
+* Support explicit `ForwardRef()` ([`74edf4c`](https://github.com/trialandsuccess/TypeDAL/commit/74edf4c32d93289098fb8b34bcf2e58b47a33bd9))
+* Use custom patched pydal for python 3.14 ([`07040ad`](https://github.com/trialandsuccess/TypeDAL/commit/07040ade9ebf86d4c05a0519b4ceccfacd62195e))
+* Better error for missing ForwardRef ([`b7df789`](https://github.com/trialandsuccess/TypeDAL/commit/b7df7895f7995b524c0571485068be98fcf7c39c))
+* Upgrade to at least configuraptor 1.27.1 for python 3.14 ([`19cebd2`](https://github.com/trialandsuccess/TypeDAL/commit/19cebd26473fe7343d8a777274b4f5fa0b2d78e6))
+* Prepare for python 3.14 which introduces annotationlib to parse (forward reference) annotations ([`75bb725`](https://github.com/trialandsuccess/TypeDAL/commit/75bb7256bf790a518803437096fec24739fc35c0))
+
+### Documentation
+
+* Remove old annotation parsing comments that are irrelevant with annotationlib ([`8ff6d73`](https://github.com/trialandsuccess/TypeDAL/commit/8ff6d7382e2bec5a50b40308d76645d098cad973))
+
 ## v3.17.3 (2025-09-30)
 
 ### Fix
