@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.0.1 (2025-10-13)
+
+### Fix
+
+* Export 'PaginatedRows' ([`977a83b`](https://github.com/trialandsuccess/TypeDAL/commit/977a83b30e21412893fe24434b86d7f40ef77e87))
+
 ## v4.0.0 (2025-10-12)
 
 ### Feature
