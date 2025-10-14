@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.0.2 (2025-10-14)
+
+### Fix
+
+* Resolve nested join bug where shared foreign key relationships weren't loaded correctly ([`b093454`](https://github.com/trialandsuccess/TypeDAL/commit/b09345410576cf0a61c0395d91b03d60d2c056a2))
+
 ## v4.0.1 (2025-10-13)
 
 ### Fix
