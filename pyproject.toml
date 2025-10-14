@@ -118,7 +118,7 @@ badge = true
 mypy = "--disable-error-code misc"
 
 [tool.black]
-target-version = ["py313"]
+target-version = ["py314"]
 line-length = 120
 # 'extend-exclude' excludes files or directories in addition to the defaults
 extend-exclude = '''
@@ -161,7 +161,7 @@ strict = true
 exclude = ["venv", ".bak"]
 
 [tool.ruff]
-target-version = "py313"
+target-version = "py314"
 line-length = 120
 
 extend-exclude = ["*.bak/", "venv*/"]

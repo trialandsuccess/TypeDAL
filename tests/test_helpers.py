@@ -1,3 +1,4 @@
+import datetime as dt
 import sys
 import typing
 
@@ -27,7 +28,6 @@ from src.typedal.helpers import (
 )
 from src.typedal.types import Field
 
-import datetime as dt
 
 def test_is_union():
     assert is_union(int | str)
@@ -266,6 +266,7 @@ def test_sql_expression():
     # test quoting fields and tables:
     assert str(database.sql_expression("LOWER(%s)", TestSqlExpression.value)) == 'LOWER("test_sql_expression"."value")'
     assert str(database.sql_expression("LOWER(%s.value)", TestSqlExpression)) == 'LOWER("test_sql_expression".value)'
+
 
 @pytest.mark.skipif(not SYSTEM_SUPPORTS_TEMPLATES, reason="t-strings contain breaking syntax!")
 def test_sql_expression_314():

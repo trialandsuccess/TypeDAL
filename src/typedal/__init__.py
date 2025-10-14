@@ -7,7 +7,7 @@ from .fields import TypedField
 from .helpers import sql_expression
 from .query_builder import QueryBuilder
 from .relationships import Relationship, relationship
-from .rows import TypedRows, PaginatedRows
+from .rows import PaginatedRows, TypedRows
 from .tables import TypedTable
 
 from . import fields  # isort: skip

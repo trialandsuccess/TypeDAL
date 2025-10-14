@@ -17,9 +17,6 @@ from src.typedal.caching import (
 db = TypeDAL("sqlite:memory")
 
 
-# db = TypeDAL("sqlite://debug.db")
-
-
 class TaggableMixin:
     tags = relationship(
         list["Tag"],
@@ -87,8 +84,7 @@ class Tagged(TypedTable):  # pivot table
 
 
 @db.define()
-class Empty(TypedTable):
-    ...
+class Empty(TypedTable): ...
 
 
 def _setup_data():
@@ -297,8 +293,7 @@ def test_typedal_way():
     author1 = User.where(id=4).join().first()
 
     assert (
-            len(author1.as_dict()["articles"]) == len(author1.__dict__["articles"]) == len(
-        dict(author1)["articles"]) == 2
+        len(author1.as_dict()["articles"]) == len(author1.__dict__["articles"]) == len(dict(author1)["articles"]) == 2
     )
 
 
@@ -386,7 +381,9 @@ def test_join_with_different_condition():
     assert role_with_users.users[0].name == "Reader 1"
 
     role_with_users = Role.join(
-        "users", method="inner", condition_and=lambda role, user: ~user.name.like("Reader%"),
+        "users",
+        method="inner",
+        condition_and=lambda role, user: ~user.name.like("Reader%"),
     ).first()
 
     assert role_with_users.users
@@ -394,7 +391,9 @@ def test_join_with_different_condition():
 
     # left:
     role_with_users = Role.join(
-        "users", method="left", condition_and=lambda role, user: ~user.name.like("Reader%"),
+        "users",
+        method="left",
+        condition_and=lambda role, user: ~user.name.like("Reader%"),
     ).first()
 
     assert role_with_users.users
@@ -431,12 +430,12 @@ def test_caching():
     cached_user_only2 = User.join().cache(User.id).collect_or_fail()
 
     assert (
-            len(uncached2)
-            == len(uncached)
-            == len(cached2)
-            == len(cached)
-            == len(cached_user_only2)
-            == len(cached_user_only)
+        len(uncached2)
+        == len(uncached)
+        == len(cached2)
+        == len(cached)
+        == len(cached_user_only2)
+        == len(cached_user_only)
     )
 
     assert uncached.as_json() == uncached2.as_json() == cached.as_json() == cached2.as_json()
@@ -444,9 +443,9 @@ def test_caching():
     assert cached.first().gid == cached2.first().gid
 
     assert (
-            [_.name for _ in uncached2.first().roles]
-            == [_.name for _ in cached.first().roles]
-            == [_.name for _ in cached2.first().roles]
+        [_.name for _ in uncached2.first().roles]
+        == [_.name for _ in cached.first().roles]
+        == [_.name for _ in cached2.first().roles]
     )
 
     assert not uncached2.metadata.get("cache", {}).get("enabled")
@@ -584,6 +583,7 @@ def test_caching_dependencies():
 
 def test_illegal():
     with pytest.raises(ValueError), pytest.warns(UserWarning):
+
         class HasRelationship:
             something = relationship("...", condition=lambda: 1, on=lambda: 2)
 
@@ -667,9 +667,10 @@ def test_nested_relationships():
 
     assert old_besties == new_besties == {"Editor 1": "-", "Reader 1": "Reader's Bestie", "Writer 1": "-"}
 
-
     # more complex:
-    role = Role.where(name="reader").join("users.bestie", "users.articles.final_editor", "users.articles.secondary_author")
+    role = Role.where(name="reader").join(
+        "users.bestie", "users.articles.final_editor", "users.articles.secondary_author"
+    )
 
     nested_article = role.first().users[2].articles[0]
 
@@ -679,7 +680,113 @@ def test_nested_relationships():
     assert not nested_article.final_editor
 
     # complex, inner:
-    role_inner = Role.where(name="reader").join("users.bestie", "users.articles.final_editor", "users.articles.secondary_author", method="inner")
+    role_inner = Role.where(name="reader").join(
+        "users.bestie", "users.articles.final_editor", "users.articles.secondary_author", method="inner"
+    )
 
     # no final_editor -> inner join should fail:
     assert not role_inner.first()
+
+
+"""
+In production I noticed this bug:
+
+When joining nested data like `process = Process.join("pros_and_cons.product")`
+process.pros_and_cons[0].product # is fine
+process.pros_and_cons[1].product # is None
+while they both share the same `product_gid`
+This indicates that something goes wrong when collecting the nested data.
+`pros_and_cons` is very specific to that production use-case so please think of a more general example and write a test for it.
+1. define the required tables and relationships
+2. define the required data
+3. perform the query and check the results
+"""
+
+
+class City(TypedTable):
+    gid = TypedField(str, default=uuid4)
+    name: str
+
+
+class Office(TypedTable):
+    gid = TypedField(str, default=uuid4)
+    address: str
+    city_id: City
+    company: "Company"
+
+    city_alternative = relationship(City, lambda office, city: office.city_id == city.id)
+
+
+class Company(TypedTable):
+    name: str
+
+    offices = relationship(list[Office], lambda self, other: other.company == self.id)
+
+
+def test_nested_join_with_shared_foreign_key():
+    """
+    Test that nested joins properly load relationships for all items,
+    especially when multiple items share the same foreign key value.
+
+    Bug: When joining nested data like company.offices[0].city works
+    but company.offices[1].city is None even though both offices
+    reference the same city.
+    """
+    db.define(City)
+    db.define(Company)
+    db.define(Office)
+
+    # Create a city
+    san_francisco = City.insert(name="San Francisco")
+
+    # Create a company
+    tech_corp = Company.insert(name="Tech Corp")
+
+    # Create multiple offices in the same city for the same company
+    office1 = Office.insert(address="123 Market St", city_id=san_francisco.id, company=tech_corp.id)
+    office2 = Office.insert(address="456 Mission St", city_id=san_francisco.id, company=tech_corp.id)
+    office3 = Office.insert(address="789 Howard St", city_id=san_francisco.id, company=tech_corp.id)
+
+    db.commit()
+
+    # 1: direct Reference (not a Relationship)
+
+    # Query company with nested join to offices and their cities
+    company = Company.where(id=tech_corp.id).join("offices.city_id").first_or_fail()
+
+    # All offices should be loaded
+    assert len(company.offices) == 3, f"Expected 3 offices, got {len(company.offices)}"
+
+    # BUG TEST: All offices should have their city relationship loaded
+    # Not just the first one
+    for idx, office in enumerate(company.offices, 1):
+        assert office.city_id is not None, f"Office {idx} ('{office.address}'): city relationship is None (BUG!)"
+        assert isinstance(office.city_id, City), (
+            f"Office {idx}: city ({office.city_id}) is not a City instance but a {type(office.city_id)}"
+        )
+        assert office.city_id.name == "San Francisco", (
+            f"Office {idx}: expected 'San Francisco', got '{office.city_id.name}'"
+        )
+        assert office.city_id.id == san_francisco.id, f"Office {idx}: city id mismatch"
+
+    # 2. alternative: city_alternative (Relationship)
+
+    # Query company with nested join to offices and their cities
+    company = Company.where(id=tech_corp.id).join("offices.city_alternative").first_or_fail()
+
+    # All offices should be loaded
+    assert len(company.offices) == 3, f"Expected 3 offices, got {len(company.offices)}"
+
+    # BUG TEST: All offices should have their city relationship loaded
+    # Not just the first one
+    for idx, office in enumerate(company.offices, 1):
+        assert office.city_alternative is not None, (
+            f"Office {idx} ('{office.address}'): city relationship is None (BUG!)"
+        )
+        assert isinstance(office.city_alternative, City), (
+            f"Office {idx}: city ({office.city_alternative}) is not a City instance but a {type(office.city_alternative)}"
+        )
+        assert office.city_alternative.name == "San Francisco", (
+            f"Office {idx}: expected 'San Francisco', got '{office.city_alternative.name}'"
+        )
+        assert office.city_alternative.id == san_francisco.id, f"Office {idx}: city id mismatch"

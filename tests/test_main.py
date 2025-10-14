@@ -1,6 +1,6 @@
 import re
-import typing
 import sys
+import typing
 from copy import copy
 from sqlite3 import IntegrityError
 from typing import ForwardRef

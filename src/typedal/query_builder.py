@@ -894,7 +894,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
                 column=nested_col,
                 relation=nested_relation,
                 parent_record=instance,
-                parent_id=parent_id,
+                parent_id=instance.id,
                 seen_relations=seen_relations,
                 db=db,
                 path=path,
