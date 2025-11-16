@@ -126,7 +126,7 @@ class Tagged(TypedTable):
 ```
 
 Instead of a `condition`, it is recommended to define an `on`. Using a condition is possible, but could lead to pydal
-generation a `CROSS JOIN` instead of a `LEFT JOIN`, which is bad for performance.
+generating a `CROSS JOIN` instead of a `LEFT JOIN`, which is bad for performance.
 In this example, `Tag` is connected to `Post` and vice versa via the `Tagged` table.
 It is recommended to use the tables received as arguments from the lambda (e.g. `tag.on` instead of `Tag.on` directly),
 since these use aliases under the hood, which prevents conflicts when joining the same table multiple times.

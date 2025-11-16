@@ -174,3 +174,15 @@ Person.where(id="Old Name").delete()  # via query builder
 person = Person(4)
 person.delete_record()
 ```
+
+```python
+# todo:
+#  - to_sql
+#  - execute
+#  - more .where examples
+#  - .orderby
+#  - seperate page with db.executesql, sql_expression
+#  - nested joins (reference on this page to relationship page, more examples there)
+#  - relationships page: .join(Table.relationship), nested joins, lazy policy (and db config, link to page 8), explicit
+#  - page about config
+```

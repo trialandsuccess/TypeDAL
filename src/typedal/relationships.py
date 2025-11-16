@@ -119,7 +119,7 @@ class Relationship(t.Generic[To_Type]):
         return f"<Relationship{join}{lazy_str} {src_code}>"
 
     def __set_name__(self, owner: t.Type["TypedTable"], name: str) -> None:
-        """Called automatically when assigned to a class attribute"""
+        """Called automatically when assigned to a class attribute."""
         self.name = name
 
     def get_table(self, db: "TypeDAL") -> t.Type["TypedTable"]:
@@ -150,8 +150,9 @@ class Relationship(t.Generic[To_Type]):
     @property
     def lazy(self) -> LazyPolicy:
         """
-        Gets the lazy policy configured in the current context. The method first checks
-        for a customized lazy policy for this relationship.
+        Gets the lazy policy configured in the current context.
+
+        The method first checks for a customized lazy policy for this relationship.
         If not found, it attempts to retrieve the lazy policy from the database.
         If neither option is available, it returns a conservative fallback value.
 
