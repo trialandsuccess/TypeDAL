@@ -8,6 +8,7 @@ import warnings
 
 import pydal.objects
 
+from .config import LazyPolicy
 from .constants import JOIN_OPTIONS
 from .core import TypeDAL
 from .fields import TypedField
@@ -15,8 +16,6 @@ from .helpers import extract_type_optional, looks_like, unwrap_type
 from .types import Condition, OnQuery, T_Field
 
 To_Type = t.TypeVar("To_Type")
-
-LazyPolicy = t.Literal["forbid", "warn", "ignore", "tolerate", "allow"]
 
 
 # default lazy policy is defined at the TypeDAL() instance settings level

@@ -12,7 +12,7 @@ from typing import Optional
 
 import pydal
 
-from .config import TypeDALConfig, load_config
+from .config import LazyPolicy, TypeDALConfig, load_config
 from .helpers import (
     SYSTEM_SUPPORTS_TEMPLATES,
     default_representer,
@@ -31,7 +31,6 @@ except ImportError:  # pragma: no cover
 
 if t.TYPE_CHECKING:
     from .fields import TypedField
-    from .relationships import LazyPolicy
     from .types import AnyDict, Expression, T_Query, Table
 
 
