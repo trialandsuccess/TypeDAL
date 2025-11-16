@@ -358,7 +358,7 @@ class TableMeta(type):
 
     def join(
         self: t.Type[T_MetaInstance],
-        *fields: str | t.Type["TypedTable"],
+        *fields: str | t.Type[TypedTable] | Relationship[t.Any],
         method: JOIN_OPTIONS = None,
         on: OnQuery | list[Expression] | Expression = None,
         condition: Condition = None,
@@ -777,6 +777,15 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
             return value
 
         raise AttributeError(item)
+
+    def __eq__(self, other: t.Any) -> bool:
+        """
+        Compare equal classes via their _row, since the other data is irrelevant for equality.
+        """
+        if type(self) is not type(other):
+            return False
+
+        return self._row == other._row  # type: ignore
 
     def keys(self) -> list[str]:
         """
