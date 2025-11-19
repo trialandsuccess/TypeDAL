@@ -375,7 +375,6 @@ def test_get_relationship_after_initial():
     article1 = Article.where(title="Article 1").first_or_fail()
     article2 = Article.where(title="Article 1").join(Article.tags).first_or_fail()
 
-    # todo: .tags is defined as non-eager (? naming)
     with pytest.warns(RuntimeWarning):
         assert article1.tags == []
 
