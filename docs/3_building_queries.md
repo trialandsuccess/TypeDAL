@@ -78,8 +78,8 @@ When passing multiple arguments to a single `.where()`, they will be ORed:
 
 ### select
 
-Here you can enter any number of fields as arguments: database columns by name ('id'), by field reference (table.id) or
-other (e.g. table.ALL).
+Here you can enter any number of fields as arguments: database columns by name ('id'), by field reference (Table.id),
+other (e.g. Table.ALL), or Expression objects.
 
 ```python
 Person.select('id', Person.name, Person.ALL)  # defaults to Person.ALL if select is omitted.
@@ -109,6 +109,36 @@ Person.where(...).orderby(~Person.name, "age")
 `.orderby()` accepts field references (`Table.field` or `"field_name""`), reverse ordering (`~Table.field`), or the
 literal `"<random>"`. Multiple field references can be passed (except when using `<random>`).
 
+#### Raw SQL Expressions
+
+For complex SQL that can't be expressed with field references, use `sql_expression()`:
+
+```python
+# Simple arithmetic
+expr = db.sql_expression("age * 2")
+Person.select(expr)
+
+# Safe parameter injection with t-strings (Python 3.14+)
+min_age = 21
+expr = db.sql_expression(t"age >= {min_age}", output_type="boolean")
+Person.where(expr).select()
+
+# Positional arguments
+expr = db.sql_expression("age > %s AND status = %s", 18, "active", output_type="boolean")
+Person.where(expr).select()
+
+# Named arguments
+expr = db.sql_expression(
+    "EXTRACT(year FROM %(date_col)s) = %(year)s",
+    date_col="created_at",
+    year=2023,
+    output_type="boolean"
+)
+Person.where(expr).select()
+```
+
+Expressions can be used in `where()`, `select()`, `orderby()`, and other query methods.
+
 ### join
 
 Include relationship fields in the result.
@@ -122,6 +152,8 @@ This can be overwritten with the `method` keyword argument (left or inner)
 ```python
 Person.join('articles', method='inner')  # will only yield persons that have related articles
 ```
+
+For more details about relationships and joins, see [page 4](./4_relationships.md).
 
 ### cache
 
@@ -210,8 +242,7 @@ person.delete_record()
 
 ```python
 # todo:
-#  - seperate page with db.executesql, sql_expression
-#  - nested joins (reference on this page to relationship page, more examples there)
-#  - relationships page: .join(Table.relationship), nested joins, lazy policy (and db config, link to page 8), explicit
-#  - page about config
+#  - nested joins (on page 4)
+#  - relationships page: .join(Table.relationship), nested joins, lazy policy (and db config, link to page 8), `explicit`
+#  - page about config (page 8 with reference on page 1)
 ```
