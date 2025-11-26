@@ -1,6 +1,9 @@
+import contextlib
+import json
 import time
 import types
 import typing
+import warnings
 from uuid import uuid4
 
 import pytest
@@ -13,6 +16,7 @@ from src.typedal.caching import (
     clear_expired,
     remove_cache,
 )
+from src.typedal.serializers import as_json
 
 db = TypeDAL("sqlite:memory")
 
@@ -28,8 +32,22 @@ class TaggableMixin:
             tagged.on(tagged.entity == entity.gid),
             tag.on((tagged.tag == tag.id)),
         ],
+        lazy="warn",  # default behavior
     )
-    # tags = relationship(list["Tag"], tagged)
+
+    tags_tolerate = relationship(
+        list["Tag"],
+        # lambda self, _: (Tagged.entity == self.gid) & (Tagged.tag == Tag.id)
+        # doing an .on with and & inside can lead to a cross join,
+        # for relationships with pivot tables a manual on query with aliases is prefered:
+        on=lambda entity, tag: [
+            tagged := Tagged.unique_alias(),
+            tagged.on(tagged.entity == entity.gid),
+            tag.on((tagged.tag == tag.id)),
+        ],
+        lazy="tolerate",  # load but with warning
+        explicit=True,  # only load when requested
+    )
 
 
 @db.define()
@@ -84,7 +102,8 @@ class Tagged(TypedTable):  # pivot table
 
 
 @db.define()
-class Empty(TypedTable): ...
+class Empty(TypedTable):
+    ...
 
 
 def _setup_data():
@@ -184,7 +203,7 @@ def test_typedal_way():
         Empty.first_or_fail()
 
     # user through article: 1 - many
-    all_articles = Article.join().collect().as_dict()
+    all_articles = Article.join("author", "secondary_author", "final_editor", "tags").collect().as_dict()
 
     assert all_articles[3]["final_editor"]["name"] == "Editor 1"
     assert all_articles[4]["secondary_author"]["name"] == "Editor 1"
@@ -208,7 +227,9 @@ def test_typedal_way():
     with pytest.warns(RuntimeWarning):
         assert article2.tags == []
 
-    articles1 = Article.where(title="Article 1").join().first_or_fail()
+    articles1 = (
+        Article.where(title="Article 1").join("author", "secondary_author", "final_editor", "tags").first_or_fail()
+    )
 
     assert articles1.final_editor.name == "Editor 1"
 
@@ -286,14 +307,15 @@ def test_typedal_way():
 
     # from role to users: BelongsToMany via list:reference
 
-    role_writer = Role.where(Role.name == "writer").join().first_or_fail()
+    role_writer = Role.where(Role.name == "writer").join("users", "tags").first_or_fail()
 
     assert len(role_writer.users) == 2
 
-    author1 = User.where(id=4).join().first()
+    author1 = User.where(id=4).join("articles").first()
 
     assert (
-        len(author1.as_dict()["articles"]) == len(author1.__dict__["articles"]) == len(dict(author1)["articles"]) == 2
+            len(author1.as_dict()["articles"]) == len(author1.__dict__["articles"]) == len(
+        dict(author1)["articles"]) == 2
     )
 
 
@@ -336,6 +358,35 @@ def test_reprs():
     ]
 
     assert "AND" in repr(relation) and "Hank" in repr(relation)
+
+
+@contextlib.contextmanager
+def no_warnings():
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        yield
+        if caught:
+            raise AssertionError(f"Unexpected warnings: {[w.message for w in caught]}")
+
+
+def test_get_relationship_after_initial():
+    _setup_data()
+
+    article1 = Article.where(title="Article 1").first_or_fail()
+    article2 = Article.where(title="Article 1").join(Article.tags).first_or_fail()
+
+    with pytest.warns(RuntimeWarning):
+        assert article1.tags == []
+
+    with pytest.warns(RuntimeWarning):
+        # tolerate includes warning
+        tags_tolerate = article1.tags_tolerate
+        assert tags_tolerate
+
+    with no_warnings():
+        # expect no warnings
+        assert as_json.encode(tags_tolerate) == as_json.encode(article2.tags)
+        assert tags_tolerate == article2.tags
 
 
 @db.define()
@@ -401,6 +452,8 @@ def test_join_with_different_condition():
 
 
 def test_caching():
+    _setup_data()
+
     uncached = User.join().collect_or_fail()
     cached = User.cache().join().collect_or_fail()  # not actually cached yet!
     cached_user_only = User.join().cache(User.id).collect_or_fail()  # idem
@@ -430,12 +483,12 @@ def test_caching():
     cached_user_only2 = User.join().cache(User.id).collect_or_fail()
 
     assert (
-        len(uncached2)
-        == len(uncached)
-        == len(cached2)
-        == len(cached)
-        == len(cached_user_only2)
-        == len(cached_user_only)
+            len(uncached2)
+            == len(uncached)
+            == len(cached2)
+            == len(cached)
+            == len(cached_user_only2)
+            == len(cached_user_only)
     )
 
     assert uncached.as_json() == uncached2.as_json() == cached.as_json() == cached2.as_json()
@@ -443,9 +496,9 @@ def test_caching():
     assert cached.first().gid == cached2.first().gid
 
     assert (
-        [_.name for _ in uncached2.first().roles]
-        == [_.name for _ in cached.first().roles]
-        == [_.name for _ in cached2.first().roles]
+            [_.name for _ in uncached2.first().roles]
+            == [_.name for _ in cached.first().roles]
+            == [_.name for _ in cached2.first().roles]
     )
 
     assert not uncached2.metadata.get("cache", {}).get("enabled")
@@ -583,9 +636,30 @@ def test_caching_dependencies():
 
 def test_illegal():
     with pytest.raises(ValueError), pytest.warns(UserWarning):
-
         class HasRelationship:
             something = relationship("...", condition=lambda: 1, on=lambda: 2)
+
+    with pytest.raises(ValueError), pytest.warns(UserWarning):
+        Tag.join(Tag.articles, condition=lambda: 1, on=lambda: 2)
+
+def test_join_relationship_custom_on():
+    _setup_data()
+
+    rows1 = Tag.join(Tag.articles,
+                     condition=lambda tag, article: (Tagged.tag == tag.id) & (article.gid == Tagged.entity) & (article.author == 3),
+                     method="inner",
+                     )
+
+    rows2 = Tag.join(Tag.articles,
+                     on=lambda tag, article: [
+                         tagged := Tagged.unique_alias(),
+                         (tagged.tag == tag.id) & (article.gid == tagged.entity) & (article.author == 3)
+                     ],
+                     method="inner",
+                     )
+
+    assert all([row.articles for row in rows1])
+    assert all([row.articles for row in rows2])
 
 
 def test_join_with_select():
@@ -669,7 +743,9 @@ def test_nested_relationships():
 
     # more complex:
     role = Role.where(name="reader").join(
-        "users.bestie", "users.articles.final_editor", "users.articles.secondary_author"
+        "users.bestie",
+        "users.articles.final_editor",
+        "users.articles.secondary_author",
     )
 
     nested_article = role.first().users[2].articles[0]
@@ -681,26 +757,14 @@ def test_nested_relationships():
 
     # complex, inner:
     role_inner = Role.where(name="reader").join(
-        "users.bestie", "users.articles.final_editor", "users.articles.secondary_author", method="inner"
+        "users.bestie",
+        "users.articles.final_editor",
+        "users.articles.secondary_author",
+        method="inner",
     )
 
     # no final_editor -> inner join should fail:
     assert not role_inner.first()
-
-
-"""
-In production I noticed this bug:
-
-When joining nested data like `process = Process.join("pros_and_cons.product")`
-process.pros_and_cons[0].product # is fine
-process.pros_and_cons[1].product # is None
-while they both share the same `product_gid`
-This indicates that something goes wrong when collecting the nested data.
-`pros_and_cons` is very specific to that production use-case so please think of a more general example and write a test for it.
-1. define the required tables and relationships
-2. define the required data
-3. perform the query and check the results
-"""
 
 
 class City(TypedTable):

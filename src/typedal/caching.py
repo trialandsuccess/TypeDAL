@@ -260,7 +260,7 @@ def _load_from_cache(key: str, db: "TypeDAL") -> t.Any | None:
 
     inst.db = db
     inst.model = db._class_map[inst.model]
-    inst.model._setup_instance_methods(inst.model)  # type: ignore
+    inst.model._setup_instance_methods(inst.model)
     return inst
 
 

@@ -65,7 +65,7 @@ class TableDefinitionBuilder:
             k: instanciate(v, True) for k, v in annotations.items() if is_typed_field(v)
         }
 
-        relationships: dict[str, type[Relationship[t.Any]]] = filter_out(annotations, Relationship)
+        relationships: dict[str, type[Relationship[t.Any]]] = filter_out(annotations, Relationship)  # type: ignore
         fields = {fname: self.to_field(fname, ftype) for fname, ftype in annotations.items()}
 
         other_kwargs = kwargs | {
@@ -77,7 +77,7 @@ class TableDefinitionBuilder:
             setattr(cls, key, clone)
             typedfields[key] = clone
 
-        relationships = filter_out(full_dict, Relationship) | relationships | filter_out(other_kwargs, Relationship)
+        relationships = filter_out(full_dict, Relationship) | relationships | filter_out(other_kwargs, Relationship)  # type: ignore
 
         reference_field_keys = [
             k for k, v in fields.items() if str(v.type).split(" ")[0] in ("list:reference", "reference")
@@ -157,7 +157,7 @@ class TableDefinitionBuilder:
         elif origin_is_subclass(ftype, TypedField):
             # TypedField[int]
             return self.annotation_to_pydal_fieldtype(t.get_args(ftype)[0], mut_kw)
-        elif isinstance(ftype, types.GenericAlias) and t.get_origin(ftype) in (list, TypedField):  # type: ignore
+        elif isinstance(ftype, types.GenericAlias) and t.get_origin(ftype) in (list, TypedField):
             # list[str] -> str -> string -> list:string
             _child_type = t.get_args(ftype)[0]
             _child_type = self.annotation_to_pydal_fieldtype(_child_type, mut_kw)

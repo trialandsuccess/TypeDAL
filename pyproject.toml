@@ -236,3 +236,5 @@ pythonpath = [
 ]
 
 [tool.typedal]
+# e.g.
+# lazy-policy = "forbid"

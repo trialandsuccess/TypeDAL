@@ -12,7 +12,7 @@ from typing import Optional
 
 import pydal
 
-from .config import TypeDALConfig, load_config
+from .config import LazyPolicy, TypeDALConfig, load_config
 from .helpers import (
     SYSTEM_SUPPORTS_TEMPLATES,
     default_representer,
@@ -138,7 +138,7 @@ def resolve_annotation(ftype: str) -> type:  # pragma: no cover
         return resolve_annotation_314(ftype)
 
 
-class TypeDAL(pydal.DAL):  # type: ignore
+class TypeDAL(pydal.DAL):
     """
     Drop-in replacement for pyDAL with layer to convert class-based table definitions to classical pydal define_tables.
     """
@@ -176,6 +176,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
         use_env: bool | str = True,
         connection: Optional[str] = None,
         config: Optional[TypeDALConfig] = None,
+        lazy_policy: LazyPolicy | None = None,
     ) -> None:
         """
         Adds some internal tables after calling pydal's default init.
@@ -191,6 +192,7 @@ class TypeDAL(pydal.DAL):  # type: ignore
             fake_migrate=fake_migrate,
             caching=enable_typedal_caching,
             pool_size=pool_size,
+            lazy_policy=lazy_policy,
         )
 
         self._config = config
