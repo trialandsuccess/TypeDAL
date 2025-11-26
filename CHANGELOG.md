@@ -2,6 +2,23 @@
 
 <!--next-version-placeholder-->
 
+## v4.1.0 (2025-11-26)
+
+### Feature
+
+* **relationships:** Improved join features such as lazy=LazyPolicy, explicit=bool ([`f612d43`](https://github.com/trialandsuccess/TypeDAL/commit/f612d43b3a8f474a39bbcc68c1ce9b688939b13a))
+
+### Fix
+
+* Move `LazyPolicy` to config so TypeDALConfig works on < 3.14 again ([`7ad2b19`](https://github.com/trialandsuccess/TypeDAL/commit/7ad2b1934e129307f7aca9d20055e10df5636c92))
+
+### Documentation
+
+* Implemented outstanding todo's into documenation ([`6acb6d8`](https://github.com/trialandsuccess/TypeDAL/commit/6acb6d8ec0ae0ce5b92533e607e4d9a1b65600bc))
+* Continued working on docs todo list ([`022c95d`](https://github.com/trialandsuccess/TypeDAL/commit/022c95dc276ca356cf7e2c884e4d6d6b179aa108))
+* Started on the todo list of doc changes ([`2ad04c4`](https://github.com/trialandsuccess/TypeDAL/commit/2ad04c4de619af9ec1335c645d3e0ad11b25f9a0))
+* Added todo for what to update in docs ([`00eba3e`](https://github.com/trialandsuccess/TypeDAL/commit/00eba3e5d0b347a05d13bfa9dee36054cb261648))
+
 ## v4.0.2 (2025-10-14)
 
 ### Fix
