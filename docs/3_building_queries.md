@@ -153,7 +153,7 @@ This can be overwritten with the `method` keyword argument (left or inner)
 Person.join('articles', method='inner')  # will only yield persons that have related articles
 ```
 
-For more details about relationships and joins, see [page 4](./4_relationships.md).
+For more details about relationships and joins, see [4. Relationships](./4_relationships.md).
 
 ### cache
 
@@ -238,11 +238,4 @@ Person.where(id="Old Name").delete()  # via query builder
 
 person = Person(4)
 person.delete_record()
-```
-
-```python
-# todo:
-#  - nested joins (on page 4)
-#  - relationships page: .join(Table.relationship), nested joins, lazy policy (and db config, link to page 8), `explicit`
-#  - page about config (page 8 with reference on page 1)
 ```

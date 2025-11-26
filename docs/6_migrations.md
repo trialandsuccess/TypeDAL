@@ -2,114 +2,73 @@
 
 By default, pydal manages migrations in your database schema
 automatically ([See also: the web2py docs](http://www.web2py.com/books/default/chapter/29/06/the-database-abstraction-layer#Migrations)).
-This can however be problemantic in a more production environment.
-In some cases, you want to disable automatic table changes and manage these by hand.
+This can be problematic in a production environment where you want to disable automatic table changes and manage these
+by hand.
 
-TypeDAL integrates with [`edwh-migrate`](https://pypi.org/project/edwh-migrate/) to make this easier.
-With this tool, you write migrations (`CREATE`, `ALTER`, `DROP` statements) in SQL and it keeps track of which actions
-have already been executed on your database.
+TypeDAL integrates with [`edwh-migrate`](https://pypi.org/project/edwh-migrate/) to make this easier. With this tool,
+you write migrations (`CREATE`, `ALTER`, `DROP` statements) in SQL and it keeps track of which actions have already been
+executed on your database.
 
-In order to make this process easier, TypeDAL also integrates
-with [`pydal2sql`](https://pypi.org/project/pydal2sql/), which can convert your pydal/TypeDAL table definitions
-into `CREATE` statements if it's a new table, or `ALTER` statements if it's an existing table.
+To make this process easier, TypeDAL also integrates with [`pydal2sql`](https://pypi.org/project/pydal2sql/), which can
+convert your pydal/TypeDAL table definitions into `CREATE` statements for new tables, or `ALTER` statements for existing
+tables.
 
 ## Installation
 
-To enable the migrations functionality within TypeDAL, you'll need to install it with the specific migrations extra
-dependencies. Run the following command:
+To enable the migrations functionality within TypeDAL, install it with the migrations extra:
 
 ```bash
 pip install typedal[migrations] # also included in typedal[all]
 ```
 
-This extra option is necessary as it adds a few dependencies that aren't essential for the core functionality of
-TypeDAL. Enabling the migrations explicitly ensures that you have the additional tools and features available for
-managing migrations effectively.
+## Minimal Configuration
 
-## Config
+To use migrations, you need to configure TypeDAL in your `pyproject.toml`. At minimum, you must set:
 
-TypeDAL's migration behavior and some other features can be customized using a section in your `pyproject.toml`.
-An example config can look like this:
+- `database`: Your database URI
+- `dialect`: The database type (e.g., `sqlite`, `postgres`)
+- `migrate`: Set to `false` to disable pydal's automatic migrations
+- `flag_location`: Where edwh-migrate stores its migration tracking
+- `input`: Path to your table definitions (e.g., `data_model.py`)
+- `output`: Where generated migrations are written (e.g., `migrations/`)
+
+Optionally:
+
+- `database_to_restore`: Path to a SQL file to restore before running migrations on a fresh database.
+
+Here's a minimal example:
 
 ```toml
 [tool.typedal]
-database = "storage.sqlite"
+database = "sqlite://"
 dialect = "sqlite"
-folder = "databases"
-caching = true
-pool_size = 1
-database_to_restore = "data/backup.sql"
-migrate_table = "typedal_implemented_features"
-flag_location = "databases/flags"
-create_flag_location = true
-schema = "public"
-migrate = false  # disable pydal's automatic migration behavior
-fake_migrate = false
+migrate = false
+flag_location = "migrations/.flags"
+input = "path/to/data_model.py"
+output = "path/to/migrations.py"
 ```
 
-To generate such a configuration interactively, use `typedal setup`. If you already have `[tool.pydal2sql]`
-and/or `[tool.migrate]` sections, setup will incorporate their settings as defaults. For only essential prompts, add
-`--minimal`; sensible defaults will fill in the rest.
-
-For dynamic properties or secrets (like a database in postgres with credentials), exclude them from the toml and add
-them to your .env file (optionally prefixed with `TYPEDAL`_):
+For dynamic properties or secrets (like a database with credentials), 
+add them to your `.env` file or set them as environment variables (optionally prefixed with `TYPEDAL_`):
 
 ```env
 TYPEDAL_DATABASE = "psql://user:password@host:5432/database"
 ```
 
-Settings passed directly to `TypeDAL()` will overwrite config values.
+> **Full configuration reference**: For all available options, multiple connections, environment overrides, and other
+> settings, see [7. Configuration](./7_configuration.md).
 
-### Multiple Connections
-
-Thie configuration allows you to define multiple database connections and specify which one `TypeDAL()` will use through environment
-variables.
-
-```toml
-[tool.typedal]
-default = "development"
-
-[tool.typedal.development]
-database = "sqlite://"
-dialect = "sqlite"
-migrate = true
-
-[tool.typedal.production]
-# database from .env
-dialect = "postgres"
-migrate = false
-```
-
-```env
-TYPEDAL_CONNECTION="production"
-TYPEDAL_DATABASE="psql://..."
-```
-
-In the pyproject.toml file, under` [tool.typedal]`, you can set a default connection key, which here is set to "
-development".
-This key corresponds to a section named `[tool.typedal.development]` where you define configuration details for the
-development environment, such as the database URL (database) and dialect.
-
-Similarly, another section `[tool.typedal.production]` holds configuration details for the production environment. In
-this
-example, the database parameter is fetched from the `.env` file using the environment variable `TYPEDAL_DATABASE`. The
-`dialect` specifies the type of database being used, and `migrate` is set to `false` here, disabling automatic
-migrations in the production environment.
-
-The .env file contains environment variables like `TYPEDAL_CONNECTION`, which dictates the current active connection 
-("production" in this case), and `TYPEDAL_DATABASE`, holding the database URI for the production environment.
-
-This setup allows you to easily switch between different database configurations by changing the `TYPEDAL_CONNECTION`
-variable in the `.env` file, enabling you to seamlessly manage different database settings for distinct environments like
-development, testing, and production while keeping every (non-secret) config setting documented.
-
-To see the currently active configuration settings, you can run `typedal --show-config`.
+You can generate a config interactively with `typedal setup`, or view your current config with `typedal --show-config`.
 
 ## Generate Migrations (pydal2sql)
 
-Assuming your configuration is properly set up, `typedal migrations.generate` should execute without additional
-arguments.
-You can however overwrite the behavior as defined in the config. See the following command for all options:
+With your config in place, generate migrations from your table definitions:
+
+```bash
+typedal migrations.generate
+```
+
+You can override config values with CLI flags. See all options:
 
 ```bash
 typedal migrations.generate --help
@@ -117,8 +76,14 @@ typedal migrations.generate --help
 
 ## Run Migrations (edwh-migrate)
 
-With a correctly configured setup, running `typedal migrations.run` should function without extra arguments.
-You can however overwrite the behavior as defined in the config. See the following command for all options:
+Apply your migrations to the database:
+
+```bash
+typedal migrations.run
+```
+
+With a correctly configured setup, this should function without extra arguments.
+You can however overwrite the behavior as defined in the config. See all options:
 
 ```bash
 typedal migrations.run --help

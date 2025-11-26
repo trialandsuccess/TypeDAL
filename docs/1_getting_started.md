@@ -26,12 +26,13 @@ from typedal.for_py4web import TypeDAL
 db = TypeDAL("sqlite:memory")
 ```
 
-TypeDAL accepts the same connection string format and other arguments as `pydal.DAL`. Again,
-see [their documentation](http://www.web2py.com/books/default/chapter/29/06/the-database-abstraction-layer#The-DAL-A-quick-tour)
-for more info about this.
+TypeDAL accepts the same connection string format and other arguments as `pydal.DAL`.
+Again, see
+[their documentation](http://www.web2py.com/books/default/chapter/29/06/the-database-abstraction-layer#The-DAL-A-quick-tour)
+for more info about this. For additional configuration options specific to TypeDAL, see the [7. Advanced Configuration](./7_configuration.md) page.
 
 When using py4web, it is recommended to import the py4web-specific TypeDAL, which is a Fixture that handles database
-connections on request (just like the py4web specific DAL class does).
+connections on request (just like the py4web specific DAL class does). More information about this can be found on [5. py4web](./5_py4web.md)
 
 ### Simple Queries
 
@@ -68,7 +69,8 @@ rows = db.executesql(
 
 #### Result Formatting
 
-By default, `executesql()` returns rows as tuples. To map results to specific fields, use `fields` (takes Field/TypedField objects) or `colnames` (takes column name strings):
+By default, `executesql()` returns rows as tuples. To map results to specific fields, use `fields` (takes
+Field/TypedField objects) or `colnames` (takes column name strings):
 
 ```python
 rows = db.executesql(
@@ -84,5 +86,6 @@ rows = db.executesql(
 
 You can also use `as_dict` or `as_ordered_dict` to return dictionaries instead of tuples.
 
-Most of the time, you probably don't want to write raw queries. For that, you'll need to define some tables! 
-Head to [page 2](./2_defining_tables.md) to learn how.
+Most of the time, you probably don't want to write raw queries. For that, you'll need to define some tables!
+Head to [2. Defining Tables](./2_defining_tables.md) to learn how.
+

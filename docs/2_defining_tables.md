@@ -104,4 +104,4 @@ row.delete_record() # to trigger
 MyTable.where(...).delete() # to trigger
 ```
 
-"Now that we have some tables, it's time to actually query them! Let's go to [page 3](./3_building_queries.md) to learn how.
+"Now that we have some tables, it's time to actually query them! Let's go to [3. Building Queries](./3_building_queries.md) to learn how.
