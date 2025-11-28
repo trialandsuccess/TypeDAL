@@ -1,5 +1,4 @@
 import contextlib
-import json
 import time
 import types
 import typing
@@ -102,8 +101,7 @@ class Tagged(TypedTable):  # pivot table
 
 
 @db.define()
-class Empty(TypedTable):
-    ...
+class Empty(TypedTable): ...
 
 
 def _setup_data():
@@ -314,8 +312,7 @@ def test_typedal_way():
     author1 = User.where(id=4).join("articles").first()
 
     assert (
-            len(author1.as_dict()["articles"]) == len(author1.__dict__["articles"]) == len(
-        dict(author1)["articles"]) == 2
+        len(author1.as_dict()["articles"]) == len(author1.__dict__["articles"]) == len(dict(author1)["articles"]) == 2
     )
 
 
@@ -483,12 +480,12 @@ def test_caching():
     cached_user_only2 = User.join().cache(User.id).collect_or_fail()
 
     assert (
-            len(uncached2)
-            == len(uncached)
-            == len(cached2)
-            == len(cached)
-            == len(cached_user_only2)
-            == len(cached_user_only)
+        len(uncached2)
+        == len(uncached)
+        == len(cached2)
+        == len(cached)
+        == len(cached_user_only2)
+        == len(cached_user_only)
     )
 
     assert uncached.as_json() == uncached2.as_json() == cached.as_json() == cached2.as_json()
@@ -496,9 +493,9 @@ def test_caching():
     assert cached.first().gid == cached2.first().gid
 
     assert (
-            [_.name for _ in uncached2.first().roles]
-            == [_.name for _ in cached.first().roles]
-            == [_.name for _ in cached2.first().roles]
+        [_.name for _ in uncached2.first().roles]
+        == [_.name for _ in cached.first().roles]
+        == [_.name for _ in cached2.first().roles]
     )
 
     assert not uncached2.metadata.get("cache", {}).get("enabled")
@@ -636,27 +633,31 @@ def test_caching_dependencies():
 
 def test_illegal():
     with pytest.raises(ValueError), pytest.warns(UserWarning):
+
         class HasRelationship:
             something = relationship("...", condition=lambda: 1, on=lambda: 2)
 
     with pytest.raises(ValueError), pytest.warns(UserWarning):
         Tag.join(Tag.articles, condition=lambda: 1, on=lambda: 2)
 
+
 def test_join_relationship_custom_on():
     _setup_data()
 
-    rows1 = Tag.join(Tag.articles,
-                     condition=lambda tag, article: (Tagged.tag == tag.id) & (article.gid == Tagged.entity) & (article.author == 3),
-                     method="inner",
-                     )
+    rows1 = Tag.join(
+        Tag.articles,
+        condition=lambda tag, article: (Tagged.tag == tag.id) & (article.gid == Tagged.entity) & (article.author == 3),
+        method="inner",
+    )
 
-    rows2 = Tag.join(Tag.articles,
-                     on=lambda tag, article: [
-                         tagged := Tagged.unique_alias(),
-                         (tagged.tag == tag.id) & (article.gid == tagged.entity) & (article.author == 3)
-                     ],
-                     method="inner",
-                     )
+    rows2 = Tag.join(
+        Tag.articles,
+        on=lambda tag, article: [
+            tagged := Tagged.unique_alias(),
+            (tagged.tag == tag.id) & (article.gid == tagged.entity) & (article.author == 3),
+        ],
+        method="inner",
+    )
 
     assert all([row.articles for row in rows1])
     assert all([row.articles for row in rows2])

@@ -1,5 +1,3 @@
-import datetime
-
 from pydal import DAL, Field
 
 from typedal.helpers import utcnow

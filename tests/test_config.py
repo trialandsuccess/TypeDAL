@@ -6,10 +6,7 @@ import uuid
 from pathlib import Path
 
 import pytest
-
-# from contextlib import chdir
 from contextlib_chdir import chdir
-from pydal2sql import generate_sql
 from testcontainers.postgres import PostgresContainer
 
 from src.typedal import TypeDAL, TypedField, TypedTable
