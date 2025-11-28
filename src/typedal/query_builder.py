@@ -22,7 +22,7 @@ from .helpers import (
     normalize_table_keys,
     throw,
 )
-from .tables import TypedTable
+from .tables import TableMeta, TypedTable
 from .types import (
     CacheMetadata,
     Condition,
@@ -67,13 +67,22 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
             MyTable.where(...) -> QueryBuilder[MyTable]
         """
         self.model = model
-        table = model._ensure_table_defined()
+        table = self._ensure_table_defined()
+
         default_query = table.id > 0
         self.query = add_query or default_query
         self.select_args = select_args or []
         self.select_kwargs = select_kwargs or {}
         self.relationships = relationships or {}
         self.metadata = metadata or {}
+
+    def _ensure_table_defined(self):
+        model = self.model
+        if hasattr(model, "_ensure_table_defined"):
+            return model._ensure_table_defined()
+        else:
+            # already a pydal table
+            return model
 
     def __str__(self) -> str:
         """
@@ -99,7 +108,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         """
         Querybuilder is truthy if it has t.Any conditions.
         """
-        table = self.model._ensure_table_defined()
+        table = self._ensure_table_defined()
         default_query = table.id > 0
         return any(
             [
@@ -191,7 +200,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
             .where(lambda table: table.id == 5, lambda table: table.id == 6) == (table.id == 5) | (table.id=6)
         """
         new_query = self.query
-        table = self.model._ensure_table_defined()
+        table = self._ensure_table_defined()
 
         queries_or_lambdas = (
             *queries_or_lambdas,
@@ -531,6 +540,11 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         if _to is None:
             _to = TypedRows
 
+        if not isinstance(self.model, TableMeta):
+            # tried to use querybuilder with a non-typedal table,
+            # fallback to execute:
+            return self.execute(add_id=add_id)
+
         db = self._get_db()
         metadata = self.metadata.copy()
 
@@ -792,7 +806,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         Transform the raw rows into Typed Table model instances with nested relationships.
         """
         db = self._get_db()
-        main_table = self.model._ensure_table_defined()
+        main_table = self._ensure_table_defined()
 
         # id: Model
         records: dict[t.Any, T_MetaInstance] = {}
