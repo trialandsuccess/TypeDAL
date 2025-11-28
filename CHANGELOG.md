@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.2.0 (2025-11-28)
+
+### Feature
+
+* Minimal support for using querybuilder on old-style pydal tables ([`ec8baeb`](https://github.com/trialandsuccess/TypeDAL/commit/ec8baebbbaae5a2cb5d48254997a6322a0670d7d))
+
 ## v4.1.0 (2025-11-26)
 
 ### Feature
