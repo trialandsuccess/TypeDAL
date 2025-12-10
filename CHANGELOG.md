@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.2.2 (2025-12-10)
+
+### Fix
+
+* Improved type hints for relationships (when join='inner') ([`e54cf91`](https://github.com/trialandsuccess/TypeDAL/commit/e54cf918461757b2fd146f1f3c7d9957c723f68c))
+
 ## v4.2.1 (2025-12-10)
 
 ### Fix
