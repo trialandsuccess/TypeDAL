@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.2.1 (2025-12-10)
+
+### Fix
+
+* Improved type hints for relationships (non-list) ([`3fb53bc`](https://github.com/trialandsuccess/TypeDAL/commit/3fb53bc7a9b4c53c1bc533124ed205c5ec46fa92))
+
 ## v4.2.0 (2025-11-28)
 
 ### Feature
