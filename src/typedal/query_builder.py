@@ -7,6 +7,7 @@ from __future__ import annotations
 import datetime as dt
 import math
 import typing as t
+import warnings
 from collections import defaultdict
 
 import pydal.objects
@@ -35,9 +36,30 @@ from .types import (
     Rows,
     SelectKwargs,
     T,
-    T_MetaInstance,
+    T_MetaInstance, AnyDict,
 )
 
+
+def _extract_upsert_conditions(query: Query) -> dict:
+    """Extract {field: value} from WHERE clause."""
+    conditions = {}
+
+
+    def visit(expr: Query) -> None:
+        if expr.op == expr._dialect._and:  # AND
+            visit(expr.first)
+            visit(expr.second)
+        elif expr.op == expr._dialect._or:  # OR
+            warnings.warn("Skipping OR condition in upsert")
+        elif expr.op == expr._dialect.eq:  # ==
+            field_name = expr.first.name
+            value = expr.second if isinstance(expr.second, str) else expr.second.value
+            conditions[field_name] = value
+        else:
+            warnings.warn(f"Skipping {expr.op} condition in upsert (only = supported)")
+
+    visit(query)
+    return conditions
 
 class QueryBuilder(t.Generic[T_MetaInstance]):
     """
@@ -1106,6 +1128,22 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         """
         return self.first(verbose=verbose) or throw(exception or ValueError("Nothing found!"))
 
+    def upsert(self, **fields: t.Any):
+        # todo: limit (same as select)
+        print(self.query, _extract_upsert_conditions(self.query))
+
+        import pydal.adapters.postgres
+        adapter: pydal.adapters.postgres.PostgrePsyco = self._get_db()._adapter
+
+        print(adapter)
+        adapter.dialect.insert()
+
+        # if postgres:
+        self.execute()
+        #  -> run query ON CONFLICT + RETURNING
+        # else: (todo: check other dialects)
+        #  -> if self.exists(): ... else: ...
+        return [], None
 
 # note: these imports exist at the bottom of this file to prevent circular import issues:
 

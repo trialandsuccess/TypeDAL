@@ -49,7 +49,7 @@ def _load_db_after_setup(dialect: str):
 
     assert f"'dialect': '{dialect}'" in repr(config)
 
-    return True
+    return db
 
 
 def test_load_toml(at_temp_dir):

@@ -1,8 +1,12 @@
+import shutil
+from pathlib import Path
+
 import pytest
 from pydal.objects import Query
 
 from src.typedal import TypeDAL, TypedField, TypedTable, relationship
 from typedal import QueryBuilder
+from tests.test_config import _load_db_after_setup, at_temp_dir
 
 db = TypeDAL("sqlite:memory")
 
@@ -544,3 +548,24 @@ def test_minimal_functionality_on_pydal_style_tables():
 
     assert qb2
     assert len(qb2) == 1
+
+class UpsertUser(TypedTable):
+    name: str
+    city: str
+
+
+def test_upsert_psql(at_temp_dir):
+
+    examples = Path(__file__).parent / "configs"
+    shutil.copy(examples / "valid.env", "./.env")
+
+    db_psql = _load_db_after_setup("postgres")
+
+    db_psql.define(UpsertUser)
+    robins, created = UpsertUser.where(name='Robin').upsert(city='Assen')
+    assert created
+    assert len(robins) == 1
+
+    robins, created = UpsertUser.where(name='Robin').upsert(city='Groningen')
+    assert not created
+    assert len(robins) == 1
