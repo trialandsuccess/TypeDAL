@@ -281,6 +281,28 @@ def relationship(
 def relationship(
     _type: t.Type[To_Type] | str,
     condition: Condition = None,
+    *,
+    join: t.Literal["inner"],
+    on: OnQuery = None,
+    lazy: LazyPolicy | None = None,
+    explicit: bool = False,
+) -> To_Type:
+    """
+    Define a relationship that returns a single related instance (never None with inner join).
+
+    Args:
+        _type: A type or string reference like City to indicate a single related record.
+        join: Set to 'inner' to guarantee a non-null result.
+
+    Returns:
+        A single related instance (guaranteed non-null with inner join).
+    """
+
+
+@t.overload
+def relationship(
+    _type: t.Type[To_Type] | str,
+    condition: Condition = None,
     join: JOIN_OPTIONS = None,
     on: OnQuery = None,
     lazy: LazyPolicy | None = None,
@@ -313,6 +335,7 @@ def relationship(
         condition: Lambda function defining the join condition between tables.
                    Example: lambda self, post: self.id == post.author
         join: Join strategy ('left', 'inner', etc.). Defaults to 'left' when using 'on'.
+              When 'inner' is used with a single type, the result is guaranteed non-null.
         on: Alternative to condition for complex queries with pivot tables.
             Allows specifying multiple join conditions to avoid cross joins.
         lazy: Controls behavior when accessing relationship data without explicitly joining:
