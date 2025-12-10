@@ -36,6 +36,7 @@ from .types import (
     SelectKwargs,
     T,
     T_MetaInstance,
+    Table,
 )
 
 
@@ -76,13 +77,13 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         self.relationships = relationships or {}
         self.metadata = metadata or {}
 
-    def _ensure_table_defined(self):
+    def _ensure_table_defined(self) -> Table:
         model = self.model
         if hasattr(model, "_ensure_table_defined"):
             return model._ensure_table_defined()
         else:
             # already a pydal table
-            return model
+            return t.cast(Table, model)
 
     def __str__(self) -> str:
         """

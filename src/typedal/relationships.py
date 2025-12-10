@@ -257,6 +257,27 @@ class Relationship(t.Generic[To_Type]):
             return fallback_value
 
 
+@t.overload
+def relationship(
+    _type: type[list[To_Type]],
+    condition: Condition = None,
+    join: JOIN_OPTIONS = None,
+    on: OnQuery = None,
+    lazy: LazyPolicy | None = None,
+    explicit: bool = False,
+) -> list[To_Type]:
+    """
+    Define a relationship that returns a list of related instances.
+
+    Args:
+        _type: A list type hint like list[Office] to indicate multiple related records.
+
+    Returns:
+        A list of related instances.
+    """
+
+
+@t.overload
 def relationship(
     _type: t.Type[To_Type] | str,
     condition: Condition = None,
@@ -264,7 +285,26 @@ def relationship(
     on: OnQuery = None,
     lazy: LazyPolicy | None = None,
     explicit: bool = False,
-) -> To_Type:
+) -> To_Type | None:
+    """
+    Define a relationship that returns a single optional related instance.
+
+    Args:
+        _type: A type or string reference like City to indicate a single related record.
+
+    Returns:
+        A single related instance or None.
+    """
+
+
+def relationship(
+    _type: type[list[To_Type]] | t.Type[To_Type] | str,
+    condition: Condition = None,
+    join: JOIN_OPTIONS = None,
+    on: OnQuery = None,
+    lazy: LazyPolicy | None = None,
+    explicit: bool = False,
+) -> list[To_Type] | To_Type | None:
     """
     Define a relationship to another table, when its id is not stored in the current table.
 
