@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.3.1 (2026-01-06)
+
+### Fix
+
+* Properly track selected entities in memo callbacks for better invalidation ([`1d81a01`](https://github.com/trialandsuccess/TypeDAL/commit/1d81a01ec8522d2ba0860d94278e13d0db90dae9))
+
 ## v4.3.0 (2026-01-06)
 
 ### Feature
