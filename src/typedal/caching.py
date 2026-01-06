@@ -18,6 +18,7 @@ from .types import CacheStatus, Query
 
 if t.TYPE_CHECKING:
     from .core import TypeDAL
+    from .query_builder import QueryBuilder
 
 
 def get_now(tz: dt.timezone = dt.timezone.utc) -> dt.datetime:
@@ -113,7 +114,7 @@ def _get_dependency_ids(rows: Rows, dependency_keys: list[tuple[Field, str]]) ->
     return dependencies
 
 
-def _determine_dependencies_auto(_: TypedRows[t.Any], rows: Rows) -> DependencyTupleSet:
+def _determine_dependencies_auto(rows: Rows) -> DependencyTupleSet:
     dependency_keys = []
     for field in rows.fields:
         if str(field).endswith(".id"):
@@ -126,7 +127,7 @@ def _determine_dependencies_auto(_: TypedRows[t.Any], rows: Rows) -> DependencyT
 
 def _determine_dependencies(instance: TypedRows[t.Any], rows: Rows, depends_on: list[t.Any]) -> DependencyTupleSet:
     if not depends_on:
-        return _determine_dependencies_auto(instance, rows)
+        return _determine_dependencies_auto(rows)
 
     target_field_names = set()
     for field in depends_on:
@@ -567,9 +568,18 @@ def memoize(
     cached = _load_memoize_from_cache(hashed_key)
     if cached is not _CACHE_SENTINEL:
         return cached, "cached"
-
     # Cache miss - compute result
-    result = func(*args, **kwargs)
+
+    def track_collect(_qb: QueryBuilder[t.Any], _: TypedRows[t.Any], raw: Rows) -> None:
+        # find dependant table+id combinations, includes relationships:
+        deps.update(_determine_dependencies_auto(raw))
+
+    # hooks every .collect() to track extra dependencies
+    db._after_collect.append(track_collect)
+    try:
+        result = func(*args, **kwargs)
+    finally:
+        db._after_collect.remove(track_collect)
 
     # Save to cache
     if isinstance(ttl, dt.datetime):

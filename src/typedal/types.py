@@ -237,6 +237,7 @@ class Metadata(t.TypedDict):
     final_query: t.NotRequired[Query | str | None]
     final_args: t.NotRequired[list[t.Any]]
     final_kwargs: t.NotRequired[SelectKwargs]
+    select_duration: t.NotRequired[float]
     relationships: t.NotRequired[set[str]]
     sql: t.NotRequired[str]
 

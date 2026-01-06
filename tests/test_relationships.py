@@ -698,6 +698,73 @@ def test_memoize_caches_and_invalidates():
 
     db.memoize(lambda x: x, users.first(), key="echo_lambda", ttl=datetime.now())
 
+def test_memoize_nested_dependencies():
+    """
+    Test that memoize tracks dependencies from nested database lookups,
+    not just the input rows.
+    """
+    _setup_data()
+
+    # Create a function that does nested lookups
+    def process_users(users: TypedRows[User]) -> dict:
+        result = {}
+        for user in users:
+            # This lookup inside the function should also be tracked
+            roles = Role.where(Role.id.belongs([r.id for r in user.roles])).collect()
+            result[user.id] = len(roles)
+
+        return result
+
+    # Get initial data
+    users = User.cache().collect()
+    assert len(users) > 0
+
+    # First memoize - should be fresh
+    result1, status = db.memoize(process_users, users)
+    assert status == "fresh"
+
+    # Second call - should be cached
+    result2, status = db.memoize(process_users, users)
+    assert status == "cached"
+
+    # Update a Role that was accessed inside process_users
+    role = Role.first()
+    role.update_record(name="modified_role")
+
+    # Third call - should be fresh (invalidated by Role change)
+    # but currently will still be "cached" because we only tracked User deps
+    result3, status = db.memoize(process_users, users)
+    assert status == "fresh"
+
+def test_memoize_nested_dependencies2():
+    _setup_data()
+
+    def something_slow():
+        # no input to isolate dependency tracking within the callback
+        # includes role via join, so change in role should invalidate!
+        # (which happens when using _determine_dependencies_auto)
+        return list(User.join())
+
+    bogus, status = db.memoize(something_slow)
+    assert status == "fresh"
+
+    # no change
+    bogus, status = db.memoize(something_slow)
+    assert status == "cached"
+
+    # user change
+    User.first().update_record(name="New Name :)")
+    bogus, status = db.memoize(something_slow)
+    assert status == "fresh"
+
+    # role change
+    Role.first().update_record(name="New Role Name :)")
+    bogus, status = db.memoize(something_slow)
+    assert status == "fresh"
+
+    # no change
+    bogus, status = db.memoize(something_slow)
+    assert status == "cached"
 
 def test_illegal():
     with pytest.raises(ValueError), pytest.warns(UserWarning):

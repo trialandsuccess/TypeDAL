@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import datetime as dt
 import math
+import time
 import typing as t
 from collections import defaultdict
 
@@ -547,6 +548,10 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
             return self.execute(add_id=add_id)
 
         db = self._get_db()
+
+        for fn_before in db._before_collect:
+            fn_before(self)
+
         metadata = self.metadata.copy()
 
         if metadata.get("cache", {}).get("enabled") and (result := self._collect_cached(metadata)):
@@ -559,11 +564,14 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         if verbose:  # pragma: no cover
             print(metadata["sql"])
 
+        start_time = time.perf_counter()
         rows: Rows = db(query).select(*select_args, **select_kwargs)
+        duration = time.perf_counter() - start_time
 
         metadata["final_query"] = str(query)
         metadata["final_args"] = [str(_) for _ in select_args]
         metadata["final_kwargs"] = select_kwargs
+        metadata["select_duration"] = duration
 
         if verbose:  # pragma: no cover
             print(rows)
@@ -571,12 +579,14 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         if not self.relationships:
             # easy
             typed_rows = _to.from_rows(rows, self.model, metadata=metadata)
-
         else:
             # harder: try to match rows to the belonging objects
             # assume structure of {'table': <data>} per row.
             # if that's not the case, return default behavior again
             typed_rows = self._collect_with_relationships(rows, metadata=metadata, _to=_to)
+
+        for fn_after in db._after_collect:
+            fn_after(self, typed_rows, rows)
 
         # only saves if requested in metadata:
         return save_to_cache(typed_rows, rows)

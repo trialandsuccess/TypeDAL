@@ -544,3 +544,22 @@ def test_minimal_functionality_on_pydal_style_tables():
 
     assert qb2
     assert len(qb2) == 1
+
+def test_before_after_collect():
+    _setup_data()
+
+    def print_query(qb: QueryBuilder):
+        print("going to run", qb.to_sql())
+
+    def print_duration(_qb: QueryBuilder, rows, _raw):
+        print(
+            "took",
+            rows.metadata["select_duration"],
+        )
+
+    db._before_collect.append(print_query)
+    db._after_collect.append(print_duration)
+
+    TestQueryTable.all()
+
+

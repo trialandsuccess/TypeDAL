@@ -32,7 +32,8 @@ except ImportError:  # pragma: no cover
 
 if t.TYPE_CHECKING:
     from .fields import TypedField
-    from .types import AnyDict, Expression, T_Query, Table
+    from .query_builder import QueryBuilder
+    from .types import AnyDict, Expression, Rows, T_Query, Table
 
 
 # note: these functions can not be moved to a different file,
@@ -147,6 +148,11 @@ class TypeDAL(pydal.DAL):
     _config: TypeDALConfig
     _builder: TableDefinitionBuilder
 
+    # similar to the insert/update/delete hooks at table-level but for .collect:
+    # note: return values are ignored!
+    _before_collect: list[t.Callable[["QueryBuilder[t.Any]"], None]]
+    _after_collect: list[t.Callable[["QueryBuilder[t.Any]", "TypedRows[t.Any]", "Rows"], None]]
+
     def __init__(
         self,
         uri: Optional[str] = None,  # default from config or 'sqlite:memory'
@@ -199,6 +205,9 @@ class TypeDAL(pydal.DAL):
         self._config = config
         self.db = self
         self._builder = TableDefinitionBuilder(self)
+
+        self._before_collect = []
+        self._after_collect = []
 
         if config.folder:
             Path(config.folder).mkdir(exist_ok=True)
