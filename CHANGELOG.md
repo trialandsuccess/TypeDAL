@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.3.0 (2026-01-06)
+
+### Feature
+
+* Re-use database caching logic for function memo ([`4c9ad68`](https://github.com/trialandsuccess/TypeDAL/commit/4c9ad686e5d2041db91981c856d5a748f0d50752))
+
 ## v4.2.2 (2025-12-10)
 
 ### Fix
