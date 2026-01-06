@@ -3,6 +3,7 @@ import time
 import types
 import typing
 import warnings
+from datetime import datetime
 from uuid import uuid4
 
 import pytest
@@ -16,6 +17,7 @@ from src.typedal.caching import (
     remove_cache,
 )
 from src.typedal.serializers import as_json
+from typedal import TypedRows
 
 db = TypeDAL("sqlite:memory")
 
@@ -596,6 +598,33 @@ def test_caching():
     assert not User.count()
 
 
+def test_caching_insert_invalidation():
+    _setup_data()
+
+    # Get the writer user
+    writer = User.where(name="Writer 1").collect_or_fail().first()
+
+    # Cache articles filtered by author
+    articles = Article.where(author=writer).cache().collect_or_fail()
+    assert len(articles) == 1
+    assert articles.metadata["cache"]["status"] == "fresh"
+
+    # Get from cache
+    articles_cached = Article.where(author=writer).cache().collect_or_fail()
+    assert articles_cached.metadata["cache"]["status"] == "cached"
+
+    # Insert new article matching the filter
+    Article.insert(title="New Article by Writer", author=writer)
+
+    # Query again with same filter
+    # Cache should be invalidated because a new row matching the filter was inserted
+    articles_after = Article.where(author=writer).cache().collect_or_fail()
+
+    # This is the failing case: status will likely still be "cached" when it should be "fresh"
+    assert len(articles_after) == 2
+    assert articles_after.metadata["cache"]["status"] == "fresh"
+
+
 def test_caching_dependencies():
     first_one, first_two = CacheFirst.bulk_insert([{"name": "one"}, {"name": "two"}])
 
@@ -629,6 +658,45 @@ def test_caching_dependencies():
         assert row.first.name != "one"
         # old name should still be in cache for this one
         assert row.second.name != "een 2.0"
+
+
+def test_memoize_caches_and_invalidates():
+    _setup_data()
+
+    def expensive_func(data: TypedRows[User], field: str) -> set:
+        return set(data.column(field))
+
+    users = User.all()
+
+    # First call - fresh
+    result1, status = db.memoize(expensive_func, users, field="name")
+    assert status == "fresh"
+    assert "Reader 1" in result1
+
+    users = User.all()
+
+    # Second call - should be cached
+    result2, status = db.memoize(expensive_func, users, field="name")
+    assert status == "cached"
+    assert result1 == result2
+
+    # Update a user
+    User.where(name="Reader 1").update(name="Reader Updated")
+
+    users = User.all()
+
+    # Third call - cache should be invalidated, result changed
+    result3, status = db.memoize(expensive_func, users, field="name")
+    assert status == "fresh"
+    assert "Reader Updated" in result3
+    assert "Reader 1" not in result3
+
+    # lambda:
+
+    with pytest.raises(ValueError):
+        db.memoize(lambda x: x, users.first(), ttl=datetime.now())
+
+    db.memoize(lambda x: x, users.first(), key="echo_lambda", ttl=datetime.now())
 
 
 def test_illegal():

@@ -4,6 +4,7 @@ Core functionality of TypeDAL.
 
 from __future__ import annotations
 
+import datetime as dt
 import sys
 import typing as t
 import warnings
@@ -20,7 +21,7 @@ from .helpers import (
     sql_expression,
     to_snake,
 )
-from .types import Field, T, Template  # type: ignore
+from .types import CacheStatus, Field, T, Template  # type: ignore
 
 try:
     # python 3.14+
@@ -446,6 +447,32 @@ class TypeDAL(pydal.DAL):
         """
         return sql_expression(self, sql_fragment, *raw_args, output_type=output_type, **raw_kwargs)
 
+    def memoize(
+        self,
+        func: t.Callable[..., T],
+        *args: TypedRows[t.Type[TypedTable]] | TypedTable,  # type: ignore
+        key: str | None = None,
+        ttl: int | dt.timedelta | dt.datetime | None = None,
+        **kwargs: t.Any,  # P.kwargs would be nice but they don't work without .args
+    ) -> tuple[T, CacheStatus]:
+        """
+        Cache the result of a function applied to TypedRow(s).
+
+        Tracks dependencies on the table(s) so the cache invalidates
+        when those rows are updated/deleted.
+
+        Args:
+            func: Function to cache
+            *args: Can contain TypedRow, TypedRows, or other args
+            key: Cache key (required for lambdas)
+            ttl: Time to live in seconds/timedelta, or datetime to expire at
+            **kwargs: Passed to func
+
+        Returns:
+            Cached result or fresh computation
+        """
+        return memoize(self, func, *args, key=key, ttl=ttl, **kwargs)
+
 
 TypeDAL.representers.setdefault("rows_render", default_representer)
 
@@ -453,10 +480,11 @@ TypeDAL.representers.setdefault("rows_render", default_representer)
 
 from .fields import *  # noqa: E402 F403 # isort: skip ; to fill globals() scope
 from .define import TableDefinitionBuilder  # noqa: E402
-from .rows import TypedSet  # noqa: E402
+from .rows import TypedRows, TypedSet  # noqa: E402
 from .tables import TypedTable  # noqa: E402
 
 from .caching import (  # isort: skip # noqa: E402
+    memoize,
     _TypedalCache,
     _TypedalCacheDependency,
 )

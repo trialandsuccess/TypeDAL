@@ -109,8 +109,9 @@ class TableDefinitionBuilder:
             warnings.warn("db.define used without inheriting TypedTable. This could lead to strange problems!")
 
         if not tablename.startswith("typedal_") and cache_dependency:
-            from .caching import _remove_cache
+            from .caching import _remove_cache, remove_cache_for_table
 
+            table._after_insert.append(lambda _row, _id: remove_cache_for_table(tablename))
             table._before_update.append(lambda s, _: _remove_cache(s, tablename))
             table._before_delete.append(lambda s: _remove_cache(s, tablename))
 

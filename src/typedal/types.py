@@ -190,13 +190,16 @@ class PaginateDict(t.TypedDict):
     pagination: Pagination
 
 
+CacheStatus = t.Literal["fresh", "cached"]
+
+
 class CacheMetadata(t.TypedDict):
     """Used by query builder metadata in the 'cache' key."""
 
     enabled: bool
     depends_on: list[t.Any]
     key: t.NotRequired[str | None]
-    status: t.NotRequired[str | None]
+    status: t.NotRequired[CacheStatus | None]
     expires_at: t.NotRequired[dt.datetime | None]
     cached_at: t.NotRequired[dt.datetime | None]
 
