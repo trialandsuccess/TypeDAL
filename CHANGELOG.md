@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.3.2 (2026-01-08)
+
+### Fix
+
+* **cache:** Use string type hint for python < 3.14 ([`4023621`](https://github.com/trialandsuccess/TypeDAL/commit/402362121a9195b182a848b5e3049e27d7023349))
+
 ## v4.3.1 (2026-01-06)
 
 ### Fix
