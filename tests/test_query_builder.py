@@ -545,6 +545,7 @@ def test_minimal_functionality_on_pydal_style_tables():
     assert qb2
     assert len(qb2) == 1
 
+
 def test_before_after_collect():
     _setup_data()
 
@@ -561,5 +562,3 @@ def test_before_after_collect():
     db._after_collect.append(print_duration)
 
     TestQueryTable.all()
-
-

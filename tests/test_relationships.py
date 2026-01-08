@@ -698,6 +698,7 @@ def test_memoize_caches_and_invalidates():
 
     db.memoize(lambda x: x, users.first(), key="echo_lambda", ttl=datetime.now())
 
+
 def test_memoize_nested_dependencies():
     """
     Test that memoize tracks dependencies from nested database lookups,
@@ -736,6 +737,7 @@ def test_memoize_nested_dependencies():
     result3, status = db.memoize(process_users, users)
     assert status == "fresh"
 
+
 def test_memoize_nested_dependencies2():
     _setup_data()
 
@@ -765,6 +767,7 @@ def test_memoize_nested_dependencies2():
     # no change
     bogus, status = db.memoize(something_slow)
     assert status == "cached"
+
 
 def test_illegal():
     with pytest.raises(ValueError), pytest.warns(UserWarning):
