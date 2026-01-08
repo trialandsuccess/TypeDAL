@@ -570,7 +570,7 @@ def memoize(
         return cached, "cached"
     # Cache miss - compute result
 
-    def track_collect(_qb: QueryBuilder[t.Any], _: TypedRows[t.Any], raw: Rows) -> None:
+    def track_collect(_qb: "QueryBuilder[t.Any]", _: TypedRows[t.Any], raw: Rows) -> None:
         # find dependant table+id combinations, includes relationships:
         deps.update(_determine_dependencies_auto(raw))
 
