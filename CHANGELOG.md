@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.3.5 (2026-01-09)
+
+### Fix
+
+* **memoize:** Broader type hints so the return type is passed properly ([`47755ed`](https://github.com/trialandsuccess/TypeDAL/commit/47755ed2010641b4a38e17d4c058a6e27f134dc9))
+
 ## v4.3.4 (2026-01-09)
 
 ### Fix
