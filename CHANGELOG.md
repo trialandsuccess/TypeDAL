@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.3.4 (2026-01-09)
+
+### Fix
+
+* Force commit after truncate ([`58ce722`](https://github.com/trialandsuccess/TypeDAL/commit/58ce722ba7003106a1994f6fa14288c32735b58c))
+
 ## v4.3.3 (2026-01-09)
 
 ### Fix
