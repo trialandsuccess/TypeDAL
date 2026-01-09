@@ -4,7 +4,6 @@ Core functionality of TypeDAL.
 
 from __future__ import annotations
 
-import datetime as dt
 import sys
 import typing as t
 import warnings
@@ -459,10 +458,12 @@ class TypeDAL(pydal.DAL):
     def memoize(
         self,
         func: t.Callable[..., T],
-        *args: TypedRows[t.Type[TypedTable]] | TypedTable,  # type: ignore
+        # should be TypedRows[TypedTable] or TypedTable but for some reason that breaks
+        *args: t.Any,
         key: str | None = None,
         ttl: int | dt.timedelta | dt.datetime | None = None,
-        **kwargs: t.Any,  # P.kwargs would be nice but they don't work without .args
+        # should be P.kwargs but for some reason that breaks
+        **kwargs: t.Any,
     ) -> tuple[T, CacheStatus]:
         """
         Cache the result of a function applied to TypedRow(s).
