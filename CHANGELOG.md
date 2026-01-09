@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.3.3 (2026-01-09)
+
+### Fix
+
+* **cache:** Use CASCADE on cache truncate ([`2b313b7`](https://github.com/trialandsuccess/TypeDAL/commit/2b313b714a8e008f58a5b24f7bef9b03423a28d8))
+
 ## v4.3.2 (2026-01-08)
 
 ### Fix
