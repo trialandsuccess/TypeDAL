@@ -174,8 +174,11 @@ def remove_cache_for_table(table: str) -> None:
 def clear_cache() -> None:
     """
     Remove everything from the cache.
+
+    Immediately commits
     """
     _TypedalCache.truncate("RESTART IDENTITY CASCADE")
+    _TypedalCache._db.commit()
 
 
 def clear_expired() -> int:
