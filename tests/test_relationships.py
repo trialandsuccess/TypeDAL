@@ -551,7 +551,12 @@ def test_caching():
     for chunk in User.cache().join().chunk(2):
         assert chunk.metadata["cache"]["status"] == "cached"
 
+    assert _TypedalCache.count() > 0
+    assert _TypedalCacheDependency.count() > 0
+
     clear_cache()
+    assert _TypedalCache.count() == 0
+    assert _TypedalCacheDependency.count() == 0
 
     assert User.cache(ttl=2).collect().metadata["cache"].get("status") == "fresh"
     assert User.cache(ttl=2).collect().metadata["cache"].get("status") == "cached"

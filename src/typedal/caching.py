@@ -175,8 +175,7 @@ def clear_cache() -> None:
     """
     Remove everything from the cache.
     """
-    _TypedalCacheDependency.truncate()
-    _TypedalCache.truncate()
+    _TypedalCache.truncate("RESTART IDENTITY CASCADE")
 
 
 def clear_expired() -> int:
