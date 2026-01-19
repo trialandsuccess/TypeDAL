@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.3.6 (2026-01-19)
+
+### Fix
+
+* Ensure typedal caching respects provided 'migrate' enabled config ([`0bcc277`](https://github.com/trialandsuccess/TypeDAL/commit/0bcc2774dcec9231dc8a58438dd70d3ce29650e8))
+
 ## v4.3.5 (2026-01-09)
 
 ### Fix
