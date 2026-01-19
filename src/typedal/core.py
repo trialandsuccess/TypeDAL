@@ -246,7 +246,7 @@ class TypeDAL(pydal.DAL):
         Try to define a model with migrate or fall back to fake migrate.
         """
         try:
-            return self.define(model, migrate=True)
+            return self.define(model, migrate=self._migrate)
         except Exception as e:
             # clean up:
             self.rollback()
@@ -257,7 +257,7 @@ class TypeDAL(pydal.DAL):
                 warnings.warn(f"{model} could not be migrated, try faking", source=e, category=RuntimeWarning)
 
             # try again:
-            return self.define(model, migrate=True, fake_migrate=True, redefine=True)
+            return self.define(model, migrate=self._migrate, fake_migrate=self._migrate, redefine=True)
 
     default_kwargs: t.ClassVar[AnyDict] = {
         # fields are 'required' (notnull) by default:
