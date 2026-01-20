@@ -326,6 +326,18 @@ class TableMeta(type):
         """
         return QueryBuilder(self).orderby(*fields)
 
+    def groupby(self: t.Type[T_MetaInstance], *fields: t.Any) -> "QueryBuilder[T_MetaInstance]":
+        """
+        See QueryBuilder.groupby!
+        """
+        return QueryBuilder(self).groupby(*fields)
+
+    def having(self: t.Type[T_MetaInstance], condition: t.Any) -> "QueryBuilder[T_MetaInstance]":
+        """
+        See QueryBuilder.having!
+        """
+        return QueryBuilder(self).having(condition)
+
     def cache(self: t.Type[T_MetaInstance], *deps: t.Any, **kwargs: t.Any) -> "QueryBuilder[T_MetaInstance]":
         """
         See QueryBuilder.cache!

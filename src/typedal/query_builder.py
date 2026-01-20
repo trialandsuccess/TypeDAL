@@ -21,6 +21,8 @@ from .types import (
     Condition,
     Expression,
     Field,
+    GroupBy,
+    Having,
     Metadata,
     OnQuery,
     OrderBy,
@@ -164,6 +166,31 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
             QueryBuilder: A new QueryBuilder instance with the ordering applied.
         """
         return self.select(orderby=fields)
+
+    def groupby(self, *fields: t.Any) -> "QueryBuilder[T_MetaInstance]":
+        """
+        Group the query results by specified fields.
+
+        Args:
+            fields: Field(s) to group by (e.g., Table.column)
+
+        Returns:
+            QueryBuilder: A new QueryBuilder instance with grouping applied.
+        """
+        groupby_value = fields[0] if len(fields) == 1 else fields
+        return self.select(groupby=groupby_value)
+
+    def having(self, condition: t.Any) -> "QueryBuilder[T_MetaInstance]":
+        """
+        Filter grouped query results based on aggregate conditions.
+
+        Args:
+            condition: Query condition for filtering groups (e.g., Team.id.count() > 0)
+
+        Returns:
+            QueryBuilder: A new QueryBuilder instance with having condition applied.
+        """
+        return self.select(having=condition)
 
     def where(
         self,
