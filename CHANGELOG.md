@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.4.0 (2026-01-20)
+
+### Feature
+
+* Add groupby and having methods to QueryBuilder ([`8bce7ec`](https://github.com/trialandsuccess/TypeDAL/commit/8bce7ec137db79ab1631f4504ae891b5bd42c1d8))
+
 ## v4.3.6 (2026-01-19)
 
 ### Fix
