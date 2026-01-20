@@ -21,8 +21,6 @@ from .types import (
     Condition,
     Expression,
     Field,
-    GroupBy,
-    Having,
     Metadata,
     OnQuery,
     OrderBy,
@@ -869,7 +867,6 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
                 row=row,
                 relation=relation,
                 instance=instance,
-                parent_id=parent_id,
                 seen_relations=seen_relations,
                 db=db,
                 path=current_path,
@@ -891,7 +888,6 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         row: t.Any,
         relation: Relationship[t.Any],
         instance: t.Any,
-        parent_id: t.Any,
         seen_relations: dict[str, set[str]],
         db: t.Any,
         path: str,
@@ -903,7 +899,6 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
             row: The database row containing relationship data
             relation: The parent Relationship object containing nested relationships
             instance: The instance to attach nested data to
-            parent_id: ID of the root parent for tracking
             seen_relations: Dict tracking which relationships we've already processed
             db: Database instance
             path: Current relationship path
