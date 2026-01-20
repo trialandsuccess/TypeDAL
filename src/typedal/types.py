@@ -88,15 +88,15 @@ class FileSystemLike(t.Protocol):  # pragma: no cover
 # ---------------------------------------------------------------------------
 
 
-class Query(_Query):  # type: ignore
+class Query(_Query):
     """Pydal Query object. Makes mypy happy."""
 
 
-class Expression(_Expression):  # type: ignore
+class Expression(_Expression):
     """Pydal Expression object. Make mypy happy."""
 
 
-class Set(_Set):  # type: ignore
+class Set(_Set):
     """Pydal Set object. Make mypy happy."""
 
 
@@ -117,19 +117,19 @@ if t.TYPE_CHECKING:
 
 else:
 
-    class OpRow(_OpRow):  # type: ignore
+    class OpRow(_OpRow):
         """Runtime OpRow, using pydal's version."""
 
 
-class Reference(_Reference):  # type: ignore
+class Reference(_Reference):
     """Pydal Reference object. Make mypy happy."""
 
 
-class Field(_Field):  # type: ignore
+class Field(_Field):
     """Pydal Field object. Make mypy happy."""
 
 
-class Rows(_Rows):  # type: ignore
+class Rows(_Rows):
     """Pydal Rows object. Make mypy happy."""
 
     def column(self, column: t.Any = None) -> list[t.Any]:
@@ -146,11 +146,11 @@ class Row(_Row):
     """Pydal Row object. Make mypy happy."""
 
 
-class Validator(_Validator):  # type: ignore
+class Validator(_Validator):
     """Pydal Validator object. Make mypy happy."""
 
 
-class Table(_Table, TableProtocol):  # type: ignore
+class Table(_Table, TableProtocol):
     """Table with protocol support. Make mypy happy."""
 
 

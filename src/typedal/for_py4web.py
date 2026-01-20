@@ -14,7 +14,7 @@ from .types import AnyDict
 from .web2py_py4web_shared import AuthUser
 
 
-class Fixture(_Fixture):  # type: ignore
+class Fixture(_Fixture):
     """
     Make mypy happy.
     """

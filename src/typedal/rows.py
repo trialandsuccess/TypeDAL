@@ -491,7 +491,7 @@ class PaginatedRows(TypedRows[T_MetaInstance]):
         return {"data": super().as_dict(), "pagination": self.pagination}
 
 
-class TypedSet(pydal.objects.Set):  # type: ignore # pragma: no cover
+class TypedSet(pydal.objects.Set):  # pragma: no cover
     """
     Used to make pydal Set more typed.
 

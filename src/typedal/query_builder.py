@@ -61,7 +61,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         """
         self.model = model
         table = model._ensure_table_defined()
-        default_query = t.cast(Query, table.id > 0)
+        default_query: Query = table.id > 0
         self.query = add_query or default_query
         self.select_args = select_args or []
         self.select_kwargs = select_kwargs or {}
@@ -93,7 +93,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         Querybuilder is truthy if it has t.Any conditions.
         """
         table = self.model._ensure_table_defined()
-        default_query = t.cast(Query, table.id > 0)
+        default_query: Query = table.id > 0
         return any(
             [
                 self.query != default_query,
@@ -490,7 +490,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         Raw version of .collect which only executes the SQL, without performing t.Any magic afterwards.
         """
         db = self._get_db()
-        metadata = t.cast(Metadata, self.metadata.copy())
+        metadata: Metadata = self.metadata.copy()
 
         query, select_args, select_kwargs = self._before_query(metadata, add_id=add_id)
 
@@ -509,7 +509,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
             _to = TypedRows
 
         db = self._get_db()
-        metadata = t.cast(Metadata, self.metadata.copy())
+        metadata: Metadata = self.metadata.copy()
 
         if metadata.get("cache", {}).get("enabled") and (result := self._collect_cached(metadata)):
             return result

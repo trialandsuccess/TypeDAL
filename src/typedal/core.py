@@ -138,7 +138,7 @@ def resolve_annotation(ftype: str) -> type:  # pragma: no cover
         return resolve_annotation_314(ftype)
 
 
-class TypeDAL(pydal.DAL):  # type: ignore
+class TypeDAL(pydal.DAL):
     """
     Drop-in replacement for pyDAL with layer to convert class-based table definitions to classical pydal define_tables.
     """

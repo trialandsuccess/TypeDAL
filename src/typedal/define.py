@@ -157,7 +157,7 @@ class TableDefinitionBuilder:
         elif origin_is_subclass(ftype, TypedField):
             # TypedField[int]
             return self.annotation_to_pydal_fieldtype(t.get_args(ftype)[0], mut_kw)
-        elif isinstance(ftype, types.GenericAlias) and t.get_origin(ftype) in (list, TypedField):  # type: ignore
+        elif isinstance(ftype, types.GenericAlias) and t.get_origin(ftype) in (list, TypedField):
             # list[str] -> str -> string -> list:string
             _child_type = t.get_args(ftype)[0]
             _child_type = self.annotation_to_pydal_fieldtype(_child_type, mut_kw)
