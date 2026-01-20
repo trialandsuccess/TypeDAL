@@ -220,6 +220,8 @@ class SelectKwargs(t.TypedDict, total=False):
     join: t.Optional[list[Expression]]
     left: t.Optional[list[Expression]]
     orderby: "OrderBy | t.Iterable[OrderBy] | None"
+    groupby: "GroupBy | t.Iterable[GroupBy] | None"
+    having: "Having | None"
     limitby: t.Optional[tuple[int, int]]
     distinct: bool | Field | Expression
     orderby_on_limitby: bool
@@ -323,5 +325,7 @@ CacheModel = t.Callable[[str, CacheFn, int], Rows]
 CacheTuple = tuple[CacheModel, int]
 
 OrderBy: t.TypeAlias = str | Expression
+GroupBy: t.TypeAlias = Field | Expression
+Having: t.TypeAlias = Query | Expression
 
 T_annotation = t.Type[t.Any] | types.UnionType

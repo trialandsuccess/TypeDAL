@@ -22,6 +22,8 @@ A Query Builder can be initialized by calling one of these methods on a TypedTab
 - where
 - select
 - join
+- groupby
+- having
 - cache
 
 e.g. `Person.where(...)` -> `QueryBuilder[Person]`
@@ -154,6 +156,35 @@ Person.join('articles', method='inner')  # will only yield persons that have rel
 ```
 
 For more details about relationships and joins, see [4. Relationships](./4_relationships.md).
+
+### groupby & having
+
+Group query results by one or more fields, typically used with aggregate functions like `count()`, `sum()`, `avg()`, etc.
+Use `having` to filter the grouped results based on aggregate conditions.
+
+```python
+# Basic grouping: count articles per author
+Article.select(Article.author, Article.id.count().with_alias("article_count"))
+    .groupby(Article.author)
+    .collect()
+
+# Group by multiple fields
+Sale.select(Sale.product, Sale.region, Sale.amount.sum().with_alias("total"))
+    .groupby(Sale.product, Sale.region)
+    .collect()
+
+# Filter groups with having: only authors with more than 5 articles
+Article.select(Article.author, Article.id.count().with_alias("article_count"))
+    .groupby(Article.author)
+    .having(Article.id.count() > 5)
+    .collect()
+
+# Can be chained in any order
+School.groupby(School.id)
+    .having(Team.id.count() > 0)
+    .select(School.id, Team.id.count())
+    .collect()
+```
 
 ### cache
 
