@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import datetime as dt
 import math
+import time
 import typing as t
 from collections import defaultdict
 
@@ -14,8 +15,15 @@ import pydal.objects
 from .constants import DEFAULT_JOIN_OPTION, JOIN_OPTIONS
 from .core import TypeDAL
 from .fields import TypedField, is_typed_field
-from .helpers import DummyQuery, as_lambda, looks_like, normalize_table_keys, throw
-from .tables import TypedTable
+from .helpers import (
+    DummyQuery,
+    as_lambda,
+    filter_out,
+    looks_like,
+    normalize_table_keys,
+    throw,
+)
+from .tables import TableMeta, TypedTable
 from .types import (
     CacheMetadata,
     Condition,
@@ -29,6 +37,7 @@ from .types import (
     SelectKwargs,
     T,
     T_MetaInstance,
+    Table,
 )
 
 
@@ -60,13 +69,21 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
             MyTable.where(...) -> QueryBuilder[MyTable]
         """
         self.model = model
-        table = model._ensure_table_defined()
+        table = self._ensure_table_defined()
         default_query: Query = table.id > 0
         self.query = add_query or default_query
         self.select_args = select_args or []
         self.select_kwargs = select_kwargs or {}
         self.relationships = relationships or {}
         self.metadata = metadata or {}
+
+    def _ensure_table_defined(self) -> Table:
+        model = self.model
+        if hasattr(model, "_ensure_table_defined"):
+            return model._ensure_table_defined()
+        else:
+            # already a pydal table
+            return t.cast(Table, model)
 
     def __str__(self) -> str:
         """
@@ -92,7 +109,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         """
         Querybuilder is truthy if it has t.Any conditions.
         """
-        table = self.model._ensure_table_defined()
+        table = self._ensure_table_defined()
         default_query: Query = table.id > 0
         return any(
             [
@@ -209,7 +226,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
             .where(lambda table: table.id == 5, lambda table: table.id == 6) == (table.id == 5) | (table.id=6)
         """
         new_query = self.query
-        table = self.model._ensure_table_defined()
+        table = self._ensure_table_defined()
 
         queries_or_lambdas = (
             *queries_or_lambdas,
@@ -286,7 +303,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
 
     def join(
         self,
-        *fields: str | t.Type[TypedTable],
+        *fields: str | t.Type[TypedTable] | Relationship[t.Any],
         method: JOIN_OPTIONS = None,
         on: OnQuery | list[Expression] | Expression = None,
         condition: Condition = None,
@@ -294,6 +311,15 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
     ) -> "QueryBuilder[T_MetaInstance]":
         """
         Include relationship fields in the result.
+
+        Supports:
+          - join("example")
+          - join(Table.example, "second", method="left")
+          - join(Table.example, on=...)
+          - join(Table.example, condition=...)
+
+        `fields` can be names or Relationship instances.
+        If no fields are passed, all relationships will be joined.
 
         `fields` can be names of Relationships on the current model.
         If no fields are passed, all will be used.
@@ -307,21 +333,29 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         # todo: it would be nice if 'fields' could be an actual relationship
         #   (Article.tags = list[Tag]) and you could change the .condition and .on
         #  this could deprecate condition_and
-        relationships = self.model.get_relationships()
 
         if condition and on:
-            raise ValueError("condition and on can not be used together!")
-        elif condition:
+            raise Relationship._error_duplicate_condition(condition, on)  # type: ignore
+
+        relationships: dict[str, Relationship[t.Any]]
+
+        if condition:
             if len(fields) != 1:
                 raise ValueError("join(field, condition=...) can only be used with exactly one field!")
 
             if isinstance(condition, pydal.objects.Query):
                 condition = as_lambda(condition)
 
-            to_field = t.cast(t.Type[TypedTable], fields[0])
-            relationships = {
-                str(to_field): Relationship(to_field, condition=condition, join=method, condition_and=condition_and)
-            }
+            field = fields[0]
+            if isinstance(field, Relationship) and field.name:
+                relationships = {
+                    field.name: field.clone(condition=condition, on=None, join=method, condition_and=condition_and)
+                }
+            else:
+                to_field = t.cast(t.Type[TypedTable], field)
+                relationships = {
+                    str(to_field): Relationship(to_field, condition=condition, join=method, condition_and=condition_and)
+                }
         elif on:
             if len(fields) != 1:
                 raise ValueError("join(field, on=...) can only be used with exactly one field!")
@@ -332,26 +366,50 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
             if isinstance(on, list):
                 on = as_lambda(on)
 
-            to_field = t.cast(t.Type[TypedTable], fields[0])
-            relationships = {str(to_field): Relationship(to_field, on=on, join=method, condition_and=condition_and)}
+            field = fields[0]
+            if isinstance(field, Relationship) and field.name:
+                relationships = {
+                    field.name: field.clone(on=on, join=method, condition=None, condition_and=condition_and)
+                }
+            else:
+                to_field = t.cast(t.Type[TypedTable], field)
+                relationships = {str(to_field): Relationship(to_field, on=on, join=method, condition_and=condition_and)}
+        elif fields:
+            # join on every relationship
+            # simple: 'relationship'
+            #   -> {'relationship': Relationship('relationship')}
+            # complex with one: relationship.with_nested
+            #   -> {'relationship': Relationship('relationship', nested=[Relationship('with_nested')])
+            # complex with two:  relationship.with_nested,  relationship.no2
+            #   -> {'relationship': Relationship('relationship',
+            #                           nested=[Relationship('with_nested'), Relationship('no2')])
+
+            # fields is a tuple so that's not mutable, filter_out requires a mutable dict:
+            other_fields = {idx: field for idx, field in enumerate(fields)}
+            relationship_instances = filter_out(other_fields, Relationship)
+
+            relationships = {}
+
+            # Clone direct Relationship instances (preserving their settings)
+            for relationship in relationship_instances.values():
+                if relationship.name:
+                    relationships[relationship.name] = relationship.clone(
+                        join=method,
+                        condition_and=condition_and,
+                    )
+
+            # Parse and merge string/table fields
+            if other_fields:
+                parsed_relationships = self._parse_relationships(
+                    other_fields.values(),  # type: ignore
+                    method=method,
+                    condition_and=condition_and,
+                )
+                # Explicit Relationship instances take precedence
+                relationships = parsed_relationships | relationships
 
         else:
-            if fields:
-                # join on every relationship
-                # simple: 'relationship'
-                #   -> {'relationship': Relationship('relationship')}
-                # complex with one: relationship.with_nested
-                #   -> {'relationship': Relationship('relationship', nested=[Relationship('with_nested')])
-                # complex with two:  relationship.with_nested,  relationship.no2
-                #   -> {'relationship': Relationship('relationship',
-                #                           nested=[Relationship('with_nested'), Relationship('no2')])
-
-                relationships = self._parse_relationships(fields, method=method, condition_and=condition_and)
-
-            if method:
-                relationships = {
-                    str(k): r.clone(join=method, condition_and=condition_and) for k, r in relationships.items()
-                }
+            relationships = {k: v for k, v in self.model.get_relationships().items() if not v.explicit}
 
         return self._extend(relationships=relationships)
 
@@ -508,7 +566,16 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         if _to is None:
             _to = TypedRows
 
+        if not isinstance(self.model, TableMeta):
+            # tried to use querybuilder with a non-typedal table,
+            # fallback to execute:
+            return self.execute(add_id=add_id)
+
         db = self._get_db()
+
+        for fn_before in db._before_collect:
+            fn_before(self)
+
         metadata: Metadata = self.metadata.copy()
 
         if metadata.get("cache", {}).get("enabled") and (result := self._collect_cached(metadata)):
@@ -521,11 +588,14 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         if verbose:  # pragma: no cover
             print(metadata["sql"])
 
+        start_time = time.perf_counter()
         rows: Rows = db(query).select(*select_args, **select_kwargs)
+        duration = time.perf_counter() - start_time
 
         metadata["final_query"] = str(query)
         metadata["final_args"] = [str(_) for _ in select_args]
         metadata["final_kwargs"] = select_kwargs
+        metadata["select_duration"] = duration
 
         if verbose:  # pragma: no cover
             print(rows)
@@ -533,12 +603,14 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         if not self.relationships:
             # easy
             typed_rows = _to.from_rows(rows, self.model, metadata=metadata)
-
         else:
             # harder: try to match rows to the belonging objects
             # assume structure of {'table': <data>} per row.
             # if that's not the case, return default behavior again
             typed_rows = self._collect_with_relationships(rows, metadata=metadata, _to=_to)
+
+        for fn_after in db._after_collect:
+            fn_after(self, typed_rows, rows)
 
         # only saves if requested in metadata:
         return save_to_cache(typed_rows, rows)
@@ -769,7 +841,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         Transform the raw rows into Typed Table model instances with nested relationships.
         """
         db = self._get_db()
-        main_table = self.model._ensure_table_defined()
+        main_table = self._ensure_table_defined()
 
         # id: Model
         records: dict[t.Any, T_MetaInstance] = {}
@@ -867,6 +939,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
                 row=row,
                 relation=relation,
                 instance=instance,
+                # parent_id=parent_id,
                 seen_relations=seen_relations,
                 db=db,
                 path=current_path,

@@ -189,7 +189,7 @@ def looks_like(v: t.Any, _type: type[t.Any]) -> bool:
     return isinstance(v, _type) or (isinstance(v, type) and issubclass(v, _type)) or origin_is_subclass(v, _type)
 
 
-def filter_out(mut_dict: dict[K, V], _type: type[T]) -> dict[K, type[T]]:
+def filter_out(mut_dict: dict[K, V], _type: type[T]) -> dict[K, T]:
     """
     Split a dictionary into things matching _type and the rest.
 

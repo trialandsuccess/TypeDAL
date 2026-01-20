@@ -1,6 +1,9 @@
+import contextlib
 import time
 import types
 import typing
+import warnings
+from datetime import datetime
 from uuid import uuid4
 
 import pytest
@@ -13,6 +16,8 @@ from src.typedal.caching import (
     clear_expired,
     remove_cache,
 )
+from src.typedal.serializers import as_json
+from typedal import TypedRows
 
 db = TypeDAL("sqlite:memory")
 
@@ -28,8 +33,22 @@ class TaggableMixin:
             tagged.on(tagged.entity == entity.gid),
             tag.on((tagged.tag == tag.id)),
         ],
+        lazy="warn",  # default behavior
     )
-    # tags = relationship(list["Tag"], tagged)
+
+    tags_tolerate = relationship(
+        list["Tag"],
+        # lambda self, _: (Tagged.entity == self.gid) & (Tagged.tag == Tag.id)
+        # doing an .on with and & inside can lead to a cross join,
+        # for relationships with pivot tables a manual on query with aliases is prefered:
+        on=lambda entity, tag: [
+            tagged := Tagged.unique_alias(),
+            tagged.on(tagged.entity == entity.gid),
+            tag.on((tagged.tag == tag.id)),
+        ],
+        lazy="tolerate",  # load but with warning
+        explicit=True,  # only load when requested
+    )
 
 
 @db.define()
@@ -184,7 +203,7 @@ def test_typedal_way():
         Empty.first_or_fail()
 
     # user through article: 1 - many
-    all_articles = Article.join().collect().as_dict()
+    all_articles = Article.join("author", "secondary_author", "final_editor", "tags").collect().as_dict()
 
     assert all_articles[3]["final_editor"]["name"] == "Editor 1"
     assert all_articles[4]["secondary_author"]["name"] == "Editor 1"
@@ -208,7 +227,9 @@ def test_typedal_way():
     with pytest.warns(RuntimeWarning):
         assert article2.tags == []
 
-    articles1 = Article.where(title="Article 1").join().first_or_fail()
+    articles1 = (
+        Article.where(title="Article 1").join("author", "secondary_author", "final_editor", "tags").first_or_fail()
+    )
 
     assert articles1.final_editor.name == "Editor 1"
 
@@ -286,11 +307,11 @@ def test_typedal_way():
 
     # from role to users: BelongsToMany via list:reference
 
-    role_writer = Role.where(Role.name == "writer").join().first_or_fail()
+    role_writer = Role.where(Role.name == "writer").join("users", "tags").first_or_fail()
 
     assert len(role_writer.users) == 2
 
-    author1 = User.where(id=4).join().first()
+    author1 = User.where(id=4).join("articles").first()
 
     assert (
         len(author1.as_dict()["articles"]) == len(author1.__dict__["articles"]) == len(dict(author1)["articles"]) == 2
@@ -336,6 +357,35 @@ def test_reprs():
     ]
 
     assert "AND" in repr(relation) and "Hank" in repr(relation)
+
+
+@contextlib.contextmanager
+def no_warnings():
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        yield
+        if caught:
+            raise AssertionError(f"Unexpected warnings: {[w.message for w in caught]}")
+
+
+def test_get_relationship_after_initial():
+    _setup_data()
+
+    article1 = Article.where(title="Article 1").first_or_fail()
+    article2 = Article.where(title="Article 1").join(Article.tags).first_or_fail()
+
+    with pytest.warns(RuntimeWarning):
+        assert article1.tags == []
+
+    with pytest.warns(RuntimeWarning):
+        # tolerate includes warning
+        tags_tolerate = article1.tags_tolerate
+        assert tags_tolerate
+
+    with no_warnings():
+        # expect no warnings
+        assert as_json.encode(tags_tolerate) == as_json.encode(article2.tags)
+        assert tags_tolerate == article2.tags
 
 
 @db.define()
@@ -401,6 +451,8 @@ def test_join_with_different_condition():
 
 
 def test_caching():
+    _setup_data()
+
     uncached = User.join().collect_or_fail()
     cached = User.cache().join().collect_or_fail()  # not actually cached yet!
     cached_user_only = User.join().cache(User.id).collect_or_fail()  # idem
@@ -499,7 +551,12 @@ def test_caching():
     for chunk in User.cache().join().chunk(2):
         assert chunk.metadata["cache"]["status"] == "cached"
 
+    assert _TypedalCache.count() > 0
+    assert _TypedalCacheDependency.count() > 0
+
     clear_cache()
+    assert _TypedalCache.count() == 0
+    assert _TypedalCacheDependency.count() == 0
 
     assert User.cache(ttl=2).collect().metadata["cache"].get("status") == "fresh"
     assert User.cache(ttl=2).collect().metadata["cache"].get("status") == "cached"
@@ -546,6 +603,33 @@ def test_caching():
     assert not User.count()
 
 
+def test_caching_insert_invalidation():
+    _setup_data()
+
+    # Get the writer user
+    writer = User.where(name="Writer 1").collect_or_fail().first()
+
+    # Cache articles filtered by author
+    articles = Article.where(author=writer).cache().collect_or_fail()
+    assert len(articles) == 1
+    assert articles.metadata["cache"]["status"] == "fresh"
+
+    # Get from cache
+    articles_cached = Article.where(author=writer).cache().collect_or_fail()
+    assert articles_cached.metadata["cache"]["status"] == "cached"
+
+    # Insert new article matching the filter
+    Article.insert(title="New Article by Writer", author=writer)
+
+    # Query again with same filter
+    # Cache should be invalidated because a new row matching the filter was inserted
+    articles_after = Article.where(author=writer).cache().collect_or_fail()
+
+    # This is the failing case: status will likely still be "cached" when it should be "fresh"
+    assert len(articles_after) == 2
+    assert articles_after.metadata["cache"]["status"] == "fresh"
+
+
 def test_caching_dependencies():
     first_one, first_two = CacheFirst.bulk_insert([{"name": "one"}, {"name": "two"}])
 
@@ -581,11 +665,145 @@ def test_caching_dependencies():
         assert row.second.name != "een 2.0"
 
 
+def test_memoize_caches_and_invalidates():
+    _setup_data()
+
+    def expensive_func(data: TypedRows[User], field: str) -> set:
+        return set(data.column(field))
+
+    users = User.all()
+
+    # First call - fresh
+    result1, status = db.memoize(expensive_func, users, field="name")
+    assert status == "fresh"
+    assert "Reader 1" in result1
+
+    users = User.all()
+
+    # Second call - should be cached
+    result2, status = db.memoize(expensive_func, users, field="name")
+    assert status == "cached"
+    assert result1 == result2
+
+    # Update a user
+    User.where(name="Reader 1").update(name="Reader Updated")
+
+    users = User.all()
+
+    # Third call - cache should be invalidated, result changed
+    result3, status = db.memoize(expensive_func, users, field="name")
+    assert status == "fresh"
+    assert "Reader Updated" in result3
+    assert "Reader 1" not in result3
+
+    # lambda:
+
+    with pytest.raises(ValueError):
+        db.memoize(lambda x: x, users.first(), ttl=datetime.now())
+
+    db.memoize(lambda x: x, users.first(), key="echo_lambda", ttl=datetime.now())
+
+
+def test_memoize_nested_dependencies():
+    """
+    Test that memoize tracks dependencies from nested database lookups,
+    not just the input rows.
+    """
+    _setup_data()
+
+    # Create a function that does nested lookups
+    def process_users(users: TypedRows[User]) -> dict:
+        result = {}
+        for user in users:
+            # This lookup inside the function should also be tracked
+            roles = Role.where(Role.id.belongs([r.id for r in user.roles])).collect()
+            result[user.id] = len(roles)
+
+        return result
+
+    # Get initial data
+    users = User.cache().collect()
+    assert len(users) > 0
+
+    # First memoize - should be fresh
+    result1, status = db.memoize(process_users, users)
+    assert status == "fresh"
+
+    # Second call - should be cached
+    result2, status = db.memoize(process_users, users)
+    assert status == "cached"
+
+    # Update a Role that was accessed inside process_users
+    role = Role.first()
+    role.update_record(name="modified_role")
+
+    # Third call - should be fresh (invalidated by Role change)
+    # but currently will still be "cached" because we only tracked User deps
+    result3, status = db.memoize(process_users, users)
+    assert status == "fresh"
+
+
+def test_memoize_nested_dependencies2():
+    _setup_data()
+
+    def something_slow():
+        # no input to isolate dependency tracking within the callback
+        # includes role via join, so change in role should invalidate!
+        # (which happens when using _determine_dependencies_auto)
+        return list(User.join())
+
+    bogus, status = db.memoize(something_slow)
+    assert status == "fresh"
+
+    # no change
+    bogus, status = db.memoize(something_slow)
+    assert status == "cached"
+
+    # user change
+    User.first().update_record(name="New Name :)")
+    bogus, status = db.memoize(something_slow)
+    assert status == "fresh"
+
+    # role change
+    Role.first().update_record(name="New Role Name :)")
+    bogus, status = db.memoize(something_slow)
+    assert status == "fresh"
+
+    # no change
+    bogus, status = db.memoize(something_slow)
+    assert status == "cached"
+
+
 def test_illegal():
     with pytest.raises(ValueError), pytest.warns(UserWarning):
 
         class HasRelationship:
             something = relationship("...", condition=lambda: 1, on=lambda: 2)
+
+    with pytest.raises(ValueError), pytest.warns(UserWarning):
+        Tag.join(Tag.articles, condition=lambda: 1, on=lambda: 2)
+
+
+def test_join_relationship_custom_on():
+    _setup_data()
+
+    rows1 = Tag.join(
+        Tag.articles,
+        condition=lambda tag, article: (Tagged.tag == tag.id) & (article.gid == Tagged.entity) & (article.author == 3),
+        method="inner",
+    )
+
+    rows2 = Tag.join(
+        Tag.articles,
+        on=lambda tag, article: [
+            tagged := Tagged.unique_alias(),
+            (tagged.tag == tag.id) & (article.gid == tagged.entity) & (article.author == 3),
+        ],
+        method="inner",
+    )
+
+    assert all([row.articles for row in rows1])
+    assert all([row.articles for row in rows2])
 
 
 def test_join_with_select():
@@ -669,7 +887,9 @@ def test_nested_relationships():
 
     # more complex:
     role = Role.where(name="reader").join(
-        "users.bestie", "users.articles.final_editor", "users.articles.secondary_author"
+        "users.bestie",
+        "users.articles.final_editor",
+        "users.articles.secondary_author",
     )
 
     nested_article = role.first().users[2].articles[0]
@@ -681,26 +901,14 @@ def test_nested_relationships():
 
     # complex, inner:
     role_inner = Role.where(name="reader").join(
-        "users.bestie", "users.articles.final_editor", "users.articles.secondary_author", method="inner"
+        "users.bestie",
+        "users.articles.final_editor",
+        "users.articles.secondary_author",
+        method="inner",
     )
 
     # no final_editor -> inner join should fail:
     assert not role_inner.first()
-
-
-"""
-In production I noticed this bug:
-
-When joining nested data like `process = Process.join("pros_and_cons.product")`
-process.pros_and_cons[0].product # is fine
-process.pros_and_cons[1].product # is None
-while they both share the same `product_gid`
-This indicates that something goes wrong when collecting the nested data.
-`pros_and_cons` is very specific to that production use-case so please think of a more general example and write a test for it.
-1. define the required tables and relationships
-2. define the required data
-3. perform the query and check the results
-"""
 
 
 class City(TypedTable):

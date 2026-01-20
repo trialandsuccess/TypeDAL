@@ -4,6 +4,7 @@ Core functionality of TypeDAL.
 
 from __future__ import annotations
 
+import datetime as dt
 import sys
 import typing as t
 import warnings
@@ -12,7 +13,7 @@ from typing import Optional
 
 import pydal
 
-from .config import TypeDALConfig, load_config
+from .config import LazyPolicy, TypeDALConfig, load_config
 from .helpers import (
     SYSTEM_SUPPORTS_TEMPLATES,
     default_representer,
@@ -20,7 +21,7 @@ from .helpers import (
     sql_expression,
     to_snake,
 )
-from .types import Field, T, Template  # type: ignore
+from .types import CacheStatus, Field, T, Template  # type: ignore
 
 try:
     # python 3.14+
@@ -31,7 +32,8 @@ except ImportError:  # pragma: no cover
 
 if t.TYPE_CHECKING:
     from .fields import TypedField
-    from .types import AnyDict, Expression, T_Query, Table
+    from .query_builder import QueryBuilder
+    from .types import AnyDict, Expression, Rows, T_Query, Table
 
 
 # note: these functions can not be moved to a different file,
@@ -146,6 +148,11 @@ class TypeDAL(pydal.DAL):
     _config: TypeDALConfig
     _builder: TableDefinitionBuilder
 
+    # similar to the insert/update/delete hooks at table-level but for .collect:
+    # note: return values are ignored!
+    _before_collect: list[t.Callable[["QueryBuilder[t.Any]"], None]]
+    _after_collect: list[t.Callable[["QueryBuilder[t.Any]", "TypedRows[t.Any]", "Rows"], None]]
+
     def __init__(
         self,
         uri: Optional[str] = None,  # default from config or 'sqlite:memory'
@@ -176,6 +183,7 @@ class TypeDAL(pydal.DAL):
         use_env: bool | str = True,
         connection: Optional[str] = None,
         config: Optional[TypeDALConfig] = None,
+        lazy_policy: LazyPolicy | None = None,
     ) -> None:
         """
         Adds some internal tables after calling pydal's default init.
@@ -191,11 +199,15 @@ class TypeDAL(pydal.DAL):
             fake_migrate=fake_migrate,
             caching=enable_typedal_caching,
             pool_size=pool_size,
+            lazy_policy=lazy_policy,
         )
 
         self._config = config
         self.db = self
         self._builder = TableDefinitionBuilder(self)
+
+        self._before_collect = []
+        self._after_collect = []
 
         if config.folder:
             Path(config.folder).mkdir(exist_ok=True)
@@ -235,7 +247,7 @@ class TypeDAL(pydal.DAL):
         Try to define a model with migrate or fall back to fake migrate.
         """
         try:
-            return self.define(model, migrate=True)
+            return self.define(model, migrate=self._migrate)
         except Exception as e:
             # clean up:
             self.rollback()
@@ -246,7 +258,7 @@ class TypeDAL(pydal.DAL):
                 warnings.warn(f"{model} could not be migrated, try faking", source=e, category=RuntimeWarning)
 
             # try again:
-            return self.define(model, migrate=True, fake_migrate=True, redefine=True)
+            return self.define(model, migrate=self._migrate, fake_migrate=self._migrate, redefine=True)
 
     default_kwargs: t.ClassVar[AnyDict] = {
         # fields are 'required' (notnull) by default:
@@ -444,6 +456,34 @@ class TypeDAL(pydal.DAL):
         """
         return sql_expression(self, sql_fragment, *raw_args, output_type=output_type, **raw_kwargs)
 
+    def memoize(
+        self,
+        func: t.Callable[..., T],
+        # should be TypedRows[TypedTable] or TypedTable but for some reason that breaks
+        *args: t.Any,
+        key: str | None = None,
+        ttl: int | dt.timedelta | dt.datetime | None = None,
+        # should be P.kwargs but for some reason that breaks
+        **kwargs: t.Any,
+    ) -> tuple[T, CacheStatus]:
+        """
+        Cache the result of a function applied to TypedRow(s).
+
+        Tracks dependencies on the table(s) so the cache invalidates
+        when those rows are updated/deleted.
+
+        Args:
+            func: Function to cache
+            *args: Can contain TypedRow, TypedRows, or other args
+            key: Cache key (required for lambdas)
+            ttl: Time to live in seconds/timedelta, or datetime to expire at
+            **kwargs: Passed to func
+
+        Returns:
+            Cached result or fresh computation
+        """
+        return memoize(self, func, *args, key=key, ttl=ttl, **kwargs)
+
 
 TypeDAL.representers.setdefault("rows_render", default_representer)
 
@@ -451,10 +491,11 @@ TypeDAL.representers.setdefault("rows_render", default_representer)
 
 from .fields import *  # noqa: E402 F403 # isort: skip ; to fill globals() scope
 from .define import TableDefinitionBuilder  # noqa: E402
-from .rows import TypedSet  # noqa: E402
+from .rows import TypedRows, TypedSet  # noqa: E402
 from .tables import TypedTable  # noqa: E402
 
 from .caching import (  # isort: skip # noqa: E402
+    memoize,
     _TypedalCache,
     _TypedalCacheDependency,
 )

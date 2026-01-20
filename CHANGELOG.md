@@ -2,6 +2,83 @@
 
 <!--next-version-placeholder-->
 
+## v4.3.6 (2026-01-19)
+
+### Fix
+
+* Ensure typedal caching respects provided 'migrate' enabled config ([`0bcc277`](https://github.com/trialandsuccess/TypeDAL/commit/0bcc2774dcec9231dc8a58438dd70d3ce29650e8))
+
+## v4.3.5 (2026-01-09)
+
+### Fix
+
+* **memoize:** Broader type hints so the return type is passed properly ([`47755ed`](https://github.com/trialandsuccess/TypeDAL/commit/47755ed2010641b4a38e17d4c058a6e27f134dc9))
+
+## v4.3.4 (2026-01-09)
+
+### Fix
+
+* Force commit after truncate ([`58ce722`](https://github.com/trialandsuccess/TypeDAL/commit/58ce722ba7003106a1994f6fa14288c32735b58c))
+
+## v4.3.3 (2026-01-09)
+
+### Fix
+
+* **cache:** Use CASCADE on cache truncate ([`2b313b7`](https://github.com/trialandsuccess/TypeDAL/commit/2b313b714a8e008f58a5b24f7bef9b03423a28d8))
+
+## v4.3.2 (2026-01-08)
+
+### Fix
+
+* **cache:** Use string type hint for python < 3.14 ([`4023621`](https://github.com/trialandsuccess/TypeDAL/commit/402362121a9195b182a848b5e3049e27d7023349))
+
+## v4.3.1 (2026-01-06)
+
+### Fix
+
+* Properly track selected entities in memo callbacks for better invalidation ([`1d81a01`](https://github.com/trialandsuccess/TypeDAL/commit/1d81a01ec8522d2ba0860d94278e13d0db90dae9))
+
+## v4.3.0 (2026-01-06)
+
+### Feature
+
+* Re-use database caching logic for function memo ([`4c9ad68`](https://github.com/trialandsuccess/TypeDAL/commit/4c9ad686e5d2041db91981c856d5a748f0d50752))
+
+## v4.2.2 (2025-12-10)
+
+### Fix
+
+* Improved type hints for relationships (when join='inner') ([`e54cf91`](https://github.com/trialandsuccess/TypeDAL/commit/e54cf918461757b2fd146f1f3c7d9957c723f68c))
+
+## v4.2.1 (2025-12-10)
+
+### Fix
+
+* Improved type hints for relationships (non-list) ([`3fb53bc`](https://github.com/trialandsuccess/TypeDAL/commit/3fb53bc7a9b4c53c1bc533124ed205c5ec46fa92))
+
+## v4.2.0 (2025-11-28)
+
+### Feature
+
+* Minimal support for using querybuilder on old-style pydal tables ([`ec8baeb`](https://github.com/trialandsuccess/TypeDAL/commit/ec8baebbbaae5a2cb5d48254997a6322a0670d7d))
+
+## v4.1.0 (2025-11-26)
+
+### Feature
+
+* **relationships:** Improved join features such as lazy=LazyPolicy, explicit=bool ([`f612d43`](https://github.com/trialandsuccess/TypeDAL/commit/f612d43b3a8f474a39bbcc68c1ce9b688939b13a))
+
+### Fix
+
+* Move `LazyPolicy` to config so TypeDALConfig works on < 3.14 again ([`7ad2b19`](https://github.com/trialandsuccess/TypeDAL/commit/7ad2b1934e129307f7aca9d20055e10df5636c92))
+
+### Documentation
+
+* Implemented outstanding todo's into documenation ([`6acb6d8`](https://github.com/trialandsuccess/TypeDAL/commit/6acb6d8ec0ae0ce5b92533e607e4d9a1b65600bc))
+* Continued working on docs todo list ([`022c95d`](https://github.com/trialandsuccess/TypeDAL/commit/022c95dc276ca356cf7e2c884e4d6d6b179aa108))
+* Started on the todo list of doc changes ([`2ad04c4`](https://github.com/trialandsuccess/TypeDAL/commit/2ad04c4de619af9ec1335c645d3e0ad11b25f9a0))
+* Added todo for what to update in docs ([`00eba3e`](https://github.com/trialandsuccess/TypeDAL/commit/00eba3e5d0b347a05d13bfa9dee36054cb261648))
+
 ## v4.0.2 (2025-10-14)
 
 ### Fix

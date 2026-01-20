@@ -1,15 +1,13 @@
 import datetime as dt
 import os
 import shutil
+import sqlite3
 import tempfile
 import uuid
 from pathlib import Path
 
 import pytest
-
-# from contextlib import chdir
 from contextlib_chdir import chdir
-from pydal2sql import generate_sql
 from testcontainers.postgres import PostgresContainer
 
 from src.typedal import TypeDAL, TypedField, TypedTable
@@ -334,3 +332,20 @@ def test_uuid_fields_sqlite(at_temp_dir):
         UUIDTable.insert(gid="not-a-uuid")
 
     assert '"gid" uuid NOT NULL' in UUIDTable._sql()
+
+
+def test_cache_migrate_disabled():
+    try:
+        os.environ["TYPEDAL_MIGRATE"] = "0"
+
+        db = TypeDAL("sqlite:memory")
+
+        assert db._migrate == False
+        with pytest.raises(sqlite3.OperationalError):
+            # should raise NotFound because migrate is disabled:
+            assert db.executesql("""
+            select * from typedal_cache;
+            """)
+
+    finally:
+        del os.environ["TYPEDAL_MIGRATE"]

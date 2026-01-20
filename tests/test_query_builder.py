@@ -2,6 +2,7 @@ import pytest
 from pydal.objects import Query
 
 from src.typedal import TypeDAL, TypedField, TypedTable, relationship
+from typedal import QueryBuilder
 
 db = TypeDAL("sqlite:memory")
 
@@ -13,7 +14,9 @@ class TestQueryTable(TypedTable):
     yet_another = TypedField(list[str], default=["something", "and", "other", "things"])
 
     relations = relationship(
-        list["TestRelationship"], condition=lambda self, other: self.id == other.querytable, join="left"
+        list["TestRelationship"],
+        condition=lambda self, other: self.id == other.querytable,
+        join="left",
     )
 
 
@@ -40,25 +43,6 @@ def test_query_type():
     assert isinstance(TestQueryTable.number < 3, Query)
     assert isinstance(TestQueryTable.number <= 3, Query)
     assert isinstance(TestQueryTable.number != 3, Query)
-
-
-"""
-SELECT "test_query_table"."id",
-       "test_query_table"."number",
-       "relations_8106139955393"."id",
-       "relations_8106139955393"."name",
-       "relations_8106139955393"."value",
-       "relations_8106139955393"."querytable"
-FROM "test_query_table"
-         LEFT JOIN "test_relationship" AS "relations_8106139955393"
-                   ON ("relations_8106139955393"."querytable" = "test_query_table"."id")
-WHERE ("test_query_table"."id" IN (SELECT "test_query_table"."id"
-                                   FROM "test_query_table"
-                                   WHERE ("test_query_table"."id" > 0)
-                                   ORDER BY "test_query_table"."id"
-                                   LIMIT 3 OFFSET 0))
-ORDER BY "test_query_table"."number" DESC;
-"""
 
 
 def _setup_data():
@@ -528,6 +512,37 @@ def test_collect_with_extra_fields():
 
     with pytest.raises(HTTP):
         TestRelationship.where(TestRelationship.id == 3245892384).first_or_fail(HTTP(404))
+
+
+def test_minimal_functionality_on_pydal_style_tables():
+    _setup_data()
+
+    qb1 = TestQueryTable.where(number=2).collect()
+    qb2 = QueryBuilder(db.test_query_table).where(number=2).collect()
+
+    assert len(qb1) == len(qb2)
+    assert qb1.first().id == qb2.first().id
+
+    assert qb2
+    assert len(qb2) == 1
+
+
+def test_before_after_collect():
+    _setup_data()
+
+    def print_query(qb: QueryBuilder):
+        print("going to run", qb.to_sql())
+
+    def print_duration(_qb: QueryBuilder, rows, _raw):
+        print(
+            "took",
+            rows.metadata["select_duration"],
+        )
+
+    db._before_collect.append(print_query)
+    db._after_collect.append(print_duration)
+
+    TestQueryTable.all()
 
 
 def test_groupby_basic():

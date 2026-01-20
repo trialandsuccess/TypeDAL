@@ -1,4 +1,4 @@
-# 7. Mixins
+# 8. Mixins
 
 Mixins allow you to encapsulate reusable fields and behaviors that can be easily
 added to your database models. On this page, we'll walk through the usage
@@ -40,7 +40,7 @@ from typedal.mixins import SlugMixin
 
 
 # Define your table with SlugMixin, specifying the field to base the slug on
-class MyTable(TypedTable, SlugMixin, slug_field="title"): # optionally add `slug_suffix` here.
+class MyTable(TypedTable, SlugMixin, slug_field="title"):
     title: str  # Assuming 'title' is a field in your table
     # Define other fields here
 
@@ -59,12 +59,14 @@ To create your own mixins for additional functionality, follow these steps:
 Here's a basic example of how to create and use a custom mixin:
 
 ```python
-from typedal import TypeDAL, TypedTable
-from typedal.mixins import Mixin
+import datetime as dt
+import typing as t
+
+from typedal import TypeDAL, TypedTable, QueryBuilder
+from typedal.mixins import Mixin, TimestampsMixin
 from typedal.fields import UploadField
 from py4web import URL
 from yatl import IMG
-
 
 
 class HasImageMixin(Mixin):
@@ -73,7 +75,7 @@ class HasImageMixin(Mixin):
     """
 
     # Define your mixin fields here
-    image: UploadField(uploadfolder="/shared_uploads", autodelete=True, notnull=False)
+    image = UploadField(uploadfolder="/shared_uploads", autodelete=True, notnull=False)
 
     def img(self, **options) -> IMG:
         """
@@ -90,16 +92,32 @@ class HasImageMixin(Mixin):
         super().__on_define__(db)
         # Add any custom initialization logic here
 
-# Now you can use CustomMixin in your table definitions along with other mixins or base classes.
 
-class Article(TypedTable, HasImageMixin):
+# Now you can use HasImageMixin in your table definitions along with other mixins or base classes.
+
+class Article(TypedTable, TimestampsMixin, HasImageMixin):
     title: str
     
-# ... insert article row with image here ... #
+    # this could also be a class method of Timestamps Mixin:
+    @classmethod
+    def recently_updated(cls, hours: int = 24) -> QueryBuilder[t.Self]:
+        """Return records updated in the last N hours."""
+        cutoff = dt.datetime.now() - dt.timedelta(hours=hours)
+        return QueryBuilder(cls).where(cls.updated_at >= cutoff)
 
-Article(id=1).img() # -> <img src=... />
+# Retrieve a record and use the custom method
+article = Article(id=1)
+article.img()  # -> <img src=... />
 
+# Use the classmethod to get recently updated articles
+recent_articles = (
+    Article.recently_updated(hours=12)
+    .where(published=True)
+    .collect()
+)
 ```
+
+> **Note:** The `img()` example uses py4web utilities (URL, IMG), but the mixin itself works identically in any setup.
 
 By using these mixins, you can enhance the functionality of your models in a modular and reusable manner, saving you
 time and effort in your development process.

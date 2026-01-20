@@ -20,6 +20,8 @@ if t.TYPE_CHECKING:
     from edwh_migrate import Config as MigrateConfig
     from pydal2sql.typer_support import Config as P2SConfig
 
+LazyPolicy = t.Literal["forbid", "warn", "ignore", "tolerate", "allow"]
+
 
 class TypeDALConfig(TypedConfig):
     """
@@ -34,6 +36,7 @@ class TypeDALConfig(TypedConfig):
     pool_size: int = 0
     pyproject: str
     connection: str = "default"
+    lazy_policy: LazyPolicy = "tolerate"
 
     # pydal2sql:
     input: str = ""

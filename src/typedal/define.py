@@ -65,7 +65,7 @@ class TableDefinitionBuilder:
             k: instanciate(v, True) for k, v in annotations.items() if is_typed_field(v)
         }
 
-        relationships: dict[str, type[Relationship[t.Any]]] = filter_out(annotations, Relationship)
+        relationships: dict[str, type[Relationship[t.Any]]] = filter_out(annotations, Relationship)  # type: ignore
         fields = {fname: self.to_field(fname, ftype) for fname, ftype in annotations.items()}
 
         other_kwargs = kwargs | {
@@ -77,7 +77,7 @@ class TableDefinitionBuilder:
             setattr(cls, key, clone)
             typedfields[key] = clone
 
-        relationships = filter_out(full_dict, Relationship) | relationships | filter_out(other_kwargs, Relationship)
+        relationships = filter_out(full_dict, Relationship) | relationships | filter_out(other_kwargs, Relationship)  # type: ignore
 
         reference_field_keys = [
             k for k, v in fields.items() if str(v.type).split(" ")[0] in ("list:reference", "reference")
@@ -109,8 +109,9 @@ class TableDefinitionBuilder:
             warnings.warn("db.define used without inheriting TypedTable. This could lead to strange problems!")
 
         if not tablename.startswith("typedal_") and cache_dependency:
-            from .caching import _remove_cache
+            from .caching import _remove_cache, remove_cache_for_table
 
+            table._after_insert.append(lambda _row, _id: remove_cache_for_table(tablename))
             table._before_update.append(lambda s, _: _remove_cache(s, tablename))
             table._before_delete.append(lambda s: _remove_cache(s, tablename))
 

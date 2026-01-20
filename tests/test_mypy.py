@@ -1,4 +1,3 @@
-import sys
 import typing
 
 import pydal.objects
