@@ -6,10 +6,11 @@ nav:
   - 2. Defining Tables: 2_defining_tables.md
   - 3. Building Queries: 3_building_queries.md
   - 4. Relationships: 4_relationships.md
-  - 5. py4web: 5_py4web.md
+  - 5. py4web and web2py: 5_py4web.md
   - 6. Migrations: 6_migrations.md
   - 7. Configuration: 7_configuration.md
   - 8. Mixins: 8_mixins.md
+  - 9. Function Memoization: 9_memoization.md
 extra:
   version:
     default: stable

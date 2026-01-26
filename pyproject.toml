@@ -63,6 +63,7 @@ all = [
 dev = [
     # build:
     "hatch",
+    "ewok",
     # test:
     "su6[all]>=1.9.0",
     "python-semantic-release < 8",
