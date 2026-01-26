@@ -528,7 +528,15 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
 
         query, select_args, select_kwargs = self._before_query(metadata, add_id=add_id)
 
-        return db(query).select(*select_args, **select_kwargs)
+        for fn_before in db._before_execute:
+            fn_before(self)
+
+        rows = db(query).select(*select_args, **select_kwargs)
+
+        for fn_after in db._after_execute:
+            fn_after(self, rows)
+
+        return rows
 
     def collect(
         self,

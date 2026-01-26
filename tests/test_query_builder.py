@@ -546,7 +546,7 @@ def test_minimal_functionality_on_pydal_style_tables():
     assert len(qb2) == 1
 
 
-def test_before_after_collect():
+def test_before_after_collect(capsys):
     _setup_data()
 
     def print_query(qb: QueryBuilder):
@@ -562,3 +562,13 @@ def test_before_after_collect():
     db._after_collect.append(print_duration)
 
     TestQueryTable.all()
+    captured = capsys.readouterr()
+    assert "going to run" in captured.out
+    assert "took" in captured.out
+
+    db._before_execute.append(lambda *_: print("BEFORE EXECUTE"))
+    db._after_execute.append(lambda *_: print("AFTER EXECUTE"))
+    TestQueryTable.select().execute()
+    captured = capsys.readouterr()
+    assert "BEFORE EXECUTE" in captured.out
+    assert "AFTER EXECUTE" in captured.out

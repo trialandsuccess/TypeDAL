@@ -572,16 +572,45 @@ def memoize(
         return cached, "cached"
     # Cache miss - compute result
 
-    def track_collect(_qb: "QueryBuilder[t.Any]", _: TypedRows[t.Any], raw: Rows) -> None:
+    def track_execute(qb: "QueryBuilder[t.Any]", raw: Rows):
         # find dependant table+id combinations, includes relationships:
         deps.update(_determine_dependencies_auto(raw))
 
+        # tables: qb.model;
+        # something with qb.relationships
+        # something with qb.select_args
+
+        related_tables = (
+            {
+                # original table
+                str(qb.model)
+            }
+            | {
+                # other tables in select()
+                _get_table_name(arg)
+                for arg in qb.select_args
+            }
+            | {
+                # other tables in relationships
+                str(r.table)
+                for r in qb.relationships.values()
+            }
+        )
+
+        # mark dependency for every relevant table in this query without id:
+        deps.update({(table, 0) for table in related_tables})
+
+    def track_collect(qb: "QueryBuilder[t.Any]", _: TypedRows[t.Any], raw: Rows) -> None:
+        return track_execute(qb, raw)
+
     # hooks every .collect() to track extra dependencies
     db._after_collect.append(track_collect)
+    db._after_execute.append(track_execute)
     try:
         result = func(*args, **kwargs)
     finally:
         db._after_collect.remove(track_collect)
+        db._after_execute.remove(track_execute)
 
     # Save to cache
     if isinstance(ttl, dt.datetime):

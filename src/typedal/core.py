@@ -147,10 +147,12 @@ class TypeDAL(pydal.DAL):
     _config: TypeDALConfig
     _builder: TableDefinitionBuilder
 
-    # similar to the insert/update/delete hooks at table-level but for .collect:
+    # similar to the insert/update/delete hooks at table-level but for .collect/.execute:
     # note: return values are ignored!
     _before_collect: list[t.Callable[["QueryBuilder[t.Any]"], None]]
     _after_collect: list[t.Callable[["QueryBuilder[t.Any]", "TypedRows[t.Any]", "Rows"], None]]
+    _before_execute: list[t.Callable[["QueryBuilder[t.Any]"], None]]
+    _after_execute: list[t.Callable[["QueryBuilder[t.Any]", "Rows"], None]]
 
     def __init__(
         self,
@@ -207,6 +209,8 @@ class TypeDAL(pydal.DAL):
 
         self._before_collect = []
         self._after_collect = []
+        self._before_execute = []
+        self._after_execute = []
 
         if config.folder:
             Path(config.folder).mkdir(exist_ok=True)

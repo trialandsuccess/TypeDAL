@@ -774,6 +774,51 @@ def test_memoize_nested_dependencies2():
     assert status == "cached"
 
 
+def test_memoize_with_empty_table():
+    """
+    Test memoization when the table has no data yet.
+    Ensures cache invalidation works correctly when data is added later.
+    """
+    # (no setup data needed since we'll truncate anyway)
+
+    # Clean up - ensure table is empty
+    for table in db.tables:
+        db[table].truncate()
+
+    db.commit()
+
+    # Memoize a function with empty table
+    def get_all_users() -> list[str]:
+        users = User.join().select(User.name).execute()  # also tests execute instead of collect
+        return [user[User.name] for user in users]
+
+    # First call with empty table
+    result1, status1 = db.memoize(get_all_users)
+    assert status1 == "fresh"
+    assert result1 == []
+
+    # Second call - should be cached
+    result2, status2 = db.memoize(get_all_users)
+    assert status2 == "cached"
+    assert result2 == []
+
+    # Now insert data into the empty table
+    role = Role.insert(name="admin")
+    User.insert(name="First User", roles=[role], main_role=role, extra_roles=[])
+    db.commit()
+
+    # Third call - cache should be invalidated due to insert
+    result3, status3 = db.memoize(get_all_users)
+    assert status3 == "fresh", "Cache should be invalidated after insert into previously empty table"
+    assert len(result3) == 1
+    assert "First User" in result3
+
+    # Fourth call - should be cached again
+    result4, status4 = db.memoize(get_all_users)
+    assert status4 == "cached"
+    assert result3 == result4
+
+
 def test_illegal():
     with pytest.raises(ValueError), pytest.warns(UserWarning):
 
