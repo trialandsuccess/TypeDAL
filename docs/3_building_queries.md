@@ -186,6 +186,8 @@ In order to enable this functionality, TypeDAL adds a `before update` and `befor
 which manages the dependencies. You can disable this behavior by passing `cache_dependency=False` to `db.define`.
 Be aware doing this might break some caching functionality!
 
+**Note:** For caching function results (instead of just query results), see [9. Function Memoization](./9_memoization.md).
+
 ### Collecting
 
 The Query Builder has a few operations that don't return a new builder instance:

@@ -121,3 +121,7 @@ recent_articles = (
 
 By using these mixins, you can enhance the functionality of your models in a modular and reusable manner, saving you
 time and effort in your development process.
+
+---
+
+Looking to cache expensive function results? Head to [9. Function Memoization](./9_memoization.md) to learn about `db.memoize()`.

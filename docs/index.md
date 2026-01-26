@@ -8,3 +8,4 @@
 6. [Migrations](./6_migrations.md)
 7. [Advanced Configuration](./7_configuration.md)
 8. [Mixins](./8_mixins.md)
+9. [Function Memoization](./9_memoization.md)
