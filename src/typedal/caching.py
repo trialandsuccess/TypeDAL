@@ -577,30 +577,15 @@ def memoize(
         return cached, "cached"
     # Cache miss - compute result
 
-    def track_execute(qb: "QueryBuilder[t.Any]", raw: Rows):
+    def track_execute(_qb: "QueryBuilder[t.Any]", raw: Rows):
         # find dependant table+id combinations, includes relationships:
         deps.update(_determine_dependencies_auto(raw))
 
-        # tables: qb.model;
-        # something with qb.relationships
-        # something with qb.select_args
-
-        related_tables = (
-            {
-                # original table
-                str(qb.model)
-            }
-            | {
-                # other tables in select()
-                _get_table_name(arg)
-                for arg in qb.select_args
-            }
-            | {
-                # other tables in relationships
-                str(r.table)
-                for r in qb.relationships.values()
-            }
-        )
+        related_tables = {
+            # skip qb.select, just look at the final fields in the raw data:
+            _get_table_name(field)
+            for field in raw.fields
+        }
 
         # mark dependency for every relevant table in this query without id:
         deps.update({(table, 0) for table in related_tables})

@@ -789,7 +789,7 @@ def test_memoize_with_empty_table():
 
     # Memoize a function with empty table
     def get_all_users() -> list[str]:
-        users = User.join().select(User.name).execute()  # also tests execute instead of collect
+        users = User.join().select("user.name").execute()  # also tests execute instead of collect
         return [user[User.name] for user in users]
 
     # First call with empty table
