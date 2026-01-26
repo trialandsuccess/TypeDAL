@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.4.2 (2026-01-26)
+
+### Fix
+
+* **memoize:** Simplify `related_tables` logic by just looking at the raw Rows.fields ([`3dee337`](https://github.com/trialandsuccess/TypeDAL/commit/3dee3379a2bbcd493be273344303aff0aff069a7))
+
 ## v4.4.1 (2026-01-26)
 
 ### Fix
