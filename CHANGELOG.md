@@ -2,6 +2,16 @@
 
 <!--next-version-placeholder-->
 
+## v4.4.1 (2026-01-26)
+
+### Fix
+
+* Test and support memoize with empty table and .execute() ([`76ea39b`](https://github.com/trialandsuccess/TypeDAL/commit/76ea39bf4f8beb2ad303e66b69ad01780359ad14))
+
+### Documentation
+
+* Add chapter 9 about `memoize` ([`e23a8c8`](https://github.com/trialandsuccess/TypeDAL/commit/e23a8c80ee60a5adb2d32c6d05fb398d5d703116))
+
 ## v4.4.0 (2026-01-20)
 
 ### Feature
