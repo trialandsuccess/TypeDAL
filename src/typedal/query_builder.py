@@ -70,8 +70,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         """
         self.model = model
         table = self._ensure_table_defined()
-
-        default_query = table.id > 0
+        default_query: Query = table.id > 0
         self.query = add_query or default_query
         self.select_args = select_args or []
         self.select_kwargs = select_kwargs or {}
@@ -111,7 +110,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         Querybuilder is truthy if it has t.Any conditions.
         """
         table = self._ensure_table_defined()
-        default_query = table.id > 0
+        default_query: Query = table.id > 0
         return any(
             [
                 self.query != default_query,
@@ -182,6 +181,31 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
             QueryBuilder: A new QueryBuilder instance with the ordering applied.
         """
         return self.select(orderby=fields)
+
+    def groupby(self, *fields: t.Any) -> "QueryBuilder[T_MetaInstance]":
+        """
+        Group the query results by specified fields.
+
+        Args:
+            fields: Field(s) to group by (e.g., Table.column)
+
+        Returns:
+            QueryBuilder: A new QueryBuilder instance with grouping applied.
+        """
+        groupby_value = fields[0] if len(fields) == 1 else fields
+        return self.select(groupby=groupby_value)
+
+    def having(self, condition: t.Any) -> "QueryBuilder[T_MetaInstance]":
+        """
+        Filter grouped query results based on aggregate conditions.
+
+        Args:
+            condition: Query condition for filtering groups (e.g., Team.id.count() > 0)
+
+        Returns:
+            QueryBuilder: A new QueryBuilder instance with having condition applied.
+        """
+        return self.select(having=condition)
 
     def where(
         self,
@@ -524,7 +548,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         Raw version of .collect which only executes the SQL, without performing t.Any magic afterwards.
         """
         db = self._get_db()
-        metadata = self.metadata.copy()
+        metadata: Metadata = self.metadata.copy()
 
         query, select_args, select_kwargs = self._before_query(metadata, add_id=add_id)
 
@@ -560,7 +584,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         for fn_before in db._before_collect:
             fn_before(self)
 
-        metadata = self.metadata.copy()
+        metadata: Metadata = self.metadata.copy()
 
         if metadata.get("cache", {}).get("enabled") and (result := self._collect_cached(metadata)):
             return result

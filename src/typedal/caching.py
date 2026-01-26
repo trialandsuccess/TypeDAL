@@ -12,6 +12,7 @@ import dill  # nosec
 from pydal.objects import Field, Rows, Set
 
 from .fields import TypedField
+from .helpers import throw
 from .rows import TypedRows
 from .tables import TypedTable
 from .types import CacheStatus, Query
@@ -177,8 +178,12 @@ def clear_cache() -> None:
 
     Immediately commits
     """
+    db: TypeDAL = _TypedalCache._db or throw(
+        RuntimeError("@define or db.define is not called on typedal caching classes yet!")
+    )
+
     _TypedalCache.truncate("RESTART IDENTITY CASCADE")
-    _TypedalCache._db.commit()
+    db.commit()
 
 
 def clear_expired() -> int:

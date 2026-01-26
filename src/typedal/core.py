@@ -4,6 +4,7 @@ Core functionality of TypeDAL.
 
 from __future__ import annotations
 
+import datetime as dt
 import sys
 import typing as t
 import warnings

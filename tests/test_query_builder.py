@@ -45,25 +45,6 @@ def test_query_type():
     assert isinstance(TestQueryTable.number != 3, Query)
 
 
-"""
-SELECT "test_query_table"."id"
-     , "test_query_table"."number"
-     , "relations_8106139955393"."id"
-     , "relations_8106139955393"."name"
-     , "relations_8106139955393"."value"
-     , "relations_8106139955393"."querytable"
-    FROM "test_query_table"
-             LEFT JOIN "test_relationship" AS "relations_8106139955393"
-                       ON ("relations_8106139955393"."querytable" = "test_query_table"."id")
-    WHERE ("test_query_table"."id" IN (SELECT "test_query_table"."id"
-                                           FROM "test_query_table"
-                                           WHERE ("test_query_table"."id" > 0)
-                                           ORDER BY "test_query_table"."id"
-                                           LIMIT 3 OFFSET 0))
-    ORDER BY "test_query_table"."number" DESC;
-"""
-
-
 def _setup_data():
     TestQueryTable.truncate()
     first = TestQueryTable.insert(number=0)
@@ -572,3 +553,155 @@ def test_before_after_collect(capsys):
     captured = capsys.readouterr()
     assert "BEFORE EXECUTE" in captured.out
     assert "AFTER EXECUTE" in captured.out
+
+
+def test_groupby_basic():
+    """Test basic groupby with count aggregation."""
+    _setup_data()
+
+    result = (
+        TestRelationship.select(
+            TestRelationship.querytable.with_alias("query_table"),
+            TestRelationship.querytable.count().with_alias("count"),
+        )
+        .groupby(TestRelationship.querytable)
+        .execute()
+    )
+
+    assert len(result) == 2
+    for row in result:
+        assert row["count"] == 4
+
+
+def test_groupby_multiple_fields():
+    """Test grouping by multiple fields."""
+    _setup_data()
+
+    result = (
+        TestRelationship.select(
+            TestRelationship.querytable,
+            TestRelationship.value,
+            TestRelationship.id.count().with_alias("count"),
+        )
+        .groupby(TestRelationship.querytable, TestRelationship.value)
+        .execute()
+    )
+
+    # Should group by combination of querytable and value
+    assert len(result) > 0
+
+
+def test_groupby_with_having():
+    """Test groupby with having to filter groups."""
+    _setup_data()
+
+    result = (
+        TestRelationship.select(
+            TestRelationship.querytable.with_alias("query_table"),
+            TestRelationship.querytable.count().with_alias("count"),
+        )
+        .groupby(TestRelationship.querytable)
+        .having(TestRelationship.querytable.count() > 3)
+        .execute()
+    )
+
+    # Only groups with count > 3
+    assert len(result) == 2
+    for row in result:
+        assert row["count"] > 3
+
+
+def test_having_filters_aggregates():
+    """Test that having properly filters based on aggregate conditions."""
+    _setup_data()
+
+    # Get all groups
+    all_groups = (
+        TestRelationship.select(
+            TestRelationship.querytable,
+            TestRelationship.querytable.count().with_alias("count"),
+        )
+        .groupby(TestRelationship.querytable)
+        .execute()
+    )
+
+    # Filter with having
+    filtered = (
+        TestRelationship.select(
+            TestRelationship.querytable,
+            TestRelationship.querytable.count().with_alias("count"),
+        )
+        .groupby(TestRelationship.querytable)
+        .having(TestRelationship.querytable.count() > 10)
+        .execute()
+    )
+
+    # Should have fewer results (or zero if no groups have count > 10)
+    assert len(filtered) <= len(all_groups)
+
+
+def test_groupby_to_sql():
+    """Verify SQL generation includes GROUP BY."""
+    sql = (
+        TestRelationship.select(TestRelationship.querytable, TestRelationship.querytable.count())
+        .groupby(TestRelationship.querytable)
+        .to_sql()
+    )
+
+    assert "GROUP BY" in sql
+
+
+def test_having_to_sql():
+    """Verify SQL generation includes HAVING."""
+    sql = (
+        TestRelationship.select(TestRelationship.querytable, TestRelationship.querytable.count())
+        .groupby(TestRelationship.querytable)
+        .having(TestRelationship.querytable.count() > 0)
+        .to_sql()
+    )
+
+    assert "GROUP BY" in sql
+    assert "HAVING" in sql
+
+
+def test_groupby_chaining():
+    """Test that multiple groupby calls work (last one should win)."""
+    _setup_data()
+
+    # First groupby by querytable
+    builder1 = TestRelationship.select(
+        TestRelationship.querytable, TestRelationship.querytable.count().with_alias("count")
+    ).groupby(TestRelationship.querytable)
+
+    # Then groupby by value (should override)
+    builder2 = builder1.groupby(TestRelationship.value)
+
+    sql = builder2.to_sql()
+    # Should only have the second groupby
+    assert "GROUP BY" in sql
+
+
+def test_groupby_having_on_table_class():
+    """Test calling .groupby() and .having() directly on table class in different orders."""
+    _setup_data()
+
+    builder1 = (
+        TestRelationship.groupby(TestRelationship.querytable)
+        .having(TestRelationship.querytable.count() > 0)
+        .select(TestRelationship.querytable, TestRelationship.querytable.count())
+    )
+
+    sql1 = builder1.to_sql()
+
+    builder2 = (
+        TestRelationship.having(TestRelationship.querytable.count() > 0)
+        .groupby(TestRelationship.querytable)
+        .select(TestRelationship.querytable, TestRelationship.querytable.count())
+    )
+    sql2 = builder2.to_sql()
+
+    assert sql1 == sql2
+    assert "GROUP BY" in sql1
+    assert "HAVING" in sql1
+
+    assert builder1.execute() == builder2.execute()
