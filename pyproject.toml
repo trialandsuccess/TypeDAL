@@ -29,7 +29,7 @@ classifiers = [
 dependencies = [
     "pydal >= 20251012.3", # core
     "dill < 1", # caching
-    "configuraptor >= 1.27.1, < 2", # config
+    "configuraptor >= 2.0.1, < 3", # config
     "Configurable-JSON < 2", # json dumping
     "python-slugify < 9",
     "legacy-cgi; python_version >= '3.13'",

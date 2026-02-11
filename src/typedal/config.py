@@ -3,10 +3,8 @@ TypeDAL can be configured by a combination of pyproject.toml (static), env (dyna
 """
 
 import os
-import re
 import typing as t
 import warnings
-from collections import defaultdict
 from pathlib import Path
 
 import tomli
@@ -15,6 +13,8 @@ from configuraptor.helpers import find_pyproject_toml
 from dotenv import dotenv_values, find_dotenv
 
 from .types import AnyDict
+
+from configuraptor.helpers import expand_env_vars_into_toml_values
 
 if t.TYPE_CHECKING:
     from edwh_migrate import Config as MigrateConfig
@@ -242,88 +242,6 @@ def transform(data: AnyDict, prop: str) -> bool:
         data[prop] = fn(data)
         return True
     return False
-
-
-def expand_posix_vars(posix_expr: str, context: dict[str, str]) -> str:
-    """
-    Replace case-insensitive POSIX and Docker Compose-like environment variables in a string with their values.
-
-    Args:
-        posix_expr (str): The input string containing case-insensitive POSIX or Docker Compose-like variables.
-        context (dict): A dictionary containing variable names and their respective values.
-
-    Returns:
-        str: The string with replaced variable values.
-
-    See Also:
-        https://stackoverflow.com/questions/386934/how-to-evaluate-environment-variables-into-a-string-in-python
-        and ChatGPT
-    """
-    env = defaultdict(lambda: "")
-    for key, value in context.items():
-        env[key.lower()] = value
-
-    # Regular expression to match "${VAR:default}" pattern
-    pattern = r"\$\{([^}]+)\}"
-
-    def replace_var(match: re.Match[t.Any]) -> str:
-        var_with_default = match.group(1)
-        var_name, default_value = var_with_default.split(":") if ":" in var_with_default else (var_with_default, "")
-        return env.get(var_name.lower(), default_value)
-
-    return re.sub(pattern, replace_var, posix_expr)
-
-
-def expand_env_vars_into_toml_values(toml: AnyDict, env: AnyDict) -> None:
-    """
-    Recursively expands POSIX/Docker Compose-like environment variables in a TOML dictionary.
-
-    This function traverses a TOML dictionary and expands POSIX/Docker Compose-like
-    environment variables (${VAR:default}) using values provided in the 'env' dictionary.
-    It performs in-place modification of the 'toml' dictionary.
-
-    Args:
-        toml (dict): A TOML dictionary with string values possibly containing environment variables.
-        env (dict): A dictionary containing environment variable names and their respective values.
-
-    Returns:
-        None: The function modifies the 'toml' dictionary in place.
-
-    Notes:
-        The function recursively traverses the 'toml' dictionary. If a value is a string or a list of strings,
-        it attempts to substitute any environment variables found within those strings using the 'env' dictionary.
-
-    Example:
-        toml_data = {
-            'key1': 'This has ${ENV_VAR:default}',
-            'key2': ['String with ${ANOTHER_VAR}', 'Another ${YET_ANOTHER_VAR}']
-        }
-        environment = {
-            'ENV_VAR': 'replaced_value',
-            'ANOTHER_VAR': 'value_1',
-            'YET_ANOTHER_VAR': 'value_2'
-        }
-
-        expand_env_vars_into_toml_values(toml_data, environment)
-        # 'toml_data' will be modified in place:
-        # {
-        #     'key1': 'This has replaced_value',
-        #     'key2': ['String with value_1', 'Another value_2']
-        # }
-    """
-    if not toml or not env:
-        return
-
-    for key, var in toml.items():
-        if isinstance(var, dict):
-            expand_env_vars_into_toml_values(var, env)
-        elif isinstance(var, list):
-            toml[key] = [expand_posix_vars(_, env) for _ in var if isinstance(_, str)]
-        elif isinstance(var, str):
-            toml[key] = expand_posix_vars(var, env)
-        else:
-            # nothing to substitute
-            continue
 
 
 def load_config(
