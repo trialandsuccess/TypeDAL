@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.4.3 (2026-02-11)
+
+### Fix
+
+* Move env shell-style expansion to configuraptor, improved functionality using expandvars instead of custom implementation ([`8b41b91`](https://github.com/trialandsuccess/TypeDAL/commit/8b41b91d55c8893d5ce15c2decf6daa855fa230b))
+
 ## v4.4.2 (2026-01-26)
 
 ### Fix
