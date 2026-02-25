@@ -19,7 +19,7 @@ from src.typedal.caching import (
 from src.typedal.serializers import as_json
 from typedal import TypedRows
 
-db = TypeDAL("sqlite:memory")
+db = TypeDAL("sqlite:memory", lazy_policy="warn")
 
 
 class TaggableMixin:
@@ -336,6 +336,7 @@ def test_reprs():
     empty = Relationship("article")
 
     assert empty.get_table(db) == Article
+    assert empty.get_db() is None
 
     db.define_table("new")
     empty = Relationship("new")
@@ -345,8 +346,10 @@ def test_reprs():
 
     empty = Relationship(db.new)
     assert empty.get_table(db) == db.new
+    assert empty.get_db() == db
 
     assert empty.get_table_name() == "new"
+    assert User.bestie.get_db() == db
 
     relation = Article.join("author").relationships["author"]
 

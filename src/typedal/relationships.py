@@ -37,6 +37,7 @@ class Relationship(t.Generic[To_Type]):
     nested: dict[str, t.Self]
     explicit: bool
     name: str | None = None  # set by __set_name__
+    _owner: t.Type["TypedTable"] | None = None
 
     def __init__(
         self,
@@ -120,6 +121,7 @@ class Relationship(t.Generic[To_Type]):
 
     def __set_name__(self, owner: t.Type["TypedTable"], name: str) -> None:
         """Called automatically when assigned to a class attribute."""
+        self._owner = owner
         self.name = name
 
     def get_table(self, db: "TypeDAL") -> t.Type["TypedTable"]:
@@ -145,7 +147,12 @@ class Relationship(t.Generic[To_Type]):
         Returns:
             TypeDAL | None: The database instance if it exists, or None otherwise.
         """
-        return getattr(self.table, "_db", None)
+        target = self.table
+
+        if isinstance(target, str) and (owner := self._owner):
+            target = owner
+
+        return getattr(target, "_db", None)
 
     @property
     def lazy(self) -> LazyPolicy:
