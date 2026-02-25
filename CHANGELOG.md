@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.4.4 (2026-02-25)
+
+### Fix
+
+* **relationship:** Ensure get_db() also works with forward references by looking at other table (owner) as fallback ([`17dd7b4`](https://github.com/trialandsuccess/TypeDAL/commit/17dd7b4273819f2edf6d427264ee1a81622ef597))
+
 ## v4.4.3 (2026-02-11)
 
 ### Fix
