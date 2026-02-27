@@ -2,6 +2,13 @@
 
 <!--next-version-placeholder-->
 
+## v4.4.5 (2026-02-27)
+
+### Fix
+
+* Add `Ref` type so you can do forward references in types, ([`3240a74`](https://github.com/trialandsuccess/TypeDAL/commit/3240a747a4dd63a887464c0a748c68907d38d7d0))
+* Pass known classes as namespace so `col: "ForwardRef"` works in 3.13 too ([`b655da8`](https://github.com/trialandsuccess/TypeDAL/commit/b655da812d7ea014b95adf73974ca301a6c42ca2))
+
 ## v4.4.4 (2026-02-25)
 
 ### Fix
