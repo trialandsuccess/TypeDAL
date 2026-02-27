@@ -133,13 +133,13 @@ class TableDefinitionBuilder:
         """Convert Python type annotation to pydal field type string."""
         ftype = t.cast(type, ftype_annotation)  # cast from Type to type to make mypy happy)
 
+        known_classes = {table.__name__: table for table in self.class_map.values()}
+
         if isinstance(ftype, str):
             # extract type from string
-            ftype = resolve_annotation(ftype)
+            ftype = resolve_annotation(ftype, namespace=known_classes)
 
         if isinstance(ftype, ForwardRef):
-            known_classes = {table.__name__: table for table in self.class_map.values()}
-
             ftype = evaluate_forward_reference(ftype, namespace=known_classes)
 
         if mapping := BASIC_MAPPINGS.get(ftype):

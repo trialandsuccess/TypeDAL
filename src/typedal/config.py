@@ -9,12 +9,10 @@ from pathlib import Path
 
 import tomli
 from configuraptor import TypedConfig, alias
-from configuraptor.helpers import find_pyproject_toml
+from configuraptor.helpers import expand_env_vars_into_toml_values, find_pyproject_toml
 from dotenv import dotenv_values, find_dotenv
 
 from .types import AnyDict
-
-from configuraptor.helpers import expand_env_vars_into_toml_values
 
 if t.TYPE_CHECKING:
     from edwh_migrate import Config as MigrateConfig
