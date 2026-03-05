@@ -9,3 +9,4 @@
 7. [Advanced Configuration](./7_configuration.md)
 8. [Mixins](./8_mixins.md)
 9. [Function Memoization](./9_memoization.md)
+10. [Advanced APIs](./10_advanced_apis.md)

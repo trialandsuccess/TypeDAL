@@ -55,7 +55,7 @@ noop = false
 ### Generating Migrations (pydal2sql)
 
 - **`input`**: Path to your TypeDAL table definitions file
-- **`output`**: Path to the generated migration `.py` fil
+- **`output`**: Path to the generated migration `.py` file
 - **`dialect`**: Database type: `sqlite`, `postgres`, `mysql`, etc. (if unclear from database uri)
 - **`magic`**: Insert missing variables to prevent crashes (default: `true`).
   See [pydal2sql docs](https://github.com/robinvandernoord/pydal2sql#configuration).

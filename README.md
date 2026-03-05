@@ -24,13 +24,49 @@ the underlying `db.define_table` pydal Tables.
   e.g. `rows: TypedRows[SomeTable] = db(...).select()`. When using the QueryBuilder, a `TypedRows` instance is returned
   by `.collect()`.
 
-Version 2.0 also introduces more ORM-like funcionality.
+Version 2.0 also introduces more ORM-like functionality.
 Most notably, a Typed Query Builder that sees your table classes as models with relationships to each other.
 See [3. Building Queries](https://typedal.readthedocs.io/en/stable/3_building_queries/) for more
 details.
 
+## Quickstart
+
+```bash
+uv pip install typedal
+# alternative:
+pip install typedal
+```
+
+```python
+from typedal import TypeDAL, TypedTable
+
+db = TypeDAL("sqlite:memory")
+# Alternatives:
+# db = TypeDAL("sqlite://storage.sqlite")
+# db = TypeDAL("postgres://user:password@localhost:5432/mydb")
+# db = TypeDAL("mysql://user:password@localhost:3306/mydb")
+# ...
+
+@db.define()
+class User(TypedTable):
+    name: str
+    age: int | None
+
+
+User.insert(name="Alice", age=30)
+adults = User.where(User.age >= 18).collect()
+print(adults.column("name"))  # ['Alice']
+```
+
+If you are new to TypeDAL, start with:
+
+1. [Getting Started](https://typedal.readthedocs.io/en/stable/1_getting_started/)
+2. [Defining Tables](https://typedal.readthedocs.io/en/stable/2_defining_tables/)
+3. [Building Queries](https://typedal.readthedocs.io/en/stable/3_building_queries/)
+4. [Relationships](https://typedal.readthedocs.io/en/stable/4_relationships/)
+
 ## CLI
-The Typedal CLI provides a convenient interface for generating SQL migrations for [edwh-migrate](https://github.com/educationwarehouse/migrate#readme)
+The TypeDAL CLI provides a convenient interface for generating SQL migrations for [edwh-migrate](https://github.com/educationwarehouse/migrate#readme)
 from PyDAL or TypeDAL configurations using [pydal2sql](https://github.com/robinvandernoord/pydal2sql). 
 It offers various commands to streamline database management tasks.
 
@@ -195,7 +231,7 @@ row = db.table_name(id=1)  # -> Any (Row)
 # all:
 all_rows = TableName.collect()  # or .all()
 # some:
-# order of select and where is interchangable here
+# order of select and where is interchangeable here
 rows = TableName.select(Tablename.id).where(TableName.id > 5).where(TableName.id < 50).collect()
 # one:
 row = TableName(id=1)  # or .where(...).first()
@@ -273,13 +309,10 @@ db.commit() # this is usually done automatically but sometimes you want to manua
 
 ## Caveats
 
-- This package depends heavily on the current implementation of annotations (which are computed when the class is
-  defined). PEP 563 (Postponed Evaluation of Annotations, accepted) aims to change this behavior (
-  and `from __future__ import annotations` already does) in a way that this module currently can not handle: all
-  annotations are converted to string representations. This makes it very hard to re-evaluate the annotation into the
-  original type, since the variable scope is lost (and thus references to variables or other classes are ambiguous or
-  simply impossible to find).
+- Some editors (notably PyCharm) cannot always distinguish class-level and instance-level access on the same symbol.
+  For example, `Model.somefield` is a field descriptor (query operations like `.belongs()`), while
+  `model.somefield` is the runtime value (for example `list[str]`).
 - `TypedField` limitations; Since pydal implements some magic methods to perform queries, some features of typing will
   not work on a typed field: `typing.Optional` or a union (`Field() | None`) will result in errors. The only way to make
   a typedfield optional right now, would be to set `required=False` as an argument yourself. This is also a reason
-  why `typing.get_type_hints` is not a solution for the first caveat.
+  why `typing.get_type_hints` is not a complete solution.

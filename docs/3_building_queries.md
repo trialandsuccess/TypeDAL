@@ -236,8 +236,8 @@ The Query Builder has a few operations that don't return a new builder instance:
 - first: get the first entity matching your query, possibly with relationships loaded (if .join was used)
 - first_or_fail: where `first` may return an empty result, this variant will raise an error if there are no results.
 - to_sql: get the SQL string that would run, useful for debugging, subqueries and other advanced SQL operations.
-- update: instead of selecting rows, update those matching the current query (see [Delete](#delete))
-- delete: instead of selecting rows, delete those matching the current query (see [Update](#update))
+- update: instead of selecting rows, update those matching the current query (see [Update](#update))
+- delete: instead of selecting rows, delete those matching the current query (see [Delete](#delete))
 
 Additionally, you can directly call `.all()`, `.collect()`, `.count()`, `.first()` on a model (e.g. `User.all()`).
 
@@ -264,7 +264,7 @@ person.update_record(name="New Name")
 db(db.person.name == "Old Name").delete()
 
 row = db.person(4)
-row.update_record(name="New Name")
+row.delete_record()
 
 # typedal:
 Person.where(id="Old Name").delete()  # via query builder
@@ -272,3 +272,8 @@ Person.where(id="Old Name").delete()  # via query builder
 person = Person(4)
 person.delete_record()
 ```
+
+---
+
+Need less-common query patterns (for example, using `QueryBuilder` on old-style pyDAL tables)?
+See [10. Advanced APIs](./10_advanced_apis.md).

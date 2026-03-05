@@ -40,7 +40,7 @@ Any keyword arguments you would pass to `db.define_table`, you can also pass to 
 | `Field('name', 'time')`                   | `name: datetime.time`        | `name: TypedField[datetime.time]`      | `name = TypedField(datetime.time)`        | `name = TimeField()`                 |
 | `Field('name', 'datetime')`               | `name: datetime.datetime`    | `name: TypedField[datetime.datetime]`  | `name = TypedField(datetime.datetime)`    | `name = DatetimeField()`             |
 | `Field('name', 'password')`               | ×                            | ×                                      | `name = TypedField(str, type="password")` | `name = PasswordField()`             |
-| `Field('name', 'upload')`                 | ×                            | ×                                      | `name = TypedField(str, type="upload)`    | `name = UploadField()`               |
+| `Field('name', 'upload')`                 | ×                            | ×                                      | `name = TypedField(str, type="upload")`   | `name = UploadField()`               |
 | `Field('name', 'reference <table>')`      | `name: Table`                | `name: TypedField[Table]`              | `name = TypedField(Table)`                | `name = ReferenceField('table')`     |
 | `Field('name', 'list:string')`            | `name: list[str]`            | `name: TypedField[list[str]]`          | `name = TypedField(list[str])`            | `name = ListStringField()`           |
 | `Field('name', 'list:integer')`           | `name: list[int]`            | `name: TypedField[list[int]]`          | `name = TypedField()`                     | `name = ListIntegerField()`          |
@@ -104,4 +104,4 @@ row.delete_record() # to trigger
 MyTable.where(...).delete() # to trigger
 ```
 
-"Now that we have some tables, it's time to actually query them! Let's go to [3. Building Queries](./3_building_queries.md) to learn how.
+Now that we have some tables, it's time to actually query them! Let's go to [3. Building Queries](./3_building_queries.md) to learn how.
