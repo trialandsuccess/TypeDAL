@@ -116,7 +116,7 @@ class HAS_UNIQUE_SLUG(IS_NOT_IN_DB):
         if not value.strip():
             raise ValidationError(self.translator(self.error_message))
 
-        (tablename, fieldname) = str(self.field).split(".")
+        tablename, fieldname = str(self.field).split(".")
         table = self.dbset.db[tablename]
         field = table[fieldname]
         query = field == value

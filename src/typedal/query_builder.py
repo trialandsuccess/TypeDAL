@@ -555,7 +555,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         for fn_before in db._before_execute:
             fn_before(self)
 
-        rows = db(query).select(*select_args, **select_kwargs)
+        rows: Rows = db(query).select(*select_args, **select_kwargs)
 
         for fn_after in db._after_execute:
             fn_after(self, rows)

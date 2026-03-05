@@ -8,7 +8,7 @@ from uuid import uuid4
 
 import pytest
 
-from src.typedal import Relationship, TypeDAL, TypedField, TypedTable, relationship
+from src.typedal import Relationship, TypeDAL, TypedField, TypedRows, TypedTable, relationship
 from src.typedal.caching import (
     _TypedalCache,
     _TypedalCacheDependency,
@@ -16,8 +16,8 @@ from src.typedal.caching import (
     clear_expired,
     remove_cache,
 )
+from src.typedal.relationships import Ref
 from src.typedal.serializers import as_json
-from typedal import TypedRows
 
 db = TypeDAL("sqlite:memory", lazy_policy="warn")
 
@@ -970,7 +970,8 @@ class Office(TypedTable):
     city_id: City
     company: "Company"
 
-    city_alternative = relationship(City, lambda office, city: office.city_id == city.id)
+    city = relationship(City, lambda office, city: office.city_id == city.id)
+    city_alternative = relationship(Ref["City"], lambda office, city: office.city_id == city.id)
 
 
 class Company(TypedTable):

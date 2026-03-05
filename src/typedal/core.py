@@ -106,27 +106,27 @@ def evaluate_forward_reference(
         return evaluate_forward_reference_314(fw_ref, namespace=namespace or {})
 
 
-def resolve_annotation_313(ftype: str) -> type:  # pragma: no cover
+def resolve_annotation_313(ftype: str, namespace: dict[str, type] | None = None) -> type:  # pragma: no cover
     """
     Resolve an annotation that's in string representation.
 
     Variant for Python 3.13
     """
     fw_ref: ForwardRef = t.get_args(t.Type[ftype])[0]
-    return evaluate_forward_reference(fw_ref)
+    return evaluate_forward_reference(fw_ref, namespace=namespace)
 
 
-def resolve_annotation_314(ftype: str) -> type:  # pragma: no cover
+def resolve_annotation_314(ftype: str, namespace: dict[str, type] | None = None) -> type:  # pragma: no cover
     """
     Resolve an annotation that's in string representation.
 
     Variant for Python 3.14 + using annotationlib
     """
     fw_ref = ForwardRef(ftype)
-    return evaluate_forward_reference(fw_ref)
+    return evaluate_forward_reference(fw_ref, namespace=namespace)
 
 
-def resolve_annotation(ftype: str) -> type:  # pragma: no cover
+def resolve_annotation(ftype: str, namespace: dict[str, type] | None = None) -> type:  # pragma: no cover
     """
     Resolve an annotation that's in string representation.
 
@@ -135,9 +135,9 @@ def resolve_annotation(ftype: str) -> type:  # pragma: no cover
     if sys.version_info.major != 3:
         raise EnvironmentError("Only python 3 is supported.")
     elif sys.version_info.minor <= 13:
-        return resolve_annotation_313(ftype)
+        return resolve_annotation_313(ftype, namespace=namespace)
     else:
-        return resolve_annotation_314(ftype)
+        return resolve_annotation_314(ftype, namespace=namespace)
 
 
 class TypeDAL(pydal.DAL):

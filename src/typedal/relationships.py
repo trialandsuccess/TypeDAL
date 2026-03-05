@@ -5,17 +5,18 @@ Contains base functionality related to Relationships.
 import inspect
 import typing as t
 import warnings
+from typing import ForwardRef
 
 import pydal.objects
 
 from .config import LazyPolicy
 from .constants import JOIN_OPTIONS
-from .core import TypeDAL
+from .core import TypeDAL, evaluate_forward_reference
 from .fields import TypedField
 from .helpers import extract_type_optional, looks_like, unwrap_type
 from .types import Condition, OnQuery, T_Field
 
-To_Type = t.TypeVar("To_Type")
+To_Type = t.TypeVar("To_Type", bound="TypedTable")
 
 
 # default lazy policy is defined at the TypeDAL() instance settings level
@@ -63,12 +64,22 @@ class Relationship(t.Generic[To_Type]):
         self.condition_and = condition_and
         self._lazy = lazy
 
+        if t.get_origin(_type) == Ref:
+            # unwrap Ref["City"] to ForwardRef("City") to be evaluated/stringified later on:
+            _type = t.get_args(_type)[0]
+
         if args := t.get_args(_type):
             self.table = unwrap_type(args[0])
             self.multiple = True
         else:
             self.table = t.cast(type[TypedTable], _type)
             self.multiple = False
+
+        if isinstance(self.table, ForwardRef):
+            try:
+                self.table = evaluate_forward_reference(self.table)
+            except Exception:
+                self.table = self.table.__forward_arg__
 
         if isinstance(self.table, str):
             self.table = TypeDAL.to_snake(self.table)
@@ -264,6 +275,18 @@ class Relationship(t.Generic[To_Type]):
             return fallback_value
 
 
+class Ref(t.Generic[To_Type]):
+    """
+    Type-level forward reference wrapper.
+
+    Allows writing:
+
+        relationship(Ref["User"])
+
+    so that type checkers resolve the inner type correctly.
+    """
+
+
 @t.overload
 def relationship(
     _type: type[list[To_Type]],
@@ -286,7 +309,7 @@ def relationship(
 
 @t.overload
 def relationship(
-    _type: t.Type[To_Type] | str,
+    _type: t.Type[To_Type] | str | t.Type[Ref[To_Type]],
     condition: Condition = None,
     *,
     join: t.Literal["inner"],
@@ -308,7 +331,7 @@ def relationship(
 
 @t.overload
 def relationship(
-    _type: t.Type[To_Type] | str,
+    _type: t.Type[To_Type] | str | t.Type[Ref[To_Type]],
     condition: Condition = None,
     join: JOIN_OPTIONS = None,
     on: OnQuery = None,
@@ -327,7 +350,7 @@ def relationship(
 
 
 def relationship(
-    _type: type[list[To_Type]] | t.Type[To_Type] | str,
+    _type: type[list[To_Type]] | t.Type[To_Type] | str | t.Type[Ref[To_Type]],
     condition: Condition = None,
     join: JOIN_OPTIONS = None,
     on: OnQuery = None,
