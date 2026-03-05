@@ -2,6 +2,16 @@
 
 <!--next-version-placeholder-->
 
+## v4.4.6 (2026-03-05)
+
+### Fix
+
+* Support .first() when using querybuilder on pydal-style tables. ([`d75f254`](https://github.com/trialandsuccess/TypeDAL/commit/d75f25440f0dcca51991bc047bf7ce8d479f942b))
+
+### Documentation
+
+* Make docs up-to-date with recently introduced features, improve reading flow for new users ([`64bb7be`](https://github.com/trialandsuccess/TypeDAL/commit/64bb7be220c5f1a5998940b320565b5a3dbca988))
+
 ## v4.4.5 (2026-02-27)
 
 ### Fix
