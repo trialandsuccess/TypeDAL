@@ -526,6 +526,14 @@ def test_minimal_functionality_on_pydal_style_tables():
     assert qb2
     assert len(qb2) == 1
 
+    first = QueryBuilder(db.test_query_table).where(number=2).first()
+    assert first
+    assert first.id == qb1.first().id
+
+    first_or_fail = QueryBuilder(db.test_query_table).where(number=2).first_or_fail()
+    assert first_or_fail
+    assert first_or_fail.id == qb1.first().id
+
 
 def test_before_after_collect(capsys):
     _setup_data()

@@ -1133,10 +1133,15 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
 
         Also adds paginate, since it would be a waste to select more rows than needed.
         """
-        if row := self.paginate(page=1, limit=1, verbose=verbose).first():
-            return self.model.from_row(row)
-        else:
+        row = self.paginate(page=1, limit=1, verbose=verbose).first()
+        if not row:
             return None
+
+        if not isinstance(self.model, TableMeta):
+            # old-style pydal table: keep pydal semantics and return raw Row
+            return row
+
+        return self.model.from_row(row)
 
     def _first(self) -> str:
         return self._paginate(page=1, limit=1)
