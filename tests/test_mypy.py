@@ -10,6 +10,7 @@ from typedal import (  # todo: why does src.typedal not work anymore?
     TypedRows,
     TypedTable,
 )
+from typedal.mixins import Mixin
 from typedal.types import CacheFn, CacheTuple, OpRow, Reference, Rows
 
 db = TypeDAL("sqlite:memory")
@@ -27,6 +28,14 @@ class OtherTable(TypedTable): ...
 
 
 class LaterDefine(TypedTable): ...
+
+
+class SearchMixin(Mixin): ...
+
+
+@db.define
+class SearchableTable(TypedTable, SearchMixin):
+    title: str
 
 
 old_style = db.define_table("old_table")
@@ -150,6 +159,21 @@ def mypy_test_query() -> None:
     reveal_type(MyTable.where().column(SomeField))  # R: builtins.list[Any]
     reveal_type(MyTable.where().column(MyTable.normal))  # R: builtins.list[builtins.str]
     reveal_type(MyTable.where().column(MyTable.fancy))  # R: builtins.list[builtins.str]
+
+
+@pytest.mark.mypy_testing
+def mypy_test_rows_render_overload() -> None:
+    rows = MyTable.where().collect()
+    reveal_type(rows.render())  # R: typing.Generator[tests.test_mypy.MyTable, None, None]
+    reveal_type(rows.render(1))  # R: tests.test_mypy.MyTable
+
+
+@pytest.mark.mypy_testing
+def mypy_test_mixin_typed_table_argument() -> None:
+    def using_mixin(table: type[SearchMixin]) -> None:
+        reveal_type(table.where())  # R: typedal.query_builder.QueryBuilder[tests.test_mypy.SearchMixin]
+
+    using_mixin(SearchableTable)
 
 
 @pytest.mark.mypy_testing

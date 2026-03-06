@@ -650,7 +650,7 @@ class TableMeta(type):
         return reorder_fields(cls._table, fields, keep_others=keep_others)
 
 
-class _TypedTable:
+class _TypedTable(metaclass=TableMeta):
     """
     This class is a final shared parent between TypedTable and Mixins.
 
@@ -660,6 +660,9 @@ class _TypedTable:
             generic 'T subclass of TypedTable'
         -> Setting 'TypedTable' as the parent for Mixin does not work at runtime (and works semi at type check time)
     """
+
+    # This class contains weird typing glue to dodge MRO headaches without losing editor/mypy table methods
+    # you can safely ignore it when changing runtime behavior; touch it only for typing/mypy issues
 
     id: "TypedField[int]"
 
@@ -671,6 +674,8 @@ class _TypedTable:
     _after_update: list[t.Callable[[Set, t.Self], t.Optional[bool]] | t.Callable[[Set, OpRow], t.Optional[bool]]]
     _before_delete: list[t.Callable[[Set], t.Optional[bool]]]
     _after_delete: list[t.Callable[[Set], t.Optional[bool]]]
+    _rows: tuple[Row, ...]
+    _with: list[str]
 
     @classmethod
     def __on_define__(cls, db: TypeDAL) -> None:
@@ -681,16 +686,49 @@ class _TypedTable:
         where you need a reference to the current database, which may not exist yet when defining the model.
         """
 
-    @classproperty
-    def _hooks(cls) -> dict[str, list[t.Callable[..., t.Optional[bool]]]]:
-        return {
-            "before_insert": cls._before_insert,
-            "after_insert": cls._after_insert,
-            "before_update": cls._before_update,
-            "after_update": cls._after_update,
-            "before_delete": cls._before_delete,
-            "after_delete": cls._after_delete,
-        }
+    def __new__(cls, *_args: t.Any, **_kwargs: t.Any) -> t.Self:
+        """
+        Shared constructor signature for typing.
+
+        TypedTable provides the concrete behavior; this base only keeps static typing happy
+        for generic classmethod flows that instantiate `self(...)`.
+        """
+        return super().__new__(cls)
+
+    # Add an abstract placeholder here only when generic code is typed against
+    # `T_MetaInstance` (bound to `_TypedTable`) and directly calls/accesses that member.
+    # If a member is only used on concrete `TypedTable` paths, it should stay on `TypedTable`.
+    def _ensure_matching_row(self) -> Row:
+        # Typed on the shared base so generic instance helpers can call into row access safely.
+        raise NotImplementedError  # pragma: no cover
+
+    def _update(self: t.Self, **fields: t.Any) -> t.Self:
+        # Declared here for generic update flows; real behavior is implemented in TypedTable.
+        raise NotImplementedError  # pragma: no cover
+
+    def _update_record(self: t.Self, **fields: t.Any) -> t.Self:
+        # Declared here for generic update flows; real behavior is implemented in TypedTable.
+        raise NotImplementedError  # pragma: no cover
+
+    def update_record(self: t.Self, **fields: t.Any) -> t.Self:
+        # Declared here for generic update flows; real behavior is implemented in TypedTable.
+        raise NotImplementedError  # pragma: no cover
+
+    def as_dict(self, *args: t.Any, **kwargs: t.Any) -> AnyDict:
+        # Broad signature keeps class/instance serialization overrides LSP-compatible.
+        raise NotImplementedError  # pragma: no cover
+
+    def render(self: t.Self, *fields: t.Any, **kwargs: t.Any) -> t.Self:
+        # Rows/QueryBuilder treat render as model-preserving, so this returns Self for typing.
+        raise NotImplementedError  # pragma: no cover
+
+    def __getitem__(self, key: str) -> t.Any:
+        # Relationship collection writes into model instances via dict-style access.
+        raise NotImplementedError  # pragma: no cover
+
+    def __setitem__(self, key: str, value: t.Any) -> None:
+        # Relationship collection writes into model instances via dict-style access.
+        raise NotImplementedError  # pragma: no cover
 
 
 class TypedTable(_TypedTable, metaclass=TableMeta):
@@ -702,7 +740,20 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
     _row: Row | None = None
     _rows: tuple[Row, ...] = ()
 
+    id: "TypedField[int]"
+
     _with: list[str]
+
+    @classproperty
+    def _hooks(cls) -> dict[str, list[t.Callable[..., t.Optional[bool]]]]:
+        return {
+            "before_insert": cls._before_insert,
+            "after_insert": cls._after_insert,
+            "before_update": cls._before_update,
+            "after_update": cls._after_update,
+            "before_delete": cls._before_delete,
+            "after_delete": cls._after_delete,
+        }
 
     def _setup_instance_methods(self) -> None:
         self.as_dict = self._as_dict  # type: ignore
@@ -990,7 +1041,7 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
     def _update_record(self: T_MetaInstance, **fields: t.Any) -> T_MetaInstance:
         row = self._ensure_matching_row()
         new_row = row.update_record(**fields)
-        self.update(**new_row)
+        self._update(**new_row)
         return self
 
     def update_record(self: T_MetaInstance, **fields: t.Any) -> T_MetaInstance:  # pragma: no cover

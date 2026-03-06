@@ -31,7 +31,7 @@ from .types import (
 
 if t.TYPE_CHECKING:
     # will be imported for real later:
-    from .tables import TypedTable
+    from .tables import TypedTable, _TypedTable
 
 
 ## general
@@ -79,7 +79,7 @@ class TypedField(Expression, t.Generic[T_Value]):  # pragma: no cover
         """
 
     @t.overload
-    def __get__(self, instance: None, owner: "t.Type[TypedTable]") -> "TypedField[T_Value]":  # pragma: no cover
+    def __get__(self, instance: None, owner: "t.Type[_TypedTable]") -> "TypedField[T_Value]":  # pragma: no cover
         """
         Table.field -> Field.
         """

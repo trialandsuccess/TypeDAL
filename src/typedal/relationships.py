@@ -184,7 +184,7 @@ class Relationship(t.Generic[To_Type]):
             return db._config.lazy_policy
 
         # conservative fallback:
-        return "warn"
+        return "warn"  # pragma: no cover
 
     def get_table_name(self) -> str:
         """

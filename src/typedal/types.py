@@ -35,7 +35,7 @@ except ImportError:
 # Internal references
 if t.TYPE_CHECKING:
     from .fields import TypedField
-    from .tables import TypedTable
+    from .tables import TypedTable, _TypedTable
 
 # ---------------------------------------------------------------------------
 # Aliases
@@ -297,7 +297,7 @@ T = t.TypeVar("T", bound=t.Any)
 P = t.ParamSpec("P")
 R = t.TypeVar("R")
 
-T_MetaInstance = t.TypeVar("T_MetaInstance", bound="TypedTable")
+T_MetaInstance = t.TypeVar("T_MetaInstance", bound="_TypedTable")
 T_Query = t.Union[
     "Table",
     Query,

@@ -23,7 +23,7 @@ from .helpers import (
     normalize_table_keys,
     throw,
 )
-from .tables import TableMeta, TypedTable
+from .tables import TableMeta, TypedTable, _TypedTable
 from .types import (
     CacheMetadata,
     Condition,
@@ -698,7 +698,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         return joins
 
     def _build_inner_joins_recursive(
-        self, relation: Relationship[t.Any], parent_table: t.Type[TypedTable], key: str, parent_key: str = ""
+        self, relation: Relationship[t.Any], parent_table: t.Type[_TypedTable], key: str, parent_key: str = ""
     ) -> list[t.Any]:
         """Recursively build inner joins for a relationship and its nested relationships."""
         db = self._get_db()
@@ -764,7 +764,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         key: str,
         select_args: list[t.Any],
         left_joins: list[Expression],
-        parent_table: t.Type[TypedTable],
+        parent_table: t.Type[_TypedTable],
         parent_key: str = "",
     ) -> list[t.Any]:
         """Process a single relationship for left join and field selection."""

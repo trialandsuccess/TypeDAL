@@ -16,21 +16,18 @@ from slugify import slugify
 
 from .core import TypeDAL
 from .fields import DatetimeField, StringField
-from .tables import _TypedTable
+from .tables import TableMeta, _TypedTable
 from .types import OpRow, Set, T_MetaInstance
 
-if t.TYPE_CHECKING:
-    from .tables import TypedTable  # noqa: F401
 
-
-class Mixin(_TypedTable):
+class Mixin(_TypedTable, metaclass=TableMeta):
     """
     A mixin should be derived from this class.
 
     The mixin base class itself doesn't do anything,
     but using it makes sure the mixin fields are placed AFTER the table's normal fields (instead of before)
 
-    During runtime, mixin should not have a base class in order to prevent MRO issues
+    During runtime, mixin should not inherit from TypedTable to prevent MRO issues
         ('inconsistent method resolution' or 'metaclass conflicts')
     """
 

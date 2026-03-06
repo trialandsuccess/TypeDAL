@@ -400,11 +400,27 @@ class TypedRows(t.Collection[T_MetaInstance], Rows):
         self.__dict__.update(state)
         # db etc. set after undill by caching.py
 
+    @t.overload
+    def render(
+        self,
+        i: None = None,
+        fields: list[Field] | None = None,
+    ) -> t.Generator[T_MetaInstance, None, None]:
+        """With no index, yield rendered rows as a generator."""
+
+    @t.overload
+    def render(
+        self,
+        i: int,
+        fields: list[Field] | None = None,
+    ) -> T_MetaInstance:
+        """With an index, return one rendered row instance."""
+
     def render(
         self,
         i: int | None = None,
         fields: list[Field] | None = None,
-    ) -> t.Generator[T_MetaInstance, None, None]:
+    ) -> t.Generator[T_MetaInstance, None, None] | T_MetaInstance:
         """
         Takes an index and returns a copy of the indexed row with values \
             transformed via the "represent" attributes of the associated fields.
