@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.5.0 (2026-03-06)
+
+### Feature
+
+* **typing:** Support mixin-typed table class APIs without MRO conflicts ([`fe0c99e`](https://github.com/trialandsuccess/TypeDAL/commit/fe0c99eb2790baff8ddf4de3ec1f23c53e4b3a11))
+
 ## v4.4.6 (2026-03-05)
 
 ### Fix
