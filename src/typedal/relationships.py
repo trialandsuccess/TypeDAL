@@ -478,6 +478,55 @@ def to_relationship(
     return Relationship(t.cast(type[TypedTable], field), condition, t.cast(JOIN_OPTIONS, join))
 
 
+def resolve_relationship_type(
+    relationship_type: t.Any,
+    namespace: dict[str, type] | None = None,
+) -> t.Any | None:
+    """
+    Resolve a Relationship._type to an actual Python type.
+
+    Handles ForwardRefs, string references, Ref["X"] wrappers, and list[X] generics.
+    Used by PydanticMixin to build schema information from relationships.
+    """
+    if namespace is None:
+        namespace = {}
+
+    # Handle Ref["City"] -> resolve the inner type
+    if t.get_origin(relationship_type) is Ref:
+        args = t.get_args(relationship_type)
+        if not args:
+            return None
+        return resolve_relationship_type(args[0], namespace)
+
+    # Handle ForwardRef("City")
+    if isinstance(relationship_type, ForwardRef):
+        try:
+            return evaluate_forward_reference(relationship_type, namespace)
+        except Exception:
+            name = relationship_type.__forward_arg__
+            return namespace.get(name)
+
+    # Handle plain string "City"
+    if isinstance(relationship_type, str):
+        return namespace.get(relationship_type)
+
+    origin = t.get_origin(relationship_type)
+    args = t.get_args(relationship_type)
+
+    # Handle generic types like list["Post"] or list[Post]
+    if origin is not None and args:
+        resolved_args = [resolve_relationship_type(arg, namespace) for arg in args]
+        if any(a is None for a in resolved_args):
+            return None
+        if origin is list:
+            return list[resolved_args[0]]  # type: ignore[valid-type]
+        # Other generics: return as-is (already resolvable)
+        return relationship_type
+
+    # Already a concrete type
+    return relationship_type
+
+
 # note: these imports exist at the bottom of this file to prevent circular import issues:
 
 from .tables import TypedTable  # noqa: E402

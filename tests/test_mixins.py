@@ -1,10 +1,12 @@
 import time
 from typing import Optional
 
+import pydantic
 import pytest
 
 from src.typedal import TypeDAL, TypedTable
-from src.typedal.mixins import Mixin, SlugMixin, TimestampsMixin
+from src.typedal.mixins import Mixin, PydanticMixin, SlugMixin, TimestampsMixin
+from src.typedal.relationships import relationship
 
 
 class AllMixins(TypedTable, SlugMixin, TimestampsMixin, slug_field="name"):
@@ -164,3 +166,170 @@ def test_combining_mixins():
 
     assert CombinedDifferentOrder.one()
     assert CombinedDifferentOrder.two()
+
+
+# ──────────────────────────────────────────────────────────────
+# PydanticMixin tests
+# ──────────────────────────────────────────────────────────────
+
+
+class PydanticAuthor(TypedTable, PydanticMixin):
+    name: str
+
+
+class PydanticBook(TypedTable, PydanticMixin):
+    title: str
+    author: PydanticAuthor
+
+    # forward-reference relationship resolved at runtime
+    reviews = relationship(list["PydanticReview"], lambda self, other: other.book == self.id)
+
+    @property
+    def title_upper(self) -> str:
+        return self.title.upper()
+
+
+class PydanticReview(TypedTable, PydanticMixin):
+    body: str
+    book: PydanticBook
+
+
+class NonPydanticAuthor(TypedTable):
+    name: str
+
+
+@pytest.fixture
+def pydantic_db():
+    db = TypeDAL("sqlite:memory")
+    db.define(PydanticAuthor)
+    db.define(PydanticBook)
+    db.define(PydanticReview)
+    db.define(NonPydanticAuthor)
+    yield db
+
+
+def test_pydantic_model_dump(pydantic_db):
+    author = PydanticAuthor.insert(name="Alice")
+    data = author.model_dump()
+    assert data == {"id": author.id, "name": "Alice"}
+
+
+def test_pydantic_model_dump_json_mode(pydantic_db):
+    author = PydanticAuthor.insert(name="Alice")
+    data = author.model_dump(mode="json")
+    assert data == {"id": author.id, "name": "Alice"}
+
+
+def test_pydantic_fields_basic(pydantic_db):
+    fields = PydanticAuthor._pydantic_fields()
+    assert "id" in fields
+    assert "name" in fields
+
+
+def test_pydantic_fields_with_relationships(pydantic_db):
+    fields_without = PydanticBook._pydantic_fields(include_relationships=False)
+    fields_with = PydanticBook._pydantic_fields(include_relationships=True)
+
+    assert "reviews" not in fields_without
+    assert "reviews" in fields_with
+
+
+def test_pydantic_fields_with_properties(pydantic_db):
+    fields_without = PydanticBook._pydantic_fields(include_properties=False)
+    fields_with = PydanticBook._pydantic_fields(include_properties=True)
+
+    assert "title_upper" not in fields_without
+    assert "title_upper" in fields_with
+    assert fields_with["title_upper"] == str
+
+
+def test_pydantic_type_adapter_validate(pydantic_db):
+    ta = pydantic.TypeAdapter(PydanticAuthor)
+    result = ta.validate_python({"id": 1, "name": "Alice"})
+    assert result == {"id": 1, "name": "Alice"}
+
+
+def test_pydantic_type_adapter_json_schema(pydantic_db):
+    ta = pydantic.TypeAdapter(PydanticAuthor)
+    schema = ta.json_schema()
+    assert schema["type"] == "object"
+    props = schema["properties"]
+    assert "id" in props
+    assert "name" in props
+
+
+def test_pydantic_nested_model(pydantic_db):
+    author = PydanticAuthor.insert(name="Alice")
+    book = PydanticBook.insert(title="My Book", author=author.id)
+
+    # model_dump on the book should include the author FK as int
+    data = book.model_dump()
+    assert data["title"] == "My Book"
+    # author is stored as an FK int
+    assert data["author"] == author.id
+
+
+def test_pydantic_model_dump_with_join(pydantic_db):
+    author = PydanticAuthor.insert(name="Alice")
+    book = PydanticBook.insert(title="My Book", author=author.id)
+    PydanticReview.insert(body="Great!", book=book.id)
+
+    joined = PydanticBook.where(id=book.id).join("reviews").first()
+    assert joined is not None
+
+    data = joined.model_dump()
+    assert data["title"] == "My Book"
+    assert isinstance(data["reviews"], list)
+    assert len(data["reviews"]) == 1
+    assert data["reviews"][0]["body"] == "Great!"
+
+
+def test_pydantic_json_mode_nested(pydantic_db):
+    author = PydanticAuthor.insert(name="Alice")
+    book = PydanticBook.insert(title="My Book", author=author.id)
+    PydanticReview.insert(body="Great!", book=book.id)
+
+    joined = PydanticBook.where(id=book.id).join("reviews").first()
+    assert joined is not None
+
+    data = joined.model_dump(mode="json")
+    assert isinstance(data, dict)
+    assert data["reviews"][0]["body"] == "Great!"
+
+
+def test_pydantic_incompatible_reference_raises():
+    with pytest.raises(ValueError, match="not Pydantic-compatible"):
+
+        class BadBook(TypedTable, PydanticMixin):
+            title: str
+            author: NonPydanticAuthor
+
+        db = TypeDAL("sqlite:memory")
+        db.define(NonPydanticAuthor)
+        db.define(BadBook)
+        BadBook._pydantic_fields()
+
+
+def test_pydantic_type_adapter_with_relationships(pydantic_db):
+    author = PydanticAuthor.insert(name="Alice")
+    book = PydanticBook.insert(title="My Book", author=author.id)
+    PydanticReview.insert(body="Excellent", book=book.id)
+
+    joined = PydanticBook.where(id=book.id).join("reviews").first()
+    assert joined is not None
+
+    ta = pydantic.TypeAdapter(PydanticBook)
+    # validate a plain dict that includes a nested review list;
+    # computed properties (title_upper) are required in the schema so must be supplied here
+    result = ta.validate_python(  # fixme: should we test this? This seems more like testing pydantic itself
+        {
+            "id": book.id,
+            "title": "My Book",
+            "title_upper": "MY BOOK",
+            "author": author.id,
+            "reviews": [{"id": 1, "body": "Excellent", "book": book.id}],
+        }
+    )
+    assert result["title"] == "My Book"
+    assert result["title_upper"] == "MY BOOK"
+    assert result["reviews"][0]["body"] == "Excellent"
