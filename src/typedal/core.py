@@ -379,6 +379,14 @@ class TypeDAL(pydal.DAL):
         # alias for backward-compatibility
         return self._builder.class_map
 
+    def _known_classes(self) -> dict[str, t.Type["TypedTable"]]:
+        """
+        Return currently defined TypedTable classes keyed by class name.
+
+        Useful when resolving forward references in annotations/relationships.
+        """
+        return {table.__name__: table for table in self._class_map.values()}
+
     @staticmethod
     def to_snake(camel: str) -> str:
         """

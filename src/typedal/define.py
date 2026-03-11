@@ -133,7 +133,7 @@ class TableDefinitionBuilder:
         """Convert Python type annotation to pydal field type string."""
         ftype = t.cast(type, ftype_annotation)  # cast from Type to type to make mypy happy)
 
-        known_classes = {table.__name__: table for table in self.class_map.values()}
+        known_classes = self.db._known_classes()
 
         if isinstance(ftype, str):
             # extract type from string

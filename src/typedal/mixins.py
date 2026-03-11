@@ -5,7 +5,6 @@ Mixins can add reusable fields and behavior (optimally both, otherwise it doesn'
 """
 
 import base64
-import collections.abc as cabc
 import datetime as dt
 import os
 import types
@@ -416,10 +415,7 @@ class PydanticMixin(Mixin):
         if relationship_type is None:
             return None
 
-        if db := getattr(cls, "_db", None):
-            known_classes = {table.__name__: table for table in db._class_map.values()}
-        else:
-            known_classes = {}
+        known_classes = db._known_classes() if (db := getattr(cls, "_db", None)) else {}
 
         return resolve_relationship_type(
             relationship_type,
@@ -481,7 +477,7 @@ class PydanticMixin(Mixin):
             item_type = args[0] if args else t.Any
             return sequence_builders[origin](cls._field_core_schema(item_type, handler))
 
-        if isinstance(origin, type) and issubclass(origin, cabc.Mapping):
+        if isinstance(origin, type) and issubclass(origin, t.Mapping):
             key_type = args[0] if len(args) > 0 else t.Any
             value_type = args[1] if len(args) > 1 else t.Any
             return core_schema.dict_schema(
