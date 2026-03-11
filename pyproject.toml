@@ -56,6 +56,7 @@ all = [
     "tabulate",
     "pydal2sql[all]>=1.2.0",
     "edwh-migrate[full]>=0.8.0",
+    "pydantic < 3",
     "questionary",
     "tomlkit",
 ]
@@ -70,6 +71,7 @@ dev = [
     "pytest-mypy-testing",
     "contextlib-chdir",
     "testcontainers",
+    "pydantic < 3",
     # depends on ->
     "requests<2.32",
     # mypy:
