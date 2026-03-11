@@ -258,23 +258,24 @@ try:
 except ImportError:
 
     @t.runtime_checkable
-    class BaseModel(t.Protocol):
-        def model_dump(self, mode: str = "python", **kwargs) -> dict[str, t.Any]: ...
+    class BaseModel(t.Protocol):  # type: ignore
+        # fixme: pytest for runtime checkability
+        def model_dump(self, mode: str = "python", **kwargs: t.Any) -> dict[str, t.Any]: ...
 
 
-def dump_pydantic[T](values: T, _shallow_nested: bool = False) -> T:
+def dump_pydantic(values: T, _shallow_nested: bool = False) -> T:
     if isinstance(values, PydanticMixin):
-        return values.model_dump(mode="json", _shallow=_shallow_nested)
+        return values.model_dump(mode="json", _shallow=_shallow_nested)  # type: ignore
     elif isinstance(values, BaseModel):
-        return values.model_dump(mode="json")
+        return values.model_dump(mode="json")  # type: ignore
     elif callable(getattr(values, "as_dict", None)):
-        return dump_pydantic(values.as_dict(), _shallow_nested)
+        return dump_pydantic(values.as_dict(), _shallow_nested)  # type: ignore
     elif callable(getattr(values, "as_list", None)):
-        return dump_pydantic(values.as_list(), _shallow_nested)
+        return dump_pydantic(values.as_list(), _shallow_nested)  # type: ignore
     elif isinstance(values, dict):
-        return {k: dump_pydantic(v, _shallow_nested) for k, v in values.items()}
+        return {k: dump_pydantic(v, _shallow_nested) for k, v in values.items()}  # type: ignore
     elif isinstance(values, (list, set, tuple)):
-        return [dump_pydantic(value, _shallow_nested) for value in values]
+        return [dump_pydantic(value, _shallow_nested) for value in values]  # type: ignore
     else:
         return values
 
@@ -304,7 +305,7 @@ class PydanticMixin(Mixin):
             raise ValueError(
                 f"{cls.__name__}.{field_name} references "
                 f"{field_type.__name__}, but {field_type.__name__} is not "
-                f"Pydantic-compatible. Add PydanticMixin to that model too."
+                f"Pydantic-compatible. Add PydanticMixin to that model too.",
             )
 
     @classmethod
@@ -391,7 +392,7 @@ class PydanticMixin(Mixin):
 
         for field_name, relationship_value in filter_out(full_dict, Relationship).items():
             relationship_type = cls._typedal_resolve_relationship_python_type(
-                field_name=field_name,
+                field_name,
                 relationship_value=relationship_value,
             )
             if relationship_type is not None:
@@ -402,7 +403,7 @@ class PydanticMixin(Mixin):
     @classmethod
     def _typedal_resolve_relationship_python_type(
         cls,
-        field_name: str,
+        _: str,  # fixme: remove?
         relationship_value: t.Any,
     ) -> t.Any | None:
         relationship_type = getattr(relationship_value, "_type", None)
@@ -420,7 +421,7 @@ class PydanticMixin(Mixin):
         )
 
     @staticmethod
-    def _make_instance_converter(ft: type, fields: dict) -> t.Callable:
+    def _make_instance_converter(_: type, fields: dict[str, t.Any]) -> t.Callable[[t.Any], t.Any]:
         _PRIMITIVES = (str, float, bool, bytes)
 
         def convert(value: t.Any) -> t.Any:
@@ -464,6 +465,7 @@ class PydanticMixin(Mixin):
 
             return handler.generate_schema(field_type)
 
+        # fixme: tuple_schema, ...
         sequence_builders = {
             list: core_schema.list_schema,
             set: core_schema.set_schema,
@@ -499,8 +501,8 @@ class PydanticMixin(Mixin):
         *,
         include_relationships: bool = False,
         include_properties: bool = False,
-        _fields: dict | None = None,
-        _required_fields: set[str] = frozenset(),
+        _fields: dict[str, t.Any] | None = None,
+        _required_fields: set[str] = frozenset(),  # type: ignore
     ) -> t.Any:
         from pydantic_core import core_schema
 
@@ -512,7 +514,7 @@ class PydanticMixin(Mixin):
                 include_relationships=include_relationships,
                 include_properties=include_properties,
             )
-        )
+        ) or {}
 
         def make_field(field_name: str, field_type: t.Any) -> t.Any:
             inner = cls._field_core_schema(field_type, handler)
@@ -569,7 +571,7 @@ class PydanticMixin(Mixin):
         schema: t.Any,
         handler: t.Any,
     ) -> dict[str, t.Any]:
-        return handler(schema)
+        return handler(schema)  # type: ignore
 
     def model_dump(self, mode: str = "python", *, _shallow: bool = False) -> dict[str, t.Any]:
         data = {
