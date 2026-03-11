@@ -1,11 +1,12 @@
 import time
+import typing
 from typing import Optional
 
 import pydantic
 import pytest
 
-from src.typedal import TypeDAL, TypedTable
-from src.typedal.mixins import Mixin, PydanticMixin, SlugMixin, TimestampsMixin
+from src.typedal import TypeDAL, TypedField, TypedTable
+from src.typedal.mixins import BaseModeProtocol, Mixin, PydanticMixin, SlugMixin, TimestampsMixin, dump_pydantic
 from src.typedal.relationships import relationship
 
 
@@ -198,12 +199,48 @@ class NonPydanticAuthor(TypedTable):
     name: str
 
 
+class PydanticStringRelationship(TypedTable, PydanticMixin):
+    name: str
+    author_link = relationship("PydanticAuthor", lambda self, other: self.id == other.id)
+
+
+class PydanticGenericResolvedRelationship(TypedTable, PydanticMixin):
+    name: str
+    weird = relationship(tuple[PydanticAuthor, int], lambda self, other: self.id == other.id)
+
+
+class PydanticGenericUnresolvedRelationship(TypedTable, PydanticMixin):
+    name: str
+    weird = relationship(tuple["MissingModel", int], lambda self, other: self.id == other.id)
+
+
+class PydanticSchemaShapes(TypedTable, PydanticMixin):
+    typed_counter = TypedField(int, default=0)
+    mapping_payload: typing.Mapping[str, int]
+    maybe_count: int | None
+    int_or_text: int | str
+    fixed_pair: tuple[int, int]
+
+
+class PydanticNoGetterProperty(TypedTable, PydanticMixin):
+    name: str
+    empty_prop = property()
+
+
+class PydanticTupleAndLiteralSchema(TypedTable, PydanticMixin):
+    numbers: tuple[int, ...]
+    status: typing.Literal["draft", "published"]
+
+
 @pytest.fixture
 def pydantic_db():
     db = TypeDAL("sqlite:memory")
     db.define(PydanticAuthor)
     db.define(PydanticBook)
     db.define(PydanticReview)
+    db.define(PydanticStringRelationship)
+    db.define(PydanticGenericResolvedRelationship)
+    db.define(PydanticGenericUnresolvedRelationship)
     db.define(NonPydanticAuthor)
     yield db
 
@@ -321,7 +358,7 @@ def test_pydantic_type_adapter_with_relationships(pydantic_db):
     ta = pydantic.TypeAdapter(PydanticBook)
     # validate a plain dict that includes a nested review list;
     # computed properties (title_upper) are required in the schema so must be supplied here
-    result = ta.validate_python(  # fixme: should we test this? This seems more like testing pydantic itself
+    result = ta.validate_python(
         {
             "id": book.id,
             "title": "My Book",
@@ -333,3 +370,99 @@ def test_pydantic_type_adapter_with_relationships(pydantic_db):
     assert result["title"] == "My Book"
     assert result["title_upper"] == "MY BOOK"
     assert result["reviews"][0]["body"] == "Excellent"
+
+
+def test_pydantic_string_relationship_resolves_via_namespace(pydantic_db):
+    fields = PydanticStringRelationship._pydantic_fields(include_relationships=True)
+    assert fields["author_link"] is PydanticAuthor
+
+
+def test_pydantic_generic_relationship_resolution_behavior(pydantic_db):
+    resolved_fields = PydanticGenericResolvedRelationship._pydantic_fields(include_relationships=True)
+    assert resolved_fields["weird"] == tuple[PydanticAuthor, int]
+
+    unresolved_fields = PydanticGenericUnresolvedRelationship._pydantic_fields(include_relationships=True)
+    assert "weird" not in unresolved_fields
+
+
+def test_dump_pydantic_supports_basemodel_and_row_shapes():
+    class Payload(pydantic.BaseModel):
+        title: str
+
+    class AsDict:
+        def as_dict(self):
+            return {"nested": Payload(title="ok")}
+
+    class AsList:
+        def as_list(self):
+            return [Payload(title="ok")]
+
+    assert dump_pydantic(Payload(title="x")) == {"title": "x"}
+    assert dump_pydantic(AsDict()) == {"nested": {"title": "ok"}}
+    assert dump_pydantic(AsList()) == [{"title": "ok"}]
+
+
+def test_pydantic_converter_handles_primitives_and_objects():
+    converter = PydanticMixin._make_instance_converter(PydanticAuthor, {"id": int, "name": str})
+
+    assert converter(12) == {"id": 12}
+    assert converter("text") == "text"
+    assert converter(None) is None
+
+    row_like = type("RowLike", (), {"id": 1, "name": "Alice"})()
+    assert converter(row_like) == {"id": 1, "name": "Alice"}
+
+
+def test_pydantic_field_schema_covers_mapping_union_and_fallback(pydantic_db):
+    schema = pydantic.TypeAdapter(PydanticSchemaShapes).json_schema()
+    props = schema["properties"]
+
+    assert any(option.get("type") == "object" for option in props["mapping_payload"]["anyOf"])
+    assert props["maybe_count"]["anyOf"]
+    assert props["int_or_text"]["anyOf"]
+    tuple_option = next(option for option in props["fixed_pair"]["anyOf"] if option.get("type") == "array")
+    assert tuple_option["prefixItems"]
+
+
+def test_pydantic_field_schema_covers_variadic_tuple_and_literal_fallback():
+    schema = pydantic.TypeAdapter(PydanticTupleAndLiteralSchema).json_schema()
+    props = schema["properties"]
+
+    numbers_option = next(option for option in props["numbers"]["anyOf"] if option.get("type") == "array")
+    assert numbers_option["items"]["type"] == "integer"
+
+    status_option = next(option for option in props["status"]["anyOf"] if "enum" in option)
+    assert set(status_option["enum"]) == {"draft", "published"}
+
+
+def test_pydantic_fields_include_typedfield_and_skip_no_getter_property(pydantic_db):
+    fields = PydanticSchemaShapes._pydantic_fields()
+    assert fields["typed_counter"] is int
+
+    property_fields = PydanticNoGetterProperty._pydantic_fields(include_properties=True)
+    assert "empty_prop" not in property_fields
+
+
+def test_pydantic_compatibility_non_type_and_missing_relationship_type():
+    # ForwardRef is not a runtime type; this should be a no-op, not a crash.
+    PydanticMixin._ensure_pydantic_compatible_type("x", typing.ForwardRef("Anything"))
+
+    class DummyRelationship:
+        pass
+
+    assert PydanticMixin._typedal_resolve_relationship_python_type(DummyRelationship()) is None
+
+
+def test_pydantic_relationship_resolution_without_db_context():
+    class Detached(TypedTable, PydanticMixin):
+        name: str
+        rel = relationship("PydanticAuthor", lambda self, other: self.id == other.id)
+
+    assert Detached._typedal_resolve_relationship_python_type(Detached.rel) is None
+
+
+def test_pydantic_basemodel_matches_basemode_protocol():
+    class Payload(pydantic.BaseModel):
+        title: str
+
+    assert isinstance(Payload(title="x"), BaseModeProtocol)

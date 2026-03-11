@@ -57,16 +57,16 @@ class Relationship(t.Generic[To_Type]):
         if condition and on:
             raise self._error_duplicate_condition(condition, on)
 
+        resolved_type = resolve_relationship_type(_type, keep_unresolved=True)
+        if resolved_type is not None:
+            _type = t.cast(t.Type[To_Type], resolved_type)
+
         self._type = _type
         self.condition = condition
         self.join = "left" if on else join  # .on is always left join!
         self.on = on
         self.condition_and = condition_and
         self._lazy = lazy
-
-        if t.get_origin(_type) == Ref:
-            # unwrap Ref["City"] to ForwardRef("City") to be evaluated/stringified later on:
-            _type = t.get_args(_type)[0]
 
         if args := t.get_args(_type):
             self.table = unwrap_type(args[0])
@@ -481,6 +481,8 @@ def to_relationship(
 def resolve_relationship_type(
     relationship_type: t.Any,
     namespace: dict[str, type] | None = None,
+    *,
+    keep_unresolved: bool = False,
 ) -> t.Any | None:
     """
     Resolve a Relationship._type to an actual Python type.
@@ -494,9 +496,9 @@ def resolve_relationship_type(
     # Handle Ref["City"] -> resolve the inner type
     if t.get_origin(relationship_type) is Ref:
         args = t.get_args(relationship_type)
-        if not args:
+        if not args:  # pragma: no cover  # typing never yields bare Ref without args in normal runtime code paths
             return None
-        return resolve_relationship_type(args[0], namespace)
+        return resolve_relationship_type(args[0], namespace, keep_unresolved=keep_unresolved)
 
     # Handle ForwardRef("City")
     if isinstance(relationship_type, ForwardRef):
@@ -504,18 +506,21 @@ def resolve_relationship_type(
             return evaluate_forward_reference(relationship_type, namespace)
         except Exception:
             name = relationship_type.__forward_arg__
-            return namespace.get(name)
+            return namespace.get(name) or (relationship_type if keep_unresolved else None)
 
     # Handle plain string "City"
     if isinstance(relationship_type, str):
-        return namespace.get(relationship_type)
+        resolved = namespace.get(relationship_type)
+        if resolved is not None:
+            return resolved
+        return ForwardRef(relationship_type) if keep_unresolved else None
 
     origin = t.get_origin(relationship_type)
     args = t.get_args(relationship_type)
 
     # Handle generic types like list["Post"] or list[Post]
     if origin is not None and args:
-        resolved_args = [resolve_relationship_type(arg, namespace) for arg in args]
+        resolved_args = [resolve_relationship_type(arg, namespace, keep_unresolved=keep_unresolved) for arg in args]
         if any(a is None for a in resolved_args):
             return None
         if origin is list:

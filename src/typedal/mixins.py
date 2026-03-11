@@ -5,6 +5,7 @@ Mixins can add reusable fields and behavior (optimally both, otherwise it doesn'
 """
 
 import base64
+import collections.abc as cabc
 import datetime as dt
 import os
 import types
@@ -253,17 +254,22 @@ class SlugMixin(Mixin):
         return builder.first_or_fail()
 
 
+@t.runtime_checkable
+class BaseModeProtocol(t.Protocol):
+    """Minimal protocol for pydantic-compatible objects."""
+
+    def model_dump(self, mode: str = "python", **kwargs: t.Any) -> dict[str, t.Any]:
+        """Return a serialized mapping representation."""
+
+
 try:
     from pydantic import BaseModel
 except ImportError:
-
-    @t.runtime_checkable
-    class BaseModel(t.Protocol):  # type: ignore
-        # fixme: pytest for runtime checkability
-        def model_dump(self, mode: str = "python", **kwargs: t.Any) -> dict[str, t.Any]: ...
+    BaseModel = BaseModeProtocol  # type: ignore
 
 
 def dump_pydantic(values: T, _shallow_nested: bool = False) -> T:
+    """Recursively convert pydantic-like values into plain JSON-compatible structures."""
     if isinstance(values, PydanticMixin):
         return values.model_dump(mode="json", _shallow=_shallow_nested)  # type: ignore
     elif isinstance(values, BaseModel):
@@ -281,6 +287,8 @@ def dump_pydantic(values: T, _shallow_nested: bool = False) -> T:
 
 
 class PydanticMixin(Mixin):
+    """Mixin that provides pydantic schema generation and dumping helpers."""
+
     @classmethod
     def _ensure_pydantic_compatible_type(
         cls,
@@ -392,7 +400,6 @@ class PydanticMixin(Mixin):
 
         for field_name, relationship_value in filter_out(full_dict, Relationship).items():
             relationship_type = cls._typedal_resolve_relationship_python_type(
-                field_name,
                 relationship_value=relationship_value,
             )
             if relationship_type is not None:
@@ -403,7 +410,6 @@ class PydanticMixin(Mixin):
     @classmethod
     def _typedal_resolve_relationship_python_type(
         cls,
-        _: str,  # fixme: remove?
         relationship_value: t.Any,
     ) -> t.Any | None:
         relationship_type = getattr(relationship_value, "_type", None)
@@ -465,7 +471,7 @@ class PydanticMixin(Mixin):
 
             return handler.generate_schema(field_type)
 
-        # fixme: tuple_schema, ...
+        # Lists/sets/frozensets are handled explicitly; other generics fall back to pydantic.
         sequence_builders = {
             list: core_schema.list_schema,
             set: core_schema.set_schema,
@@ -475,12 +481,21 @@ class PydanticMixin(Mixin):
             item_type = args[0] if args else t.Any
             return sequence_builders[origin](cls._field_core_schema(item_type, handler))
 
-        if origin is dict:
+        if isinstance(origin, type) and issubclass(origin, cabc.Mapping):
             key_type = args[0] if len(args) > 0 else t.Any
             value_type = args[1] if len(args) > 1 else t.Any
             return core_schema.dict_schema(
                 keys_schema=cls._field_core_schema(key_type, handler),
                 values_schema=cls._field_core_schema(value_type, handler),
+            )
+
+        if origin is tuple:
+            if len(args) == 2 and args[1] is Ellipsis:
+                return core_schema.tuple_variable_schema(
+                    cls._field_core_schema(args[0], handler),
+                )
+            return core_schema.tuple_schema(
+                [cls._field_core_schema(item_type, handler) for item_type in args],
             )
 
         if origin in (t.Union, types.UnionType):
@@ -541,6 +556,7 @@ class PydanticMixin(Mixin):
         source_type: t.Any,
         handler: t.Any,
     ) -> t.Any:
+        """Build the pydantic-core schema for this TypeDAL model."""
         from pydantic_core import core_schema
 
         fields = cls._pydantic_fields(
@@ -571,9 +587,11 @@ class PydanticMixin(Mixin):
         schema: t.Any,
         handler: t.Any,
     ) -> dict[str, t.Any]:
+        """Build the JSON schema by delegating to pydantic's handler."""
         return handler(schema)  # type: ignore
 
     def model_dump(self, mode: str = "python", *, _shallow: bool = False) -> dict[str, t.Any]:
+        """Serialize this model to a dict, with optional shallow nested output."""
         data = {
             field_name: getattr(self, field_name, None)
             for field_name in self._pydantic_fields(
