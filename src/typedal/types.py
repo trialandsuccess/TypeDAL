@@ -28,21 +28,22 @@ from pydal.objects import Table as _Table
 from pydal.validators import Validator as _Validator
 
 try:
-    from string.templatelib import Template
+    from string.templatelib import Template as TemplateAlias
 except ImportError:
-    Template: t.TypeAlias = str  # type: ignore
+    TemplateAlias: t.TypeAlias = str  # type: ignore
 
 # Internal references
 if t.TYPE_CHECKING:
     from .fields import TypedField
-    from .tables import TypedTable, _TypedTable
+    from .tables import TypedTable, _TypedTable  # noqa: F401
 
 # ---------------------------------------------------------------------------
 # Aliases
 # ---------------------------------------------------------------------------
 
-AnyCallable: t.TypeAlias = t.Callable[..., t.Any]
-AnyDict: t.TypeAlias = dict[str, t.Any]
+Template: t.TypeAlias = TemplateAlias  # explicit export for mypy, NOT a `type` because it's used at runtime
+type AnyCallable = t.Callable[..., t.Any]
+type AnyDict = dict[str, t.Any]
 
 
 # ---------------------------------------------------------------------------
@@ -293,12 +294,10 @@ class FieldSettings(t.TypedDict, total=False):
 # Generics & Query Helpers
 # ---------------------------------------------------------------------------
 
-T = t.TypeVar("T", bound=t.Any)
-P = t.ParamSpec("P")
-R = t.TypeVar("R")
-
+# note: this one is used a lot so not rewritten as inline type parameter
 T_MetaInstance = t.TypeVar("T_MetaInstance", bound="_TypedTable")
-T_Query = t.Union[
+
+type T_Query = t.Union[
     "Table",
     Query,
     bool,
@@ -308,24 +307,20 @@ T_Query = t.Union[
     Expression,
 ]
 
-T_subclass = t.TypeVar("T_subclass", "TypedTable", Table)
-T_Field: t.TypeAlias = t.Union["TypedField[t.Any]", "Table", t.Type["TypedTable"]]
-
-# use typing.cast(type, ...) to make mypy happy with unions
-T_Value = t.TypeVar("T_Value")  # actual type of the Field (via Generic)
+type T_Field = t.Union["TypedField[t.Any]", "Table", t.Type["TypedTable"]]
 
 # table-ish parameter:
-P_Table = t.Union[t.Type["TypedTable"], pydal.objects.Table]
+type P_Table = t.Union[t.Type["TypedTable"], pydal.objects.Table]
 
-Condition: t.TypeAlias = t.Optional[t.Callable[[P_Table, P_Table], Query | bool]]
+type Condition = t.Optional[t.Callable[[P_Table, P_Table], Query | bool]]
 
-OnQuery: t.TypeAlias = t.Optional[t.Callable[[P_Table, P_Table], list[Expression]]]
+type OnQuery = t.Optional[t.Callable[[P_Table, P_Table], list[Expression]]]
 
-CacheModel = t.Callable[[str, CacheFn, int], Rows]
-CacheTuple = tuple[CacheModel, int]
+type CacheModel = t.Callable[[str, CacheFn, int], Rows]
+type CacheTuple = tuple[CacheModel, int]
 
-OrderBy: t.TypeAlias = str | Expression
-GroupBy: t.TypeAlias = Field | Expression
-Having: t.TypeAlias = Query | Expression
+type OrderBy = str | Expression
+type GroupBy = Field | Expression
+type Having = Query | Expression
 
-T_annotation = t.Type[t.Any] | types.UnionType
+type T_annotation = t.Type[t.Any] | types.UnionType

@@ -16,13 +16,10 @@ from .fields import TypedField
 from .helpers import extract_type_optional, looks_like, unwrap_type
 from .types import Condition, OnQuery, T_Field
 
-To_Type = t.TypeVar("To_Type", bound="TypedTable")
-
-
 # default lazy policy is defined at the TypeDAL() instance settings level
 
 
-class Relationship(t.Generic[To_Type]):
+class Relationship[To_Type: TypedTable]:
     """
     Define a relationship to another table.
     """
@@ -275,7 +272,7 @@ class Relationship(t.Generic[To_Type]):
             return fallback_value
 
 
-class Ref(t.Generic[To_Type]):
+class Ref[To_Type: TypedTable]:
     """
     Type-level forward reference wrapper.
 
@@ -288,7 +285,7 @@ class Ref(t.Generic[To_Type]):
 
 
 @t.overload
-def relationship(
+def relationship[To_Type: TypedTable](
     _type: type[list[To_Type]],
     condition: Condition = None,
     join: JOIN_OPTIONS = None,
@@ -308,7 +305,7 @@ def relationship(
 
 
 @t.overload
-def relationship(
+def relationship[To_Type: TypedTable](
     _type: t.Type[To_Type] | str | t.Type[Ref[To_Type]],
     condition: Condition = None,
     *,
@@ -330,7 +327,7 @@ def relationship(
 
 
 @t.overload
-def relationship(
+def relationship[To_Type: TypedTable](
     _type: t.Type[To_Type] | str | t.Type[Ref[To_Type]],
     condition: Condition = None,
     join: JOIN_OPTIONS = None,
@@ -349,7 +346,7 @@ def relationship(
     """
 
 
-def relationship(
+def relationship[To_Type: TypedTable](
     _type: type[list[To_Type]] | t.Type[To_Type] | str | t.Type[Ref[To_Type]],
     condition: Condition = None,
     join: JOIN_OPTIONS = None,

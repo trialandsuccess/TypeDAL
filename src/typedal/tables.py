@@ -26,14 +26,11 @@ from .types import (
     OnQuery,
     OpRow,
     OrderBy,
-    P,
     Query,
-    R,
     Reference,
     Row,
     SelectKwargs,
     Set,
-    T,
     T_MetaInstance,
     T_Query,
     Table,
@@ -294,7 +291,9 @@ class TableMeta(type):
         """
         return QueryBuilder(self).select(*a, **kw)
 
-    def column(self: t.Type[T_MetaInstance], field: T | TypedField[T], **options: t.Unpack[SelectKwargs]) -> list[T]:
+    def column[T: t.Any, T_MetaInstance: _TypedTable](
+        self: t.Type[T_MetaInstance], field: T | TypedField[T], **options: t.Unpack[SelectKwargs]
+    ) -> list[T]:
         """
         Get all values in a specific column.
 
@@ -504,7 +503,7 @@ class TableMeta(type):
         return self.with_alias(key)
 
     # hooks:
-    def _hook_once(
+    def _hook_once[**P, R, T_MetaInstance: _TypedTable](
         cls: t.Type[T_MetaInstance],
         hooks: list[t.Callable[P, R]],
         fn: t.Callable[P, R],

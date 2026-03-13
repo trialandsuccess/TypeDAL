@@ -29,7 +29,6 @@ from .relationships import Relationship, to_relationship
 from .tables import TypedTable
 from .types import (
     Field,
-    T,
     T_annotation,
     Table,
     _Types,
@@ -53,7 +52,7 @@ class TableDefinitionBuilder:
         self.db = db
         self.class_map: dict[str, t.Type["TypedTable"]] = {}
 
-    def define(self, cls: t.Type[T], **kwargs: t.Any) -> t.Type[T]:
+    def define[T: t.Any](self, cls: t.Type[T], **kwargs: t.Any) -> t.Type[T]:
         """Build and register a table from a TypedTable class."""
         full_dict = all_dict(cls)
         tablename = to_snake(cls.__name__)

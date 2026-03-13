@@ -35,13 +35,12 @@ from .types import (
     Query,
     Rows,
     SelectKwargs,
-    T,
     T_MetaInstance,
     Table,
 )
 
 
-class QueryBuilder(t.Generic[T_MetaInstance]):
+class QueryBuilder[T_MetaInstance: _TypedTable]:
     """
     Abstration on top of pydal's query system.
     """
@@ -624,18 +623,18 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         return save_to_cache(typed_rows, rows)
 
     @t.overload
-    def column(self, field: TypedField[T], **options: t.Unpack[SelectKwargs]) -> list[T]:
+    def column[T: t.Any](self, field: TypedField[T], **options: t.Unpack[SelectKwargs]) -> list[T]:
         """
         If a typedfield is passed, the output type can be safely determined.
         """
 
     @t.overload
-    def column(self, field: T, **options: t.Unpack[SelectKwargs]) -> list[T]:
+    def column[T: t.Any](self, field: T, **options: t.Unpack[SelectKwargs]) -> list[T]:
         """
         Otherwise, the output type is loosely determined (assumes `field: type` or t.Any).
         """
 
-    def column(self, field: TypedField[T] | T, **options: t.Unpack[SelectKwargs]) -> list[T]:
+    def column[T: t.Any](self, field: TypedField[T] | T, **options: t.Unpack[SelectKwargs]) -> list[T]:
         """
         Get all values in a specific column.
 

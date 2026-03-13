@@ -21,7 +21,7 @@ from .helpers import (
     sql_expression,
     to_snake,
 )
-from .types import CacheStatus, Field, T, Template  # type: ignore
+from .types import CacheStatus, Field, Template  # noqa: F401
 
 try:
     # python 3.14+
@@ -246,7 +246,7 @@ class TypeDAL(pydal.DAL):
             self.try_define(_TypedalCache)
             self.try_define(_TypedalCacheDependency)
 
-    def try_define(self, model: t.Type[T], verbose: bool = False) -> t.Type[T]:
+    def try_define[T: t.Any](self, model: t.Type[T], verbose: bool = False) -> t.Type[T]:
         """
         Try to define a model with migrate or fall back to fake migrate.
         """
@@ -270,7 +270,7 @@ class TypeDAL(pydal.DAL):
     }
 
     @t.overload
-    def define(self, maybe_cls: None = None, **kwargs: t.Any) -> t.Callable[[t.Type[T]], t.Type[T]]:
+    def define[T: t.Any](self, maybe_cls: None = None, **kwargs: t.Any) -> t.Callable[[t.Type[T]], t.Type[T]]:
         """
         Typing Overload for define without a class.
 
@@ -279,7 +279,7 @@ class TypeDAL(pydal.DAL):
         """
 
     @t.overload
-    def define(self, maybe_cls: t.Type[T], **kwargs: t.Any) -> t.Type[T]:
+    def define[T: t.Any](self, maybe_cls: t.Type[T], **kwargs: t.Any) -> t.Type[T]:
         """
         Typing Overload for define with a class.
 
@@ -287,7 +287,7 @@ class TypeDAL(pydal.DAL):
         class MyTable(TypedTable): ...
         """
 
-    def define(
+    def define[T: t.Any](
         self,
         maybe_cls: t.Type[T] | None = None,
         **kwargs: t.Any,
@@ -468,7 +468,7 @@ class TypeDAL(pydal.DAL):
         """
         return sql_expression(self, sql_fragment, *raw_args, output_type=output_type, **raw_kwargs)
 
-    def memoize(
+    def memoize[T: t.Any](
         self,
         func: t.Callable[..., T],
         # should be TypedRows[TypedTable] or TypedTable but for some reason that breaks

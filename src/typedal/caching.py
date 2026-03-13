@@ -203,10 +203,6 @@ def _remove_cache(s: Set, tablename: str) -> None:
     indeces = s.select("id").column("id")
     remove_cache(indeces, tablename)
 
-
-T_TypedTable = t.TypeVar("T_TypedTable", bound=TypedTable)
-
-
 def get_expire(
     expires_at: t.Optional[dt.datetime] = None,
     ttl: t.Optional[int | dt.timedelta] = None,
@@ -250,7 +246,7 @@ def _insert_cache_entry(
     db.commit()
 
 
-def save_to_cache(
+def save_to_cache[T_TypedTable: TypedTable](
     instance: TypedRows[T_TypedTable],
     rows: Rows,
     expires_at: t.Optional[dt.datetime] = None,
@@ -418,8 +414,10 @@ def _expired_and_valid_query() -> tuple[str, str]:
     return expired_items, valid_items
 
 
-T = t.TypeVar("T")
-Stats = t.TypedDict("Stats", {"total": T, "valid": T, "expired": T})
+class Stats[T](t.TypedDict):
+    total: T
+    valid: T
+    expired: T
 
 RowStats = t.TypedDict(
     "RowStats",
@@ -527,7 +525,7 @@ def calculate_stats(db: "TypeDAL") -> Stats[GenericStats]:
     }
 
 
-def memoize(
+def memoize[T: t.Any](
     db: "TypeDAL",
     func: t.Callable[..., T],
     *args: TypedRows[t.Any] | TypedTable,

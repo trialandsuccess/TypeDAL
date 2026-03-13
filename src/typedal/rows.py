@@ -14,7 +14,7 @@ from .core import TypeDAL
 from .helpers import mktable
 from .query_builder import QueryBuilder
 from .serializers import as_json
-from .tables import TypedTable
+from .tables import TypedTable, _TypedTable
 from .types import (
     AnyDict,
     Field,
@@ -24,7 +24,6 @@ from .types import (
     Query,
     Row,
     Rows,
-    T,
     T_MetaInstance,
 )
 
@@ -199,7 +198,7 @@ class TypedRows(t.Collection[T_MetaInstance], Rows):
 
         return mktable(data, headers)
 
-    def group_by_value(
+    def group_by_value[T: t.Any, T_MetaInstance: _TypedTable](
         self,
         *fields: "str | Field | TypedField[T]",
         one_result: bool = False,

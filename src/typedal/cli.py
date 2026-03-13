@@ -94,12 +94,10 @@ questionary_types: dict[typing.Hashable, Optional[AnyDict]] = {
     "fake_migrate": None,  # only enable via config if required
 }
 
-T = typing.TypeVar("T")
-
 notfound = object()
 
 
-def _get_question(prop: str, annotation: typing.Type[T]) -> Optional[AnyDict]:  # pragma: no cover
+def _get_question[T](prop: str, annotation: typing.Type[T]) -> Optional[AnyDict]:  # pragma: no cover
     question = questionary_types.get(prop, notfound)
     if question is notfound:
         # None means skip the question, notfound means use the type default!
@@ -111,7 +109,7 @@ def _get_question(prop: str, annotation: typing.Type[T]) -> Optional[AnyDict]:  
     return question.copy()  # type: ignore
 
 
-def get_question(prop: str, annotation: typing.Type[T], default: T | None) -> Optional[T]:  # pragma: no cover
+def get_question[T](prop: str, annotation: typing.Type[T], default: T | None) -> Optional[T]:  # pragma: no cover
     """
     Generate a question based on a config property and prompt the user for it.
     """
@@ -449,7 +447,7 @@ def migrations_stub(
     return 0
 
 
-AnyNestedDict: typing.TypeAlias = dict[str, AnyDict]
+type AnyNestedDict = dict[str, AnyDict]
 
 
 def tabulate_data(data: AnyNestedDict) -> None:
@@ -466,7 +464,7 @@ def tabulate_data(data: AnyNestedDict) -> None:
     print(tabulate(flattened_data, headers="keys"))
 
 
-FormatOptions: typing.TypeAlias = typing.Literal["plaintext", "json", "yaml", "toml"]
+type FormatOptions = typing.Literal["plaintext", "json", "yaml", "toml"]
 
 
 def get_output_format(fmt: FormatOptions) -> typing.Callable[[AnyNestedDict], None]:

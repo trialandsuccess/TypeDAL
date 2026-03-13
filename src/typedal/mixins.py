@@ -85,9 +85,6 @@ def slug_random_suffix(length: int = 8) -> str:
     return base64.urlsafe_b64encode(os.urandom(length)).rstrip(b"=").decode().strip("=")
 
 
-T = t.TypeVar("T")
-
-
 # noinspection PyPep8Naming
 class HAS_UNIQUE_SLUG(IS_NOT_IN_DB):
     """
@@ -108,7 +105,7 @@ class HAS_UNIQUE_SLUG(IS_NOT_IN_DB):
         """
         super().__init__(db, field, error_message)
 
-    def validate(self, original: T, record_id: t.Optional[int] = None) -> T:
+    def validate[T](self, original: T, record_id: t.Optional[int] = None) -> T:
         """
         Performs checks to see if the slug already exists for a different row.
         """
@@ -267,7 +264,7 @@ except ImportError:
     BaseModel = BaseModeProtocol  # type: ignore
 
 
-def dump_pydantic(values: T, _shallow_nested: bool = False) -> T:
+def dump_pydantic[T](values: T, _shallow_nested: bool = False) -> T:
     """Recursively convert pydantic-like values into plain JSON-compatible structures."""
     if isinstance(values, PydanticMixin):
         return values.model_dump(mode="json", _shallow=_shallow_nested)  # type: ignore

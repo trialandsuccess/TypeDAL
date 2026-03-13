@@ -5,13 +5,7 @@ from typing_extensions import reveal_type
 
 from src.typedal.core import TypeDAL, TypedField, TypedTable
 
-T_MetaInstance = typing.TypeVar("T_MetaInstance")
-
-
-T_Table = typing.TypeVar("T_Table", bound=TypedTable)
-
-TypeTable = typing.Type[T_Table]
-T_Value = typing.TypeVar("T_Value")  # actual type of the Field (via Generic)
+type TypeTable[T_Table: TypedTable] = typing.Type[T_Table]
 
 ###
 

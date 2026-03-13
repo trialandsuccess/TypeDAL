@@ -24,8 +24,6 @@ from .types import (
     Query,
     T_annotation,
     T_MetaInstance,
-    T_subclass,
-    T_Value,
     Validator,
 )
 
@@ -37,7 +35,7 @@ if t.TYPE_CHECKING:
 ## general
 
 
-class TypedField(Expression, t.Generic[T_Value]):  # pragma: no cover
+class TypedField[T_Value](Expression):  # pragma: no cover
     """
     Typed version of pydal.Field, which will be converted to a normal Field in the background.
     """
@@ -375,7 +373,9 @@ def UploadField(**kw: t.Unpack[FieldSettings]) -> TypedField[str]:
 Upload = UploadField
 
 
-def ReferenceField(
+def ReferenceField[
+    T_subclass: (TypedTable, Table)
+](
     other_table: str | t.Type[TypedTable] | TypedTable | Table | T_subclass,
     **kw: t.Unpack[FieldSettings],
 ) -> TypedField[int]:
