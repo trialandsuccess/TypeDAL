@@ -392,7 +392,8 @@ def fake_migrations(
 
     previously_migrated = (
         db(
-            db.ewh_implemented_features.name.belongs(to_fake) & (db.ewh_implemented_features.installed == True)  # noqa E712
+            db.ewh_implemented_features.name.belongs(to_fake)
+            & (db.ewh_implemented_features.installed == True)  # noqa E712
         )
         .select(db.ewh_implemented_features.name)
         .column("name")
