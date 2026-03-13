@@ -47,6 +47,58 @@ class MyTable(TypedTable, SlugMixin, slug_field="title"):
 # Now, whenever you insert a record into MyTable, the 'slug' field will be automatically generated based on the 'title' field.
 ```
 
+## Using `PydanticMixin`
+
+The `PydanticMixin` enables seamless integration with Pydantic-based frameworks (like FastAPI) by adding schema generation
+capabilities to your models. Without this mixin, you cannot return TypedTable instances directly as FastAPI responses
+or use them with `pydantic.TypeAdapter`.
+
+Add the mixin to enable `model_dump()` for serialization, including support for relationships and computed properties:
+
+```python
+from typedal import TypedTable
+from typedal.mixins import PydanticMixin
+
+
+class Author(TypedTable, PydanticMixin):
+    name: str
+
+
+class Book(TypedTable, PydanticMixin):
+    title: str
+    author: Author
+
+    @property
+    def display_title(self) -> str:
+        return f"{self.title} by {self.author.name}"
+
+
+# After inserting records and joining relationships:
+book = Book.where(id=1).join("author").first()
+
+# model_dump() serializes the full object graph
+data = book.model_dump()
+# -> {"id": 1, "title": "...", "author": {"id": 1, "name": "..."}, "display_title": "..."}
+
+# Use mode="json" for JSON-serializable output (dates as ISO strings, etc.)
+data = book.model_dump(mode="json")
+```
+
+> **Note:** When referencing other TypedTable models from a PydanticMixin class, those models must also include
+> `PydanticMixin`. This ensures the entire object graph can be serialized consistently.
+
+With this mixin, TypedTable instances work seamlessly as FastAPI response models:
+
+```python
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.get("/books/{book_id}")
+def get_book(book_id: int) -> Book:
+    return Book.where(id=book_id).join("author").first()
+```
+
 ## Creating Custom Mixins
 
 To create your own mixins for additional functionality, follow these steps:
@@ -121,6 +173,7 @@ recent_articles = (
 
 By using these mixins, you can enhance the functionality of your models in a modular and reusable manner, saving you
 time and effort in your development process.
+
 
 ---
 
