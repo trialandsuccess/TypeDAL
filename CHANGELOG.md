@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.6.0 (2026-03-13)
+
+### Documentation
+
+* Add section about PydanticMixin ([`d91c504`](https://github.com/trialandsuccess/TypeDAL/commit/d91c50485f7f7dd7a1e04ae93998475a05bb3742))
+
 ## v4.5.0 (2026-03-06)
 
 ### Feature
