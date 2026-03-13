@@ -56,7 +56,7 @@ or use them with `pydantic.TypeAdapter`.
 Add the mixin to enable `model_dump()` for serialization, including support for relationships and computed properties:
 
 ```python
-from typedal import TypedTable
+from typedal import TypedField, TypedTable
 from typedal.mixins import PydanticMixin
 
 
@@ -67,6 +67,7 @@ class Author(TypedTable, PydanticMixin):
 class Book(TypedTable, PydanticMixin):
     title: str
     author: Author
+    private_notes = TypedField(str, readable=False)
 
     @property
     def display_title(self) -> str:
@@ -79,6 +80,12 @@ book = Book.where(id=1).join("author").first()
 # model_dump() serializes the full object graph
 data = book.model_dump()
 # -> {"id": 1, "title": "...", "author": {"id": 1, "name": "..."}, "display_title": "..."}
+# (private_notes is omitted because readable=False)
+
+# Runtime readability flags are also respected by model_dump()
+Book.title.readable = False
+data = book.model_dump()
+# -> {"id": 1, "author": {"id": 1, "name": "..."}, "display_title": "..."}
 
 # Use mode="json" for JSON-serializable output (dates as ISO strings, etc.)
 data = book.model_dump(mode="json")

@@ -232,6 +232,11 @@ class PydanticTupleAndLiteralSchema(TypedTable, PydanticMixin):
     status: typing.Literal["draft", "published"]
 
 
+class PydanticHiddenTypedField(TypedTable, PydanticMixin):
+    visible = TypedField(str)
+    hidden = TypedField(str, readable=False)
+
+
 @pytest.fixture
 def pydantic_db():
     db = TypeDAL("sqlite:memory")
@@ -241,6 +246,7 @@ def pydantic_db():
     db.define(PydanticStringRelationship)
     db.define(PydanticGenericResolvedRelationship)
     db.define(PydanticGenericUnresolvedRelationship)
+    db.define(PydanticHiddenTypedField)
     db.define(NonPydanticAuthor)
     yield db
 
@@ -441,6 +447,17 @@ def test_pydantic_fields_include_typedfield_and_skip_no_getter_property(pydantic
 
     property_fields = PydanticNoGetterProperty._pydantic_fields(include_properties=True)
     assert "empty_prop" not in property_fields
+
+
+def test_pydantic_skips_unreadable_typedfield_in_model_dump(pydantic_db):
+    row = PydanticHiddenTypedField.insert(visible="show", hidden="hide")
+    data = row.model_dump()
+    assert data == {"id": row.id, "visible": "show"}
+
+    PydanticHiddenTypedField.visible.readable = False
+    row = PydanticHiddenTypedField.insert(visible="show-2", hidden="hide-2")
+    data = row.model_dump()
+    assert data == {"id": row.id}
 
 
 def test_pydantic_compatibility_non_type_and_missing_relationship_type():

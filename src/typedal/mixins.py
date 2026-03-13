@@ -585,13 +585,18 @@ class PydanticMixin(Mixin):
 
     def model_dump(self, mode: str = "python", *, _shallow: bool = False) -> dict[str, t.Any]:
         """Serialize this model to a dict, with optional shallow nested output."""
-        data = {
-            field_name: getattr(self, field_name, None)
-            for field_name in self._pydantic_fields(
-                include_relationships=not _shallow,
-                include_properties=not _shallow,
-            )
-        }
+        cls = type(self)
+        data: dict[str, t.Any] = {}
+        for field_name in self._pydantic_fields(
+            include_relationships=not _shallow,
+            include_properties=not _shallow,
+        ):
+            # Match web2py/pyDAL behavior: unreadable db fields are excluded from serialized output.
+            model_attr = getattr(cls, field_name, None)
+            if hasattr(model_attr, "readable") and not getattr(model_attr, "readable"):
+                continue
+
+            data[field_name] = getattr(self, field_name, None)
 
         if mode == "json":
             return dump_pydantic(data, _shallow_nested=True)

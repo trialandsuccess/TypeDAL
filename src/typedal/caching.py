@@ -203,6 +203,7 @@ def _remove_cache(s: Set, tablename: str) -> None:
     indeces = s.select("id").column("id")
     remove_cache(indeces, tablename)
 
+
 def get_expire(
     expires_at: t.Optional[dt.datetime] = None,
     ttl: t.Optional[int | dt.timedelta] = None,
@@ -418,6 +419,7 @@ class Stats[T](t.TypedDict):
     total: T
     valid: T
     expired: T
+
 
 RowStats = t.TypedDict(
     "RowStats",
