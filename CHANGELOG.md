@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.6.2 (2026-03-13)
+
+### Fix
+
+* Move pydantic visibility/lazy-load filtering into schema-converter path used by FastAPI ([`63c2e2c`](https://github.com/trialandsuccess/TypeDAL/commit/63c2e2c2e3c78f8aa817911dd269f650f5ba3d7d))
+
 ## v4.6.1 (2026-03-13)
 
 ### Fix
