@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.6.1 (2026-03-13)
+
+### Fix
+
+* **pydantic:** Exclude fields with 'readable=False' similar to pydal/py4web/web2py behavior ([`e47cc44`](https://github.com/trialandsuccess/TypeDAL/commit/e47cc442aa7736ba1177bc32a7dc6de58c2551aa))
+
 ## v4.6.0 (2026-03-13)
 
 ### Documentation
