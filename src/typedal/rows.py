@@ -421,8 +421,8 @@ class TypedRows(t.Collection[T_MetaInstance], Rows):
         fields: list[Field] | None = None,
     ) -> t.Generator[T_MetaInstance, None, None] | T_MetaInstance:
         """
-        Takes an index and returns a copy of the indexed row with values \
-            transformed via the "represent" attributes of the associated fields.
+        Takes an index and returns a copy of the indexed row with values
+        transformed via the "represent" attributes of the associated fields.
 
         Args:
             i: index. If not specified, a generator is returned for iteration

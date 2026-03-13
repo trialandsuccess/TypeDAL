@@ -237,6 +237,11 @@ class PydanticHiddenTypedField(TypedTable, PydanticMixin):
     hidden = TypedField(str, readable=False)
 
 
+class PydanticHiddenRelationshipHost(TypedTable, PydanticMixin):
+    name: str
+    with_hidden = relationship(list[PydanticHiddenTypedField], lambda self, other: self.id == other.id, lazy="allow")
+
+
 @pytest.fixture
 def pydantic_db():
     db = TypeDAL("sqlite:memory")
@@ -247,6 +252,7 @@ def pydantic_db():
     db.define(PydanticGenericResolvedRelationship)
     db.define(PydanticGenericUnresolvedRelationship)
     db.define(PydanticHiddenTypedField)
+    db.define(PydanticHiddenRelationshipHost)
     db.define(NonPydanticAuthor)
     yield db
 
@@ -458,6 +464,46 @@ def test_pydantic_skips_unreadable_typedfield_in_model_dump(pydantic_db):
     row = PydanticHiddenTypedField.insert(visible="show-2", hidden="hide-2")
     data = row.model_dump()
     assert data == {"id": row.id}
+
+
+def test_pydantic_skips_unreadable_typedfield_in_nested_list_relationship_dump(pydantic_db):
+    hidden = PydanticHiddenTypedField.insert(visible="show", hidden="hide")
+    host = PydanticHiddenRelationshipHost.insert(name="Host")
+    assert hidden.id == host.id
+
+    joined = PydanticHiddenRelationshipHost.where(id=host.id).join("with_hidden").first()
+    assert joined is not None
+
+    data = joined.model_dump(mode="json")
+    assert data["with_hidden"] == [{"id": hidden.id, "visible": "show"}]
+    assert joined.with_hidden[0].hidden == "hide"
+    assert [item.model_dump() for item in joined.with_hidden] == [{"id": hidden.id, "visible": "show"}]
+
+
+def test_pydantic_model_dump_never_lazy_loads_unjoined_relationships(pydantic_db):
+    hidden = PydanticHiddenTypedField.insert(visible="show", hidden="hide")
+    host = PydanticHiddenRelationshipHost.insert(name="Host")
+    assert hidden.id == host.id
+
+    data = host.model_dump(mode="json")
+    assert "with_hidden" not in data
+
+
+def test_pydantic_type_adapter_skips_unreadable_fields(pydantic_db):
+    row = PydanticHiddenTypedField.insert(visible="show", hidden="hide")
+    ta = pydantic.TypeAdapter(PydanticHiddenTypedField)
+    data = ta.validate_python(row)
+    assert data == {"id": row.id, "visible": "show"}
+
+
+def test_pydantic_type_adapter_never_lazy_loads_unjoined_relationships(pydantic_db):
+    hidden = PydanticHiddenTypedField.insert(visible="show", hidden="hide")
+    host = PydanticHiddenRelationshipHost.insert(name="Host")
+    assert hidden.id == host.id
+
+    ta = pydantic.TypeAdapter(PydanticHiddenRelationshipHost)
+    data = ta.validate_python(host)
+    assert "with_hidden" not in data
 
 
 def test_pydantic_compatibility_non_type_and_missing_relationship_type():

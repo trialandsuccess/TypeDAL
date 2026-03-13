@@ -35,7 +35,9 @@ except ImportError:
 # Internal references
 if t.TYPE_CHECKING:
     from .fields import TypedField
-    from .tables import TypedTable, _TypedTable  # noqa: F401
+
+    # noinspection PyUnusedImports
+    from .tables import TypedTable, _TypedTable
 
 # ---------------------------------------------------------------------------
 # Aliases

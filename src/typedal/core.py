@@ -4,6 +4,7 @@ Core functionality of TypeDAL.
 
 from __future__ import annotations
 
+# noinspection PyUnusedImports
 import datetime as dt
 import sys
 import typing as t
@@ -21,7 +22,9 @@ from .helpers import (
     sql_expression,
     to_snake,
 )
-from .types import CacheStatus, Field, Template  # noqa: F401
+
+# noinspection PyUnusedImports
+from .types import CacheStatus, Field, Template
 
 try:
     # python 3.14+

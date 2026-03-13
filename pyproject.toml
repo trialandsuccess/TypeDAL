@@ -183,6 +183,7 @@ select = [
     # "COM", # comma's - NO: annoying
     # "PTH", # use pathlib - NO: annoying
     "RUF", # ruff rules
+    # "D", # docs
 ]
 unfixable = [
     # Don't touch unused imports
@@ -191,12 +192,18 @@ unfixable = [
 extend-ignore = [
     # db.field == None should NOT be fixed to db.field is None
     "E711",
+    "D200",
+    "D212",
+    "D418",
 ]
-
 
 ignore = [
     "RUF013" # implicit optional
 ]
+
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
 
 [tool.bandit]
 # bandit -c pyproject.toml -r .

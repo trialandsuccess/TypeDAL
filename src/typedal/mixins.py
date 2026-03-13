@@ -376,6 +376,12 @@ class PydanticMixin(Mixin):
             field_name: cls._unwrap_pydantic_field_type(field_type) for field_name, field_type in annotations.items()
         }
 
+        # Respect pyDAL visibility: unreadable DB fields should not be part of pydantic output/schema.
+        for field_name in list(fields):
+            model_attr = full_dict.get(field_name, getattr(cls, field_name, None))
+            if hasattr(model_attr, "readable") and not getattr(model_attr, "readable"):
+                fields.pop(field_name, None)
+
         for field_name, field_type in fields.items():
             cls._ensure_pydantic_compatible_type(field_name, field_type)
 
@@ -420,8 +426,9 @@ class PydanticMixin(Mixin):
         )
 
     @staticmethod
-    def _make_instance_converter(_: type, fields: dict[str, t.Any]) -> t.Callable[[t.Any], t.Any]:
+    def _make_instance_converter(model_cls: type, fields: dict[str, t.Any]) -> t.Callable[[t.Any], t.Any]:
         _PRIMITIVES = (str, float, bool, bytes)
+        relationship_names = set(model_cls.get_relationships()) if hasattr(model_cls, "get_relationships") else set()
 
         def convert(value: t.Any) -> t.Any:
             if isinstance(value, dict):
@@ -432,7 +439,16 @@ class PydanticMixin(Mixin):
             if isinstance(value, _PRIMITIVES) or value is None:
                 return value
             # Handles both TypedTable instances and raw pydal Row objects
-            return {k: getattr(value, k, None) for k in fields}
+            values_dict = getattr(value, "__dict__", {})
+            result: dict[str, t.Any] = {}
+            for field_name in fields:
+                # Never trigger lazy-loads during pydantic conversion.
+                if field_name in relationship_names and field_name not in values_dict:
+                    continue
+
+                result[field_name] = getattr(value, field_name, None)
+
+            return result
 
         return convert
 
@@ -529,11 +545,9 @@ class PydanticMixin(Mixin):
             if field_name in _required_fields:
                 # Always computed — keep required and non-nullable for clean TS types
                 return core_schema.typed_dict_field(inner, required=True)
-            # DB fields / relationships: TypeDAL can return partial rows, so allow None
-            return core_schema.typed_dict_field(
-                core_schema.with_default_schema(core_schema.nullable_schema(inner), default=None),
-                required=False,
-            )
+            # DB fields / relationships: TypeDAL can return partial rows, so allow None when present,
+            # but keep missing fields absent (don't auto-fill null/default values).
+            return core_schema.typed_dict_field(core_schema.nullable_schema(inner), required=False)
 
         schema_fields = {field_name: make_field(field_name, field_type) for field_name, field_type in fields.items()}
 
@@ -586,14 +600,15 @@ class PydanticMixin(Mixin):
     def model_dump(self, mode: str = "python", *, _shallow: bool = False) -> dict[str, t.Any]:
         """Serialize this model to a dict, with optional shallow nested output."""
         cls = type(self)
+        relationship_names = set(cls.get_relationships())
         data: dict[str, t.Any] = {}
         for field_name in self._pydantic_fields(
             include_relationships=not _shallow,
             include_properties=not _shallow,
         ):
-            # Match web2py/pyDAL behavior: unreadable db fields are excluded from serialized output.
-            model_attr = getattr(cls, field_name, None)
-            if hasattr(model_attr, "readable") and not getattr(model_attr, "readable"):
+            # Only include relationship data that was already selected/joined.
+            # This prevents model_dump from triggering lazy-loading queries.
+            if field_name in relationship_names and field_name not in self.__dict__:
                 continue
 
             data[field_name] = getattr(self, field_name, None)
