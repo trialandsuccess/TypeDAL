@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.6.3 (2026-03-19)
+
+### Fix
+
+* `as_dict()` and similar changed behavior after doing `.render()` ([`8241503`](https://github.com/trialandsuccess/TypeDAL/commit/8241503073c5a9fd76cc898048f6c7796de3ce7a))
+
 ## v4.6.2 (2026-03-13)
 
 ### Fix
