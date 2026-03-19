@@ -1104,6 +1104,7 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
         # then create a new (more empty) row object:
         state["_row"] = Row(json.loads(state["_row"]))
         self.__dict__ |= state
+        self._setup_instance_methods()
 
     @classmethod
     def _sql(cls) -> str:

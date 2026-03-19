@@ -266,6 +266,15 @@ def test_render():
     assert rendered_two.normal == "123"
     assert rendered_two.list_field == "abc, def"
     assert rendered_two.related.also_normal == "321"
+    assert json.loads(rendered_two.as_json()) == {
+        "id": rendered_two.id,
+        "normal": "123",
+        "list_field": "abc, def",
+        "related": {
+            "id": rendered_two.related.id,
+            "also_normal": "321",
+        },
+    }
 
     # test list:
 
@@ -287,3 +296,14 @@ def test_render():
     assert rendered_four.normal == "123"
     assert rendered_four.list_field == "abc, def"
     assert rendered_four.related_list[0].also_normal == "321"
+    assert json.loads(rendered_four.as_json()) == {
+        "id": rendered_four.id,
+        "normal": "123",
+        "list_field": "abc, def",
+        "related_list": [
+            {
+                "id": rendered_four.related_list[0].id,
+                "also_normal": "321",
+            }
+        ],
+    }
