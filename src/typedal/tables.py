@@ -1164,7 +1164,9 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
 
                 relation_row = row[relation_name]
 
-                if isinstance(relation_row, list):
+                if relation_row is None:
+                    row[relation_name] = None
+                elif isinstance(relation_row, list):
                     # list of rows
                     combined = []
 
