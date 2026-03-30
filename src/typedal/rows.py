@@ -62,21 +62,7 @@ class TypedRows(t.Collection[T_MetaInstance], Rows):
         `model` is a Typed Table class
         """
 
-        def _get_id(row: Row) -> int:
-            """
-            Try to find the id field in a row.
-
-            If _extra exists, the row changes:
-            <Row {'test_relationship': {'id': 1}, '_extra': {'COUNT("test_relationship"."querytable")': 8}}>
-            """
-            if idx := getattr(row, "id", None):
-                return t.cast(int, idx)
-            elif main := getattr(row, str(model), None):
-                return t.cast(int, main.id)
-            else:  # pragma: no cover
-                raise NotImplementedError(f"`id` could not be found for {row}")
-
-        records = records or {_get_id(row): model(row) for row in rows}
+        records = records or {self._get_id(row, model): model(row) for row in rows}
         raw = raw or {}
 
         for idx, entity in records.items():
@@ -86,6 +72,21 @@ class TypedRows(t.Collection[T_MetaInstance], Rows):
         self.model = model
         self.metadata = metadata or {}
         self.colnames = rows.colnames
+
+    @staticmethod
+    def _get_id(row: Row, model: t.Type[t.Any]) -> int:
+        """
+        Try to find the id field in a row.
+
+        If _extra exists, the row changes:
+        <Row {'test_relationship': {'id': 1}, '_extra': {'COUNT("test_relationship"."querytable")': 8}}>
+        """
+        if idx := getattr(row, "id", None):
+            return t.cast(int, idx)
+        elif main := getattr(row, str(model), None):
+            return t.cast(int, main.id)
+        else:  # pragma: no cover
+            raise NotImplementedError(f"`id` could not be found for {row}")
 
     def __len__(self) -> int:
         """
@@ -374,11 +375,22 @@ class TypedRows(t.Collection[T_MetaInstance], Rows):
         rows: Rows,
         model: t.Type[T_MetaInstance],
         metadata: Metadata = None,
+        into: t.Type[_TypedTable] | None = None,
+        init: t.Callable[[_TypedTable, Row], None] | None = None,
     ) -> "TypedRows[T_MetaInstance]":
         """
         Internal method to convert a Rows object to a TypedRows.
         """
-        return cls(rows, model, metadata=metadata)
+        target_model = into or model
+
+        def build(row: Row) -> T_MetaInstance:
+            instance = t.cast(T_MetaInstance, target_model(row))
+            if init:
+                init(instance, row)
+            return instance
+
+        records = {cls._get_id(row, model): build(row) for row in rows}
+        return cls(rows, model, records=records, metadata=metadata)
 
     def __getstate__(self) -> AnyDict:
         """

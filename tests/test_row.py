@@ -307,3 +307,28 @@ def test_render():
             }
         ],
     }
+
+
+def test_render_with_none_single_relationship_row():
+    @db.define()
+    class RelatedTableNone(TypedTable):
+        value: str
+
+    @db.define()
+    class RenderTableNone(TypedTable):
+        normal: str
+        related = relationship(
+            RelatedTableNone,
+            condition=lambda this, that: this.normal == that.value,
+        )
+
+    RenderTableNone.insert(normal="no-match")
+
+    row = RenderTableNone.select().join("related").first()
+
+    assert row
+    assert row.related is None
+
+    rendered = row.render()
+
+    assert rendered.related is None
