@@ -386,6 +386,17 @@ class TableMeta(type):
         """
         return QueryBuilder(self).collect(verbose=verbose)
 
+    def collect_into[T_Into: _TypedTable](
+        self: t.Type[_TypedTable],
+        into: t.Type[T_Into],
+        verbose: bool = False,
+        init: t.Callable[[T_Into, Row], None] | None = None,
+    ) -> "TypedRows[T_Into]":
+        """
+        See QueryBuilder.collect_into!
+        """
+        return QueryBuilder(self).collect_into(into=into, verbose=verbose, init=init)
+
     @property
     def ALL(cls) -> pydal.objects.SQLALL:
         """

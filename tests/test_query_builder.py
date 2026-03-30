@@ -28,6 +28,10 @@ class TestRelationship(TypedTable):
     querytable: TestQueryTable
 
 
+class TestQueryTableBound(TestQueryTable):
+    pass
+
+
 class Undefined(TypedTable):
     value: int
 
@@ -208,6 +212,60 @@ def test_select():
 
     assert not other.name
     assert other.value
+
+
+def test_collect_into():
+    _setup_data()
+
+    rows = TestQueryTable.where(lambda row: row.number < 3).collect_into(TestQueryTableBound)
+    first = rows.first()
+
+    assert first
+    assert isinstance(first, TestQueryTableBound)
+    assert rows.model is TestQueryTable
+
+    joined = TestQueryTable.join("relations").where(id=1).collect_into(TestQueryTableBound)
+    joined_first = joined.first()
+
+    assert joined_first
+    assert isinstance(joined_first, TestQueryTableBound)
+    assert isinstance(joined_first.relations[0], TestRelationship)
+
+    marker = object()
+
+    def bind(sticker: TestQueryTableBound, _row):
+        sticker.item = marker
+
+    bound_rows = TestQueryTable.where(lambda row: row.number < 3).collect_into(TestQueryTableBound, init=bind)
+    assert all(getattr(row, "item", None) is marker for row in bound_rows)
+
+    calls: list[int] = []
+
+    def bind_once_per_root(sticker: TestQueryTableBound, _row):
+        calls.append(sticker.id)
+
+    TestQueryTable.join("relations").where(id=1).collect_into(TestQueryTableBound, init=bind_once_per_root)
+    assert calls == [1]
+
+    with pytest.raises(TypeError):
+        TestQueryTable.collect_into(dict)  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError):
+        TestQueryTable.collect_into(TestRelationship)
+
+
+def test_collect_into_cache_isolation():
+    _setup_data()
+
+    regular = TestQueryTable.where(id=1).cache().collect()
+    remapped_fresh = TestQueryTable.where(id=1).cache().collect_into(TestQueryTableBound)
+    remapped_cached = TestQueryTable.where(id=1).cache().collect_into(TestQueryTableBound)
+
+    assert regular.metadata["cache"]["status"] == "fresh"
+    assert remapped_fresh.metadata["cache"]["status"] == "fresh"
+    assert remapped_cached.metadata["cache"]["status"] == "cached"
+
+    assert isinstance(remapped_cached.first(), TestQueryTableBound)
 
 
 def test_paginate():

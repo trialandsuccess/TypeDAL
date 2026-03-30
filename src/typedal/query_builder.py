@@ -33,6 +33,7 @@ from .types import (
     OnQuery,
     OrderBy,
     Query,
+    Row,
     Rows,
     SelectKwargs,
     T_MetaInstance,
@@ -517,7 +518,11 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         """
         return self.to_sql()
 
-    def _collect_cached(self, metadata: Metadata) -> "TypedRows[T_MetaInstance] | None":
+    def _collect_cached(
+        self,
+        metadata: Metadata,
+        into: t.Type[_TypedTable],
+    ) -> "TypedRows[T_MetaInstance] | None":
         expires_at = metadata["cache"].get("expires_at")
         metadata["cache"] |= {
             # key is partly dependant on cache metadata but not these:
@@ -529,6 +534,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
 
         _, key = create_and_hash_cache_key(
             self.model,
+            f"{into.__module__}.{into.__qualname__}",
             metadata,
             self.query,
             self.select_args,
@@ -566,12 +572,15 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         verbose: bool = False,
         _to: t.Type["TypedRows[t.Any]"] = None,
         add_id: bool = True,
+        _into: t.Type[_TypedTable] | None = None,
+        _init: t.Callable[[_TypedTable, Row], None] | None = None,
     ) -> "TypedRows[T_MetaInstance]":
         """
         Execute the built query and turn it into model instances, while handling relationships.
         """
         if _to is None:
             _to = TypedRows
+        into = _into or self.model
 
         if not isinstance(self.model, TableMeta):
             # tried to use querybuilder with a non-typedal table,
@@ -585,7 +594,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
 
         metadata: Metadata = self.metadata.copy()
 
-        if metadata.get("cache", {}).get("enabled") and (result := self._collect_cached(metadata)):
+        if metadata.get("cache", {}).get("enabled") and (result := self._collect_cached(metadata, into)):
             return result
 
         query, select_args, select_kwargs = self._before_query(metadata, add_id=add_id)
@@ -609,18 +618,47 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
 
         if not self.relationships:
             # easy
-            typed_rows = _to.from_rows(rows, self.model, metadata=metadata)
+            typed_rows = _to.from_rows(rows, self.model, metadata=metadata, into=into, init=_init)
         else:
             # harder: try to match rows to the belonging objects
             # assume structure of {'table': <data>} per row.
             # if that's not the case, return default behavior again
-            typed_rows = self._collect_with_relationships(rows, metadata=metadata, _to=_to)
+            typed_rows = self._collect_with_relationships(rows, metadata=metadata, _to=_to, _into=into, _init=_init)
 
         for fn_after in db._after_collect:
             fn_after(self, typed_rows, rows)
 
         # only saves if requested in metadata:
         return save_to_cache(typed_rows, rows)
+
+    def collect_into[T_Into: _TypedTable](
+        self,
+        into: t.Type[T_Into],
+        verbose: bool = False,
+        add_id: bool = True,
+        init: t.Callable[[T_Into, Row], None] | None = None,
+    ) -> "TypedRows[T_Into]":
+        """
+        Execute the built query and instantiate root records as another model class.
+        """
+        self._validate_collect_into_model(into)
+        _init = t.cast(t.Callable[[_TypedTable, Row], None] | None, init)
+        rows = self.collect(verbose=verbose, add_id=add_id, _into=into, _init=_init)
+        return t.cast("TypedRows[T_Into]", rows)
+
+    def _validate_collect_into_model(self, into: t.Type[t.Any]) -> None:
+        if not isinstance(into, TableMeta):
+            raise TypeError("collect_into expects a TypedTable class")
+
+        source = self.model._ensure_table_defined()
+        target = into._ensure_table_defined()
+
+        if source is target or str(source) == str(target):
+            return
+
+        raise ValueError(
+            f"collect_into target '{into.__name__}' must be bound to table '{source}', got '{target}'",
+        )
 
     @t.overload
     def column[T: t.Any](self, field: TypedField[T], **options: t.Unpack[SelectKwargs]) -> list[T]:
@@ -843,12 +881,15 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         rows: Rows,
         metadata: Metadata,
         _to: t.Type["TypedRows[T_MetaInstance]"],
+        _into: t.Type[_TypedTable] | None = None,
+        _init: t.Callable[[_TypedTable, Row], None] | None = None,
     ) -> "TypedRows[T_MetaInstance]":
         """
         Transform the raw rows into Typed Table model instances with nested relationships.
         """
         db = self._get_db()
         main_table = self._ensure_table_defined()
+        into = _into or self.model
 
         # id: Model
         records: dict[t.Any, T_MetaInstance] = {}
@@ -866,7 +907,9 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
             raw_per_id[main_id].append(normalize_table_keys(row))
 
             if main_id not in records:
-                records[main_id] = self.model(main)
+                records[main_id] = t.cast(T_MetaInstance, into(main))
+                if _init:
+                    _init(t.cast(_TypedTable, records[main_id]), row)
                 records[main_id]._with = list(self.relationships.keys())
 
                 # Setup all relationship defaults (once)
