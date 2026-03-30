@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.6.4 (2026-03-30)
+
+### Fix
+
+* Add collect_into to allow instantiating results into different model classes + fix render ([#8](https://github.com/trialandsuccess/TypeDAL/issues/8)) ([`bc5b5b7`](https://github.com/trialandsuccess/TypeDAL/commit/bc5b5b78ce033b068c21f468932a4b2f3adfeeac))
+
 ## v4.6.3 (2026-03-19)
 
 ### Fix
