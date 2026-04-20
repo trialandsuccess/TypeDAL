@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.7.0 (2026-04-20)
+
+### Feature
+
+* Support typing.Literal and Enum as field type with IS_IN_SET-based default 'requires' ([`221f60c`](https://github.com/trialandsuccess/TypeDAL/commit/221f60cf6db5cad5c12b5e8308ff00324583a6cb))
+
 ## v4.6.4 (2026-03-30)
 
 ### Fix
