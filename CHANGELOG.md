@@ -2,6 +2,16 @@
 
 <!--next-version-placeholder-->
 
+## v4.7.1 (2026-04-20)
+
+### Fix
+
+* Collect_into() can now load into partially overlapping classes (instead of only subclasses) ([`a19e3e6`](https://github.com/trialandsuccess/TypeDAL/commit/a19e3e6b072bbf0ffe0cf68ecbee349f65fbe467))
+
+### Documentation
+
+* Updated documentation for new features since 4.6 ([`97e90a8`](https://github.com/trialandsuccess/TypeDAL/commit/97e90a847dff47651dfc0c21fa9e7442558914d2))
+
 ## v4.7.0 (2026-04-20)
 
 ### Feature
