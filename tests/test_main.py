@@ -1,3 +1,4 @@
+import enum
 import re
 import sys
 import typing
@@ -639,3 +640,42 @@ def test_reorder_fields():
     # 'name' should be dropped:
     Sub.reorder_fields(Sub.id, Sub.gid, keep_others=False)
     assert list(Sub) == [Sub.id, Sub.gid]
+
+
+def test_literal_enum_fields():
+    class TestEnum(enum.Enum):
+        FIRST = "first"
+        SECOND = 2
+
+    @db.define()
+    class LiteralTable(TypedTable):
+        lit_one: t.Literal["first", "second"]
+        lit_two = TypedField(t.Literal["first", "second"])
+
+        enum_one: TestEnum
+        enum_two = TypedField(TestEnum)
+
+    # should be ok
+    row, err = LiteralTable.validate_and_insert(
+        lit_one="first",
+        lit_two="second",
+        enum_one=TestEnum.FIRST,
+        enum_two=2,
+    )
+    assert not err, "unexpected error"
+    assert row, "expected row"
+
+    # should error on lit_one
+    row, err = LiteralTable.validate_and_insert(
+        lit_one="wrong",
+        lit_two="wronger",
+        enum_one=1,
+        enum_two="two",
+    )
+    assert not row, "unexpected row"
+    assert err, "expected err"
+
+    assert "lit_one" in err
+    assert "lit_two" in err
+    assert "enum_one" in err
+    assert "enum_two" in err

@@ -7,11 +7,13 @@ Since otherwise helper methods would clutter up the TypeDAl class.
 from __future__ import annotations
 
 import copy
+import enum
 import types
 import typing as t
 import warnings
 
 import pydal
+from pydal.validators import IS_IN_SET, ValidationError, Validator
 
 from .constants import BASIC_MAPPINGS
 from .core import TypeDAL, evaluate_forward_reference, resolve_annotation
@@ -40,6 +42,20 @@ try:
 except ImportError:  # pragma: no cover
     # python 3.13-
     from typing import ForwardRef
+
+
+class IS_IN_ENUM(Validator):
+    def __init__(self, etype: type[enum.Enum], error_message: str = "value not allowed"):
+        super().__init__()
+        self.etype = etype
+        self.error_message = error_message
+
+    def validate(self, value: t.Any, _record_id: int | None = None) -> t.Any:
+        if value not in self.etype:
+            raise ValidationError(self.translator(self.error_message))
+
+        # normalize value:
+        return self.etype(value).value
 
 
 class TableDefinitionBuilder:
@@ -157,6 +173,16 @@ class TableDefinitionBuilder:
         elif origin_is_subclass(ftype, TypedField):
             # TypedField[int]
             return self.annotation_to_pydal_fieldtype(t.get_args(ftype)[0], mut_kw)
+        elif t.get_origin(ftype) is t.Literal:
+            mut_kw.setdefault("requires", [IS_IN_SET(t.get_args(ftype))])
+            _child_type = type(t.get_args(ftype)[0])
+            return self.annotation_to_pydal_fieldtype(_child_type, mut_kw)
+        elif isinstance(ftype, type) and issubclass(ftype, enum.Enum):
+            _values = [v.value for v in ftype]
+            _child_type = type(_values[0])
+            # mut_kw.setdefault("requires", [IS_IN_SET(_values)])
+            mut_kw.setdefault("requires", [IS_IN_ENUM(ftype)])
+            return self.annotation_to_pydal_fieldtype(_child_type, mut_kw)
         elif isinstance(ftype, types.GenericAlias) and t.get_origin(ftype) in (list, TypedField):
             # list[str] -> str -> string -> list:string
             _child_type = t.get_args(ftype)[0]
