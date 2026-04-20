@@ -17,6 +17,7 @@ from pydal.validators import IS_IN_SET, ValidationError, Validator
 
 from .constants import BASIC_MAPPINGS
 from .core import TypeDAL, evaluate_forward_reference, resolve_annotation
+from .enum_helpers import enum_value_type, make_enum_filter_out
 from .fields import TypedField, is_typed_field
 from .helpers import (
     all_annotations,
@@ -178,10 +179,10 @@ class TableDefinitionBuilder:
             _child_type = type(t.get_args(ftype)[0])
             return self.annotation_to_pydal_fieldtype(_child_type, mut_kw)
         elif isinstance(ftype, type) and issubclass(ftype, enum.Enum):
-            _values = [v.value for v in ftype]
-            _child_type = type(_values[0])
+            _child_type = enum_value_type(ftype)
             # mut_kw.setdefault("requires", [IS_IN_SET(_values)])
             mut_kw.setdefault("requires", [IS_IN_ENUM(ftype)])
+            mut_kw.setdefault("filter_out", make_enum_filter_out(ftype))
             return self.annotation_to_pydal_fieldtype(_child_type, mut_kw)
         elif isinstance(ftype, types.GenericAlias) and t.get_origin(ftype) in (list, TypedField):
             # list[str] -> str -> string -> list:string

@@ -51,6 +51,37 @@ Any keyword arguments you would pass to `db.define_table`, you can also pass to 
 | `Field('name', 'big-id')`                            | ×                                           | ×                                                                   | ×                                                                     | ×                                               |
 | `Field('name', 'big-reference')`                     | ×                                           | ×                                                                   | ×                                                                     | ×                                               |
 
+### Enum fields
+
+TypeDAL supports `enum.Enum` subclasses directly (including `enum.StrEnum` and `enum.IntEnum`):
+
+```python
+import enum
+
+
+class Status(enum.StrEnum):
+    DRAFT = "draft"
+    PUBLISHED = "published"
+
+
+class Priority(enum.IntEnum):
+    LOW = 1
+    HIGH = 2
+
+
+@db.define()
+class Article(TypedTable):
+    status: Status
+    priority: Priority
+```
+
+Important constraints and behavior:
+
+- All enum member values in one enum must share the same underlying Python type for DB fields.
+  Mixed enums (for example `str` + `int` in one enum class) raise `TypeError` when defining the table.
+- Reading rows with invalid enum values in the database does not crash. Those values are returned as
+  `typedal.enum_helpers.InvalidEnumValue`, where `.value` is `None`.
+
 ### Making a field required/optional
 
 | pydal                                    | typedal (native python type)                                              | typedal (using TypedField annotation)                                                             | typedal (using TypedField)                            | typedal (using specific Field)       |
