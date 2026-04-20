@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.7.2 (2026-04-20)
+
+### Fix
+
+* **enums:** Add safe enum parsing helper and docs for mixed-type rejection + invalid DB sentinel ([`33ee169`](https://github.com/trialandsuccess/TypeDAL/commit/33ee169b61522cf7a863e29c68822a3b0e07d376))
+
 ## v4.7.1 (2026-04-20)
 
 ### Fix
