@@ -268,6 +268,43 @@ def test_collect_into_cache_isolation():
     assert isinstance(remapped_cached.first(), TestQueryTableBound)
 
 
+def test_collect_into_public_user_example():
+    @db.define()
+    class User(TypedTable):
+        id: int
+        email: str
+        password_hash: str
+        is_active: bool
+
+    class PublicUser(TypedTable):
+        id: int
+        email: str
+        is_active: bool
+        profile_url: str | None = None
+
+    User.truncate()
+    User.insert(email="a@example.com", password_hash="hash-a", is_active=True)
+    User.insert(email="b@example.com", password_hash="hash-b", is_active=False)
+    db.commit()
+
+    def enrich_profile_url(row: PublicUser, _raw):
+        row.profile_url = f"/users/{row.id}"
+
+    rows = (
+        User.where(is_active=True)
+        .collect_into(PublicUser, init=enrich_profile_url)
+    )
+
+    assert len(rows) == 1
+    row = rows.first()
+
+    assert isinstance(row, PublicUser)
+    assert row.email == "a@example.com"
+    assert row.profile_url == f"/users/{row.id}"
+    assert "password_hash" not in row
+    assert "password_hash" not in row.__dict__
+
+
 def test_paginate():
     _setup_data()
 

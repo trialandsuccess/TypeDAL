@@ -17,6 +17,7 @@ from .core import TypeDAL
 from .fields import TypedField, is_typed_field
 from .helpers import (
     DummyQuery,
+    all_annotations,
     as_lambda,
     filter_out,
     looks_like,
@@ -574,7 +575,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         add_id: bool = True,
         _into: t.Type[_TypedTable] | None = None,
         _init: t.Callable[[_TypedTable, Row], None] | None = None,
-    ) -> "TypedRows[T_MetaInstance]":
+    ) -> TypedRows[T_MetaInstance]:
         """
         Execute the built query and turn it into model instances, while handling relationships.
         """
@@ -637,20 +638,27 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         verbose: bool = False,
         add_id: bool = True,
         init: t.Callable[[T_Into, Row], None] | None = None,
-    ) -> "TypedRows[T_Into]":
+    ) -> TypedRows[T_Into]:
         """
         Execute the built query and instantiate root records as another model class.
         """
         self._validate_collect_into_model(into)
+        query = self
+        if not self.select_args:
+            query = self.select(*self._collect_into_default_fields(into))
         _init = t.cast(t.Callable[[_TypedTable, Row], None] | None, init)
-        rows = self.collect(verbose=verbose, add_id=add_id, _into=into, _init=_init)
-        return t.cast("TypedRows[T_Into]", rows)
+        rows = query.collect(verbose=verbose, add_id=add_id, _into=into, _init=_init)
+        return t.cast(TypedRows[T_Into], rows)
 
     def _validate_collect_into_model(self, into: t.Type[t.Any]) -> None:
         if not isinstance(into, TableMeta):
             raise TypeError("collect_into expects a TypedTable class")
 
         source = self.model._ensure_table_defined()
+
+        if not getattr(into, "_table", None):
+            into.__set_internals__(db=self._get_db(), table=source, relationships={})
+
         target = into._ensure_table_defined()
 
         if source is target or str(source) == str(target):
@@ -659,6 +667,11 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         raise ValueError(
             f"collect_into target '{into.__name__}' must be bound to table '{source}', got '{target}'",
         )
+
+    def _collect_into_default_fields(self, into: t.Type[_TypedTable]) -> list[t.Any]:
+        source = self.model._ensure_table_defined()
+
+        return [source[name] for name in all_annotations(into) if name in source.fields]
 
     @t.overload
     def column[T: t.Any](self, field: TypedField[T], **options: t.Unpack[SelectKwargs]) -> list[T]:
@@ -1045,7 +1058,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
                 path=path,
             )
 
-    def collect_or_fail(self, exception: t.Optional[Exception] = None) -> "TypedRows[T_MetaInstance]":
+    def collect_or_fail(self, exception: t.Optional[Exception] = None) -> TypedRows[T_MetaInstance]:
         """
         Call .collect() and raise an error if nothing found.
 
@@ -1148,7 +1161,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         builder = self.__paginate(limit, page)
         return builder._collect()
 
-    def chunk(self, chunk_size: int) -> t.Generator["TypedRows[T_MetaInstance]", t.Any, None]:
+    def chunk(self, chunk_size: int) -> t.Generator[TypedRows[T_MetaInstance], t.Any, None]:
         """
         Generator that yields rows from a paginated source in chunks.
 
