@@ -11,6 +11,12 @@ class InvalidEnumValue:
     raw: t.Any
     value: None = None
 
+    def __bool__(self) -> bool:
+        """
+        Make this fake type falsey.
+        """
+        return False
+
 
 def enum_value_type(enum_type: type[enum.Enum]) -> type[t.Any]:
     values = [member.value for member in enum_type]

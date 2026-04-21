@@ -706,6 +706,7 @@ def test_literal_enum_fields():
     invalid_row = LiteralTable(idx)
     assert isinstance(invalid_row.enum_one, InvalidEnumValue)
     assert invalid_row.enum_one.raw == "fake"
+    assert not invalid_row.enum_one
     assert invalid_row.enum_one.value is None
     assert isinstance(invalid_row.enum_two, InvalidEnumValue)
     assert invalid_row.enum_two.raw == 999
