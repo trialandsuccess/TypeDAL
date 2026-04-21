@@ -49,6 +49,10 @@ migrations = [
     "tomlkit",
 ]
 
+typescript = [
+    "typtyp < 1"
+]
+
 all = [
     "py4web",
     "typer >=0.18, <0.19",
