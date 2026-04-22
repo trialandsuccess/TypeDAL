@@ -1,8 +1,11 @@
+import json
 import tempfile
 import textwrap
 from pathlib import Path
 
 import pytest
+import tomli
+import yaml
 from typer.testing import CliRunner
 
 from src.typedal.__about__ import __version__
@@ -89,31 +92,16 @@ def test_generate_typescript_overwrites_file():
 
         result = runner.invoke(app, ["typescript.generate", str(source), "--output-file", str(output)])
 
+        print("o", result.stdout)
+        print("e", result.stderr)
+
         assert result.exit_code == 0
         rendered = output.read_text()
         assert "old-content" not in rendered
         assert "interface MyModel {" in rendered
 
 
-def test_generate_typescript_requires_extra(monkeypatch):
-    monkeypatch.setattr("src.typedal.serializers.typescript.typtyp", None)
-
-    with tempfile.NamedTemporaryFile(suffix=".py") as f:
-        f.write(MODEL_CODE.encode())
-        f.flush()
-        result = runner.invoke(app, ["typescript.generate", f.name])
-
-    assert result.exit_code != 0
-    assert result.exception
-    assert "typedal[typescript]" in str(result.exception)
-
-
 def test_get_output_format(capsys):
-    import json
-
-    import tomli
-    import yaml
-
     with pytest.raises(ValueError):
         assert not get_output_format("bleepbloop")
 

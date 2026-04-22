@@ -50,12 +50,14 @@ class TypedDictRegistry(Singleton):
         raw_typed_dict = t.TypedDict(name, fields or {})
         typed_dict = t.cast(type[dict[str, t.Any]], raw_typed_dict)
         self._types[model] = typed_dict
-        self._add_to_world(typed_dict, name=name)
+        self.add_to_world(typed_dict, name=name)
         return typed_dict
 
-    def _add_to_world(self, typ: type[dict[str, t.Any]], *, name: str) -> None:
+    def add_to_world(self, typ: type[t.Any], *, name: str = "") -> None:
         """Add a type to the world once per name."""
         world = self.world
+        name = name or typ.__name__
+
         if world is None or name in self._names:
             return
         world.add(typ, name=name)

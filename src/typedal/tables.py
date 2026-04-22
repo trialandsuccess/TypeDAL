@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import copy
 import csv
+import enum
 import functools
 import json
 import typing as t
@@ -292,7 +293,9 @@ class TableMeta(type):
         return QueryBuilder(self).select(*a, **kw)
 
     def column[T: t.Any, T_MetaInstance: _TypedTable](
-        self: t.Type[T_MetaInstance], field: T | TypedField[T], **options: t.Unpack[SelectKwargs]
+        self: t.Type[T_MetaInstance],
+        field: T | TypedField[T],
+        **options: t.Unpack[SelectKwargs],
     ) -> list[T]:
         """
         Get all values in a specific column.
@@ -1007,7 +1010,7 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
     def _ensure_matching_row(self) -> Row:
         row = getattr(self, "_row", None)
         return t.cast(Row, row) or throw(
-            EnvironmentError("Trying to access non-existant row. Maybe it was deleted or not yet initialized?")
+            EnvironmentError("Trying to access non-existant row. Maybe it was deleted or not yet initialized?"),
         )
 
     def __repr__(self) -> str:
@@ -1067,17 +1070,20 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
 
         typed_dict = registry.create(cls, fields)
 
-        fields = {
-            field_name: (
-                field_type.as_typeddict(
+        def handle_field(field_type: t.Any) -> t.Any:
+            is_type = isinstance(field_type, type)
+
+            if is_type and issubclass(field_type, TypedTable):
+                return field_type.as_typeddict(
                     include_relationships=include_relationships,
                     include_properties=include_properties,
                 )
-                if isinstance(field_type, type) and issubclass(field_type, _TypedTable)
-                else field_type
-            )
-            for field_name, field_type in fields.items()
-        }
+            elif is_type and issubclass(field_type, enum.Enum):
+                registry.add_to_world(field_type)
+
+            return field_type
+
+        fields = {field_name: handle_field(field_type) for field_name, field_type in fields.items()}
 
         typed_dict.__annotations__.update(fields)
         return typed_dict

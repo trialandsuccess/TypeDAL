@@ -1,5 +1,7 @@
+import enum
 import io
 import textwrap
+from typing import Literal
 
 import pytest
 from pydal2sql_core import RenderContext, render_schema_from_code
@@ -9,6 +11,9 @@ from src.typedal.serializers.typescript import TypedDictRegistry
 
 db = TypeDAL("sqlite:memory")
 
+class SomeEnum(enum.StrEnum):
+    FIRST = "one"
+    SECOND = "two"
 
 @db.define()
 class SecondModel(TypedTable):
@@ -27,6 +32,8 @@ class FirstModel(TypedTable):
 @db.define()
 class Standalone(TypedTable):
     single: str
+    first_choice: Literal[1, 2]
+    second_choice: SomeEnum
 
 
 def test_typescript():
@@ -43,6 +50,9 @@ def test_typescript():
     assert "unknown" not in typescript_code
     assert "any" not in typescript_code
     assert "secret" not in typescript_code
+
+    assert "1 | 2" in typescript_code
+    assert 'enum SomeEnum' in typescript_code
 
 
 def test_typescript_filtered():
@@ -135,12 +145,9 @@ def test_typescript_from_code_string():
     )
 
     assert success
-    print(success)
 
     output.seek(0)
     result = output.read()
-
-    print(result)
 
     assert "interface MyTable {" in result
     assert "interface SecondTable {" in result

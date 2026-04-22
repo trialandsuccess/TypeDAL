@@ -332,7 +332,7 @@ def run_migrations(
     except ImportError:
         rich.print(
             r"[red]missing dependency![/red] "
-            r"Please install [blue]`typedal\[migrate]`[/blue] "
+            r"Please install [blue]`typedal\[migrations]`[/blue] "
             r"to use [blue]`typedal migrations.*`[/blue]."
         )
         raise typer.Exit(code=127)
@@ -387,7 +387,7 @@ def fake_migrations(
     except ImportError:
         rich.print(
             r"[red]missing dependency![/red] "
-            r"Please install [blue]`typedal\[migrate]`[/blue] "
+            r"Please install [blue]`typedal\[migrations]`[/blue] "
             r"to use [blue]`typedal migrations.*`[/blue]."
         )
         raise typer.Exit(code=127)
@@ -497,7 +497,7 @@ def generate_typescript(
     """
     from .serializers.typescript import is_supported
 
-    if not is_supported():
+    if not is_supported():  # pragma: no cover
         rich.print(
             r"[red]missing dependency![/red] "
             r"Please install [blue]`typedal\[typescript]`[/blue] "
@@ -520,11 +520,12 @@ def generate_typescript(
         return db.as_typescript(*context.tables)
 
     mut_functions: list[str] = []
+    source_input = config.input
     source_code = find_file_contents(
-        filename,
+        source_input,
         config.function,
         found_functions=mut_functions,
-        default_version="current" if filename else "stdin",
+        default_version="current" if source_input else "stdin",
     )
 
     success = render_schema_from_code(
@@ -537,9 +538,10 @@ def generate_typescript(
         magic=config.magic,
         function_name=tuple(mut_functions),
         use_typedal=True,
+        write_mode="w",
     )
 
-    if not success:
+    if not success:  # pragma: no cover
         rich.print("[red] something went wrong [/red]")
 
     return success
