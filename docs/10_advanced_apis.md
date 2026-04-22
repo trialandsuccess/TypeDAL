@@ -74,3 +74,56 @@ MyTable.reorder_fields(MyTable.id, MyTable.name, keep_others=False)
 ```
 
 This is useful when you want deterministic field order for SQL generation, inspection, or exports.
+
+## TypeScript schema generation
+
+TypeDAL can generate TypeScript types from your models.
+
+Install the optional dependency first:
+
+```bash
+uv pip install TypeDAL[typescript]  # or typedal[all]
+```
+
+### From Python APIs
+
+Generate schema for one model:
+
+```python
+ts = User.as_typescript()
+print(ts)
+```
+
+Generate schema for all currently defined models on a database instance:
+
+```python
+ts = db.as_typescript()
+print(ts)
+```
+
+Generate schema for a subset of models:
+
+```python
+ts = db.as_typescript("User", "Post")
+# or:
+ts = db.as_typescript(User, Post)
+```
+
+### From the CLI
+
+Generate TypeScript from your configured table definitions:
+
+```bash
+typedal typescript.generate
+```
+
+Useful variants:
+
+```bash
+typedal typescript.generate path/to/models.py
+typedal typescript.generate --tables User --tables Post
+typedal typescript.generate --output-file src/types/typedal.ts
+```
+
+Configuration details for `typescript.generate` (including `typescript_output`) are documented in
+[7. Configuration](./7_configuration.md).
