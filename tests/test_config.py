@@ -119,6 +119,16 @@ def test_converting(at_temp_dir):
     assert isinstance(config.to_pydal2sql(), P2SConfig)
 
 
+def test_typescript_output_from_toml(at_temp_dir):
+    Path("pyproject.toml").write_text("""
+[tool.typedal]
+typescript_output = "types/models.ts"
+""")
+
+    config = load_config()
+    assert config.typescript_output == "types/models.ts"
+
+
 def test_environ(at_temp_dir):
     os.environ["DB_URI"] = "sqlite:///tmp/db.sqlite"
     config = load_config(False, True)

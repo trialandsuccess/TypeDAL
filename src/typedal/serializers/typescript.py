@@ -15,6 +15,11 @@ except ImportError:  # pragma: no cover
     typtyp = None  # type: ignore
 
 
+def is_supported() -> bool:
+    """Check if typescript support is enabled."""
+    return typtyp is not None
+
+
 class TypedDictRegistry(Singleton):
     """
     Global registry for model -> TypedDict mappings used by TypeScript serialization.

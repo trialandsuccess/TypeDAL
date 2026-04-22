@@ -39,6 +39,7 @@ class TypeDALConfig(TypedConfig):
     # pydal2sql:
     input: str = ""
     output: str = ""
+    typescript_output: str = ""
     noop: bool = False
     magic: bool = True
     tables: t.Optional[list[str]] = None
