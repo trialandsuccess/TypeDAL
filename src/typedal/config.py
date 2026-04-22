@@ -16,7 +16,7 @@ from .types import AnyDict
 
 if t.TYPE_CHECKING:
     from edwh_migrate import Config as MigrateConfig
-    from pydal2sql.typer_support import Config as P2SConfig
+    from pydal2sql_core.state import Config as P2SConfig
 
 LazyPolicy = t.Literal["forbid", "warn", "ignore", "tolerate", "allow"]
 
@@ -70,7 +70,7 @@ class TypeDALConfig(TypedConfig):
         """
         Convert the config to the format required by pydal2sql.
         """
-        from pydal2sql.typer_support import Config, get_pydal2sql_config
+        from pydal2sql_core.state import Config, get_pydal2sql_config
 
         if self.pyproject:  # pragma: no cover
             project = Path(self.pyproject).read_text()

@@ -111,7 +111,7 @@ def test_load_both_config(at_temp_dir):
 
 def test_converting(at_temp_dir):
     from edwh_migrate import Config as MigrateConfig
-    from pydal2sql.typer_support import Config as P2SConfig
+    from pydal2sql_core.state import Config as P2SConfig
 
     config = load_config()
 

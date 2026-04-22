@@ -1,7 +1,10 @@
-import pytest
-from configuraptor.singleton import SingletonMeta
+import io
+import textwrap
 
-from src.typedal import Ref, TypeDAL, TypedTable, relationship
+import pytest
+from pydal2sql_core import RenderContext, render_schema_from_code
+
+from src.typedal import Ref, TypeDAL, TypedField, TypedTable, relationship
 from src.typedal.serializers.typescript import TypedDictRegistry
 
 db = TypeDAL("sqlite:memory")
@@ -18,6 +21,12 @@ class SecondModel(TypedTable):
 @db.define()
 class FirstModel(TypedTable):
     second: SecondModel
+    secret = TypedField(str, readable=False)
+
+
+@db.define()
+class Standalone(TypedTable):
+    single: str
 
 
 def test_typescript():
@@ -33,6 +42,20 @@ def test_typescript():
 
     assert "unknown" not in typescript_code
     assert "any" not in typescript_code
+    assert "secret" not in typescript_code
+
+
+def test_typescript_filtered():
+    typescript_code1 = db.as_typescript("standalone")
+    typescript_code2 = db.as_typescript("Standalone")
+    typescript_code3 = db.as_typescript(Standalone)
+
+    # assert typescript_code1 == typescript_code2 == typescript_code3
+    assert typescript_code1 == typescript_code2, "first two"
+    assert typescript_code2 == typescript_code3, "second two"
+    assert "interface Standalone {" in typescript_code1
+    assert "interface FirstModel {" not in typescript_code2
+    assert "interface SecondModel {" not in typescript_code3
 
 
 def test_table_as_typescript():
@@ -42,7 +65,7 @@ def test_table_as_typescript():
 
 
 def test_registry_world_and_duplicate_name_guard():
-    SingletonMeta.clear()
+    TypedDictRegistry.clear()
     registry = TypedDictRegistry()
     assert registry.world is not None
 
@@ -54,11 +77,11 @@ def test_registry_world_and_duplicate_name_guard():
 
     assert "DummyModel" in registry._names
 
-    SingletonMeta.clear()
+    TypedDictRegistry.clear()
 
 
 def test_registry_get_typescript_without_world_warns():
-    SingletonMeta.clear()
+    TypedDictRegistry.clear()
     registry = TypedDictRegistry()
     registry._world = None
 
@@ -66,7 +89,7 @@ def test_registry_get_typescript_without_world_warns():
         result = registry.get_typescript("as_typescript")
 
     assert result == ""
-    SingletonMeta.clear()
+    TypedDictRegistry.clear()
 
 
 def test_base_relationship_type_resolver_returns_none_without_type():
@@ -74,3 +97,51 @@ def test_base_relationship_type_resolver_returns_none_without_type():
         pass
 
     assert FirstModel._typedal_resolve_relationship_python_type(DummyRelationship()) is None
+
+
+def example_typescript_renderer(context: RenderContext) -> str:
+    db: TypeDAL = context.db_new
+
+    return db.as_typescript(*context.tables)
+
+
+def test_typescript_from_code_string():
+    output = io.StringIO()
+    success = render_schema_from_code(
+        textwrap.dedent("""
+        @db.define()
+        class MyTable(TypedTable):
+            key: str
+            value: int
+
+            second = relationship("SecondTable")
+
+        @db.define()
+        class SecondTable(TypedTable):
+            key: str
+            value: int
+            secret = TypedField(str, readable=False)
+
+        @db.define()
+        class Unrelated(TypedTable):
+            something: str
+
+        """),
+        output_file=output,
+        renderer=example_typescript_renderer,
+        magic=True,
+        use_typedal=True,
+        tables=["my_table"],
+    )
+
+    assert success
+    print(success)
+
+    output.seek(0)
+    result = output.read()
+
+    print(result)
+
+    assert "interface MyTable {" in result
+    assert "interface SecondTable {" in result
+    assert "interface Unrelated {" not in result

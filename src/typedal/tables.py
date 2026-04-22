@@ -967,7 +967,7 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
         if type(self) is not type(other):
             return False
 
-        return self._row == other._row  # type: ignore
+        return self._row == other._row
 
     def keys(self) -> list[str]:
         """
