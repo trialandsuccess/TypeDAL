@@ -74,6 +74,27 @@ def test_table_as_typescript():
     assert "interface SecondModel {" in typescript_code
 
 
+def test_table_as_typescript_resolves_wrapped_related_models():
+    TypedDictRegistry.clear()
+    isolated_db = TypeDAL("sqlite:memory")
+
+    @isolated_db.define()
+    class Child(TypedTable):
+        value: int
+
+    @isolated_db.define()
+    class Parent(TypedTable):
+        child: Child | None
+        children: list[Child]
+
+    typescript_code = Parent.as_typescript()
+
+    assert "interface Parent {" in typescript_code
+    assert "interface Child {" in typescript_code
+
+    TypedDictRegistry.clear()
+
+
 def test_registry_world_and_duplicate_name_guard():
     TypedDictRegistry.clear()
     registry = TypedDictRegistry()

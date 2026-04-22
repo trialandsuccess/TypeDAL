@@ -9,6 +9,7 @@ import csv
 import enum
 import functools
 import json
+import types
 import typing as t
 import uuid
 
@@ -1069,24 +1070,68 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
         )
 
         typed_dict = registry.create(cls, fields)
-
-        def handle_field(field_type: t.Any) -> t.Any:
-            is_type = isinstance(field_type, type)
-
-            if is_type and issubclass(field_type, TypedTable):
-                return field_type.as_typeddict(
-                    include_relationships=include_relationships,
-                    include_properties=include_properties,
-                )
-            elif is_type and issubclass(field_type, enum.Enum):
-                registry.add_to_world(field_type)
-
-            return field_type
-
-        fields = {field_name: handle_field(field_type) for field_name, field_type in fields.items()}
+        fields = {
+            field_name: cls._resolve_typeddict_field_type(
+                field_type,
+                include_relationships=include_relationships,
+                include_properties=include_properties,
+            )
+            for field_name, field_type in fields.items()
+        }
 
         typed_dict.__annotations__.update(fields)
         return typed_dict
+
+    @classmethod
+    def _resolve_typeddict_field_type(
+        cls,
+        field_type: t.Any,
+        include_relationships: bool = False,
+        include_properties: bool = False,
+    ) -> t.Any:
+        origin = t.get_origin(field_type)
+        args = t.get_args(field_type)
+
+        if origin is not None:
+            resolved_args = tuple(
+                cls._resolve_typeddict_field_type(
+                    arg,
+                    include_relationships=include_relationships,
+                    include_properties=include_properties,
+                )
+                for arg in args
+            )
+
+            if origin in (t.Union, types.UnionType):
+                if not resolved_args:  # pragma: no cover
+                    return field_type
+
+                union_type = resolved_args[0]
+                for union_arg in resolved_args[1:]:
+                    union_type = union_type | union_arg
+                return union_type
+
+            arg_spec: t.Any = resolved_args[0] if len(resolved_args) == 1 else resolved_args
+
+            try:
+                return origin[arg_spec]
+            except TypeError:  # pragma: no cover
+                return field_type
+
+        if not isinstance(field_type, type):
+            return field_type
+
+        registry = TypedDictRegistry()
+
+        if issubclass(field_type, TypedTable):
+            return field_type.as_typeddict(
+                include_relationships=include_relationships,
+                include_properties=include_properties,
+            )
+        elif issubclass(field_type, enum.Enum):
+            registry.add_to_world(field_type)
+
+        return field_type
 
     @classmethod
     def as_typescript(cls) -> str:
