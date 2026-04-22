@@ -1138,6 +1138,8 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
         """
         Generate TypeScript schema output for this model using the shared registry/world.
         """
+        TypedDictRegistry.clear()
+
         registry = TypedDictRegistry()
         cls.as_typeddict()
         return registry.get_typescript("as_typescript")

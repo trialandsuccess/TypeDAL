@@ -74,6 +74,19 @@ def test_table_as_typescript():
     assert "interface SecondModel {" in typescript_code
 
 
+def test_table_as_typescript_isolated_per_call():
+    TypedDictRegistry.clear()
+
+    _ = FirstModel.as_typescript()
+    standalone_typescript = Standalone.as_typescript()
+
+    assert "interface Standalone {" in standalone_typescript
+    assert "interface FirstModel {" not in standalone_typescript
+    assert "interface SecondModel {" not in standalone_typescript
+
+    TypedDictRegistry.clear()
+
+
 def test_table_as_typescript_resolves_wrapped_related_models():
     TypedDictRegistry.clear()
     isolated_db = TypeDAL("sqlite:memory")
