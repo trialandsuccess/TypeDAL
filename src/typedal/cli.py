@@ -32,7 +32,7 @@ except ImportError as e:
         source=e,
         category=RuntimeWarning,
     )
-    raise typer.Exit(code=127)  # command not found
+    exit(127)  # command not found
 
 from typing import Never
 
