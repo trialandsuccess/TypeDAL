@@ -91,6 +91,7 @@ typedal --help
 - `migrations.fake`: Mark one or more migrations as completed in the database without executing the SQL code.
 - `migrations.generate`: Run `pydal2sql` based on the TypeDAL configuration.
 - `migrations.run`: Run `edwh-migrate` based on the TypeDAL configuration.
+- `typescript.generate`: Generate TypeScript interfaces from TypeDAL models.
 - `setup`: Interactively setup a `[tool.typedal]` entry in the local `pyproject.toml`.
 
 ### Configuration

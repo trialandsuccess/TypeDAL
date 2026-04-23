@@ -16,7 +16,7 @@ from pydal.validators import IS_NOT_IN_DB, ValidationError
 from slugify import slugify
 
 from .core import TypeDAL
-from .fields import DatetimeField, StringField, TypedField, is_typed_field
+from .fields import DatetimeField, StringField
 from .helpers import all_dict, filter_out
 from .relationships import Relationship, resolve_relationship_type
 from .tables import TableMeta, TypedTable, _TypedTable
@@ -313,103 +313,6 @@ class PydanticMixin(Mixin):
             )
 
     @classmethod
-    def _pydantic_fields(
-        cls,
-        *,
-        include_relationships: bool = False,
-        include_properties: bool = False,
-    ) -> dict[str, t.Any]:
-        annotations: dict[str, t.Any] = {
-            field_name: field_type
-            for field_name, field_type in t.get_type_hints(cls, include_extras=True).items()
-            if not field_name.startswith("_")
-        }
-
-        full_dict = all_dict(cls)
-
-        relationship_fields = cls._typedal_collect_relationship_fields(full_dict)
-        relationship_names = set(relationship_fields)
-
-        property_names = {
-            field_name
-            for field_name, field_value in full_dict.items()
-            if not field_name.startswith("_") and isinstance(field_value, property)
-        }
-
-        if not include_relationships:
-            for field_name in relationship_names:
-                annotations.pop(field_name, None)
-
-        if not include_properties:
-            for field_name in property_names:
-                annotations.pop(field_name, None)
-
-        for field_name, field_value in full_dict.items():
-            if field_name.startswith("_"):
-                continue
-
-            if is_typed_field(field_value):
-                annotations.setdefault(field_name, field_value._type)
-
-        if include_relationships:
-            for field_name, field_value in relationship_fields.items():
-                annotations.setdefault(field_name, field_value)
-
-        if include_properties:
-            for field_name, field_value in full_dict.items():
-                if field_name.startswith("_"):
-                    continue
-
-                if not isinstance(field_value, property):
-                    continue
-
-                getter = field_value.fget
-                if getter is None:
-                    continue
-
-                property_hints = t.get_type_hints(getter, include_extras=True)
-                return_type = property_hints.get("return")
-                if return_type is not None:
-                    annotations[field_name] = return_type
-
-        fields = {
-            field_name: cls._unwrap_pydantic_field_type(field_type) for field_name, field_type in annotations.items()
-        }
-
-        # Respect pyDAL visibility: unreadable DB fields should not be part of pydantic output/schema.
-        for field_name in list(fields):
-            model_attr = full_dict.get(field_name, getattr(cls, field_name, None))
-            if hasattr(model_attr, "readable") and not getattr(model_attr, "readable"):
-                fields.pop(field_name, None)
-
-        for field_name, field_type in fields.items():
-            cls._ensure_pydantic_compatible_type(field_name, field_type)
-
-        return fields
-
-    @classmethod
-    def _unwrap_pydantic_field_type(cls, field_type: t.Any) -> t.Any:
-        if t.get_origin(field_type) is TypedField:
-            return t.get_args(field_type)[0]
-        return field_type
-
-    @classmethod
-    def _typedal_collect_relationship_fields(
-        cls,
-        full_dict: dict[str, t.Any],
-    ) -> dict[str, t.Any]:
-        relationship_fields: dict[str, t.Any] = {}
-
-        for field_name, relationship_value in filter_out(full_dict, Relationship).items():
-            relationship_type = cls._typedal_resolve_relationship_python_type(
-                relationship_value=relationship_value,
-            )
-            if relationship_type is not None:
-                relationship_fields[field_name] = relationship_type
-
-        return relationship_fields
-
-    @classmethod
     def _typedal_resolve_relationship_python_type(
         cls,
         relationship_value: t.Any,
@@ -424,6 +327,42 @@ class PydanticMixin(Mixin):
             relationship_type,
             namespace=known_classes,
         )
+
+    @classmethod
+    def _typedal_collect_relationship_fields(
+        cls,
+        full_dict: dict[str, t.Any] | None = None,
+    ) -> dict[str, t.Any]:
+        relationship_fields: dict[str, t.Any] = {}
+
+        for field_name, relationship_value in filter_out(full_dict or {}, Relationship).items():
+            relationship_type = cls._typedal_resolve_relationship_python_type(
+                relationship_value=relationship_value,
+            )
+            if relationship_type is not None:
+                relationship_fields[field_name] = relationship_type
+
+        return relationship_fields
+
+    @classmethod
+    def _pydantic_fields(
+        cls,
+        *,
+        include_relationships: bool = False,
+        include_properties: bool = False,
+    ) -> dict[str, t.Any]:
+        full_dict = all_dict(cls)
+        relationship_fields = cls._typedal_collect_relationship_fields(full_dict)
+        fields = cls._collect_model_fields(
+            include_relationships=include_relationships,
+            include_properties=include_properties,
+            relationship_fields=relationship_fields,
+        )
+
+        for field_name, field_type in fields.items():
+            cls._ensure_pydantic_compatible_type(field_name, field_type)
+
+        return fields
 
     @staticmethod
     def _make_instance_converter(model_cls: type, fields: dict[str, t.Any]) -> t.Callable[[t.Any], t.Any]:

@@ -111,12 +111,22 @@ def test_load_both_config(at_temp_dir):
 
 def test_converting(at_temp_dir):
     from edwh_migrate import Config as MigrateConfig
-    from pydal2sql.typer_support import Config as P2SConfig
+    from pydal2sql_core.state import Config as P2SConfig
 
     config = load_config()
 
     assert isinstance(config.to_migrate(), MigrateConfig)
     assert isinstance(config.to_pydal2sql(), P2SConfig)
+
+
+def test_typescript_output_from_toml(at_temp_dir):
+    Path("pyproject.toml").write_text("""
+[tool.typedal]
+typescript_output = "types/models.ts"
+""")
+
+    config = load_config()
+    assert config.typescript_output == "types/models.ts"
 
 
 def test_environ(at_temp_dir):

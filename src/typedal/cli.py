@@ -17,7 +17,6 @@ from .helpers import match_strings
 from .types import AnyDict
 
 try:
-    import edwh_migrate
     import pydal2sql  # noqa: F401
     import questionary
     import rich
@@ -27,11 +26,15 @@ try:
 except ImportError as e:
     # ImportWarning is hidden by default
     warnings.warn(
-        "`migrations` extra not installed. Please run `pip install typedal[migrations]` to fix this.",
+        "`cli` extra not installed. Please run `pip install typedal[cli]` "
+        "(or `typedal[migrations]`, `typedal[typescript]`, `typedal[all]`) "
+        "to fix this.",
         source=e,
         category=RuntimeWarning,
     )
     exit(127)  # command not found
+
+from typing import Never
 
 from pydal2sql.typer_support import IS_DEBUG, with_exit_code
 from pydal2sql.types import (
@@ -41,7 +44,11 @@ from pydal2sql.types import (
     Tables_Option,
 )
 from pydal2sql_core import core_alter, core_create, core_stub
-from typing_extensions import Never
+from pydal2sql_core.cli_support import (
+    RenderContext,
+    find_file_contents,
+    render_schema_from_code,
+)
 
 from . import caching
 from .__about__ import __version__
@@ -85,6 +92,11 @@ questionary_types: dict[typing.Hashable, Optional[AnyDict]] = {
         "type": "path",
         "message": "Python file where migrations will be written to.",
         "file_filter": lambda file: "." not in file or file.endswith(".py"),
+    },
+    "typescript_output": {
+        "type": "path",
+        "message": "File where generated TypeScript will be written to.",
+        "file_filter": lambda file: "." not in file or file.endswith(".ts"),
     },
     # disabled props:
     "pyproject": None,  # internal
@@ -315,6 +327,16 @@ def run_migrations(
     """
     Run edwh-migrate based on the typedal config.
     """
+    try:
+        import edwh_migrate
+    except ImportError:
+        rich.print(
+            r"[red]missing dependency![/red] "
+            r"Please install [blue]`typedal\[migrations]`[/blue] "
+            r"to use [blue]`typedal migrations.*`[/blue]."
+        )
+        raise typer.Exit(code=127)
+
     # 1. build migrate Config from TypeDAL config
     # 2. import right file
     # 3. `activate_migrations`
@@ -360,6 +382,16 @@ def fake_migrations(
 
     glob is supported in 'names'
     """
+    try:
+        import edwh_migrate
+    except ImportError:
+        rich.print(
+            r"[red]missing dependency![/red] "
+            r"Please install [blue]`typedal\[migrations]`[/blue] "
+            r"to use [blue]`typedal migrations.*`[/blue]."
+        )
+        raise typer.Exit(code=127)
+
     if not (names or all):
         rich.print("Please provide one or more migration names, or pass --all to fake all.")
         return 1
@@ -385,13 +417,16 @@ def fake_migrations(
         db = edwh_migrate.setup_db(config=migrate_config)
     except edwh_migrate.migrate.DatabaseNotYetInitialized:
         db = edwh_migrate.setup_db(
-            config=migrate_config, migrate=True, migrate_enabled=True, remove_migrate_tablefile=True
+            config=migrate_config,
+            migrate=True,
+            migrate_enabled=True,
+            remove_migrate_tablefile=True,
         )
 
     previously_migrated = (
         db(
             db.ewh_implemented_features.name.belongs(to_fake)
-            & (db.ewh_implemented_features.installed == True)  # noqa E712
+            & (db.ewh_implemented_features.installed == True),  # noqa E712
         )
         .select(db.ewh_implemented_features.name)
         .column("name")
@@ -445,6 +480,71 @@ def migrations_stub(
         is_typedal=not is_pydal,
     )
     return 0
+
+
+@app.command(name="typescript.generate")
+@with_exit_code(hide_tb=IS_DEBUG)
+def generate_typescript(
+    connection: typing.Annotated[str, typer.Option("--connection", "-c")] = None,
+    filename: OptionalArgument[str] = None,
+    tables: Tables_Option = None,
+    magic: Optional[bool] = None,
+    function: Optional[str] = None,
+    output_file: Optional[str] = None,
+) -> bool:
+    """
+    Generate TypeScript interfaces from TypeDAL table definitions.
+    """
+    from .serializers.typescript import is_supported
+
+    if not is_supported():  # pragma: no cover
+        rich.print(
+            r"[red]missing dependency![/red] "
+            r"Please install [blue]`typedal\[typescript]`[/blue] "
+            r"to use [blue]`typedal typescript.generate`[/blue]."
+        )
+        raise typer.Exit(code=127)
+
+    config = load_config(connection)
+    config.update(
+        input=filename,
+        tables=tables,
+        magic=magic,
+        function=function,
+        typescript_output=output_file,
+        _skip_none=True,
+    )
+
+    def typescript_renderer(context: RenderContext) -> str:
+        db: TypeDAL = context.db_new
+        return db.as_typescript(*context.tables)
+
+    mut_functions: list[str] = []
+    source_input = config.input
+    source_code = find_file_contents(
+        source_input,
+        config.function,
+        found_functions=mut_functions,
+        default_version="current" if source_input else "stdin",
+    )
+
+    success = render_schema_from_code(
+        source_code,
+        # output_file=raw_output,
+        output_file=config.typescript_output or None,
+        renderer=typescript_renderer,
+        db_type=config.dialect,
+        tables=config.tables,
+        magic=config.magic,
+        function_name=tuple(mut_functions),
+        use_typedal=True,
+        write_mode="w",
+    )
+
+    if not success:  # pragma: no cover
+        rich.print("[red] something went wrong [/red]")
+
+    return success
 
 
 type AnyNestedDict = dict[str, AnyDict]

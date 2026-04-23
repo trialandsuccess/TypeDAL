@@ -118,8 +118,9 @@ class TableDefinitionBuilder:
                 table=table,
                 relationships=t.cast(dict[str, Relationship[t.Any]], relationships),
             )
-            self.class_map[str(table)] = cls
-            self.class_map[table._rname] = cls
+            self.class_map[str(table)] = cls  # tablename - pydal name
+            self.class_map[cls.__name__] = cls  # TableName - typedal name
+            self.class_map[table._rname] = cls  # table_model - sql name
             cls.__on_define__(self.db)
         else:
             warnings.warn("db.define used without inheriting TypedTable. This could lead to strange problems!")

@@ -6,7 +6,7 @@ from .core import TypeDAL
 from .fields import TypedField
 from .helpers import sql_expression
 from .query_builder import QueryBuilder
-from .relationships import Relationship, relationship
+from .relationships import Ref, Relationship, relationship
 from .rows import PaginatedRows, TypedRows
 from .tables import TypedTable
 
@@ -20,6 +20,7 @@ except ImportError:  # pragma: no cover
 __all__ = [
     "PaginatedRows",
     "QueryBuilder",
+    "Ref",
     "Relationship",
     "TypeDAL",
     "TypedField",

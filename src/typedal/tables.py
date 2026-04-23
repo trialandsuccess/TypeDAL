@@ -6,8 +6,10 @@ from __future__ import annotations
 
 import copy
 import csv
+import enum
 import functools
 import json
+import types
 import typing as t
 import uuid
 
@@ -16,7 +18,7 @@ from pydal._globals import DEFAULT
 
 from .constants import JOIN_OPTIONS
 from .core import TypeDAL
-from .helpers import classproperty, throw
+from .helpers import all_dict, classproperty, filter_out, throw
 from .serializers import as_json
 from .types import (
     AnyDict,
@@ -292,7 +294,9 @@ class TableMeta(type):
         return QueryBuilder(self).select(*a, **kw)
 
     def column[T: t.Any, T_MetaInstance: _TypedTable](
-        self: t.Type[T_MetaInstance], field: T | TypedField[T], **options: t.Unpack[SelectKwargs]
+        self: t.Type[T_MetaInstance],
+        field: T | TypedField[T],
+        **options: t.Unpack[SelectKwargs],
     ) -> list[T]:
         """
         Get all values in a specific column.
@@ -740,6 +744,115 @@ class _TypedTable(metaclass=TableMeta):
         # Relationship collection writes into model instances via dict-style access.
         raise NotImplementedError  # pragma: no cover
 
+    @classmethod
+    def _unwrap_model_field_type(cls, field_type: t.Any) -> t.Any:
+        if t.get_origin(field_type) is TypedField:
+            return t.get_args(field_type)[0]
+        return field_type
+
+    @classmethod
+    def _collect_model_fields(
+        cls,
+        *,
+        include_relationships: bool = False,
+        include_properties: bool = False,
+        relationship_fields: dict[str, t.Any] | None = None,
+    ) -> dict[str, t.Any]:
+        annotations: dict[str, t.Any] = {
+            field_name: field_type
+            for field_name, field_type in t.get_type_hints(cls, include_extras=True).items()
+            if not field_name.startswith("_")
+        }
+
+        full_dict = all_dict(cls)
+        if include_relationships and relationship_fields is None:
+            relationship_fields = cls._typedal_collect_relationship_fields()
+
+        relationship_names = set((relationship_fields or {}).keys())
+
+        if not include_relationships:
+            for field_name in relationship_names:
+                annotations.pop(field_name, None)
+
+        property_names = {
+            field_name
+            for field_name, field_value in full_dict.items()
+            if not field_name.startswith("_") and isinstance(field_value, property)
+        }
+
+        if not include_properties:
+            for field_name in property_names:
+                annotations.pop(field_name, None)
+
+        for field_name, field_value in full_dict.items():
+            if field_name.startswith("_"):
+                continue
+            if is_typed_field(field_value):
+                annotations.setdefault(field_name, field_value._type)
+
+        if include_relationships:
+            for field_name, field_value in (relationship_fields or {}).items():
+                annotations.setdefault(field_name, field_value)
+
+        if include_properties:
+            for field_name, field_value in full_dict.items():
+                if field_name.startswith("_") or not isinstance(field_value, property):
+                    continue
+
+                getter = field_value.fget
+                if getter is None:
+                    continue
+
+                property_hints = t.get_type_hints(getter, include_extras=True)
+                return_type = property_hints.get("return")
+                if return_type is not None:
+                    annotations[field_name] = return_type
+
+        fields = {
+            field_name: cls._unwrap_model_field_type(field_type) for field_name, field_type in annotations.items()
+        }
+
+        for field_name in list(fields):
+            model_attr = full_dict.get(field_name, getattr(cls, field_name, None))
+            if hasattr(model_attr, "readable") and not getattr(model_attr, "readable"):
+                fields.pop(field_name, None)
+
+        return fields
+
+    @classmethod
+    def _typedal_resolve_relationship_python_type(
+        cls,
+        relationship_value: t.Any,
+    ) -> t.Any | None:
+        relationship_type = getattr(relationship_value, "_type", None)
+        if relationship_type is None:
+            return None
+
+        known_classes = db._known_classes() if (db := getattr(cls, "_db", None)) else {}
+
+        return resolve_relationship_type(
+            relationship_type,
+            namespace=known_classes,
+        )
+
+    @classmethod
+    def _typedal_collect_relationship_fields(
+        cls,
+        full_dict: dict[str, t.Any] | None = None,
+    ) -> dict[str, t.Any]:
+        relationship_fields: dict[str, t.Any] = {}
+
+        relationship_items = (
+            cls.get_relationships().items() if full_dict is None else filter_out(dict(full_dict), Relationship).items()
+        )
+
+        for field_name, relationship_value in relationship_items:
+            relationship_type = cls._typedal_resolve_relationship_python_type(relationship_value)
+            if relationship_type is not None:
+                relationship_fields[field_name] = relationship_type
+
+        return relationship_fields
+
 
 class TypedTable(_TypedTable, metaclass=TableMeta):
     """
@@ -858,7 +971,7 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
         if type(self) is not type(other):
             return False
 
-        return self._row == other._row  # type: ignore
+        return self._row == other._row
 
     def keys(self) -> list[str]:
         """
@@ -898,7 +1011,7 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
     def _ensure_matching_row(self) -> Row:
         row = getattr(self, "_row", None)
         return t.cast(Row, row) or throw(
-            EnvironmentError("Trying to access non-existant row. Maybe it was deleted or not yet initialized?")
+            EnvironmentError("Trying to access non-existant row. Maybe it was deleted or not yet initialized?"),
         )
 
     def __repr__(self) -> str:
@@ -934,6 +1047,102 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
         table = cls._ensure_table_defined()
         result = table.as_dict(flat, sanitize)
         return t.cast(AnyDict, result)
+
+    @classmethod
+    def as_typeddict(
+        cls,
+        include_relationships: bool = True,
+        include_properties: bool = True,
+    ) -> type[dict[str, t.Any]]:
+        """
+        Return a runtime TypedDict type representing this model.
+
+        Relationship fields and computed properties can be included or skipped.
+        """
+        registry = TypedDictRegistry()
+        cached = registry.get(cls)
+        if cached is not None:
+            return cached
+
+        fields = cls._collect_model_fields(
+            include_relationships=include_relationships,
+            include_properties=include_properties,
+        )
+
+        typed_dict = registry.create(cls, fields)
+        fields = {
+            field_name: cls._resolve_typeddict_field_type(
+                field_type,
+                include_relationships=include_relationships,
+                include_properties=include_properties,
+            )
+            for field_name, field_type in fields.items()
+        }
+
+        typed_dict.__annotations__.update(fields)
+        return typed_dict
+
+    @classmethod
+    def _resolve_typeddict_field_type(
+        cls,
+        field_type: t.Any,
+        include_relationships: bool = False,
+        include_properties: bool = False,
+    ) -> t.Any:
+        origin = t.get_origin(field_type)
+        args = t.get_args(field_type)
+
+        if origin is not None:
+            resolved_args = tuple(
+                cls._resolve_typeddict_field_type(
+                    arg,
+                    include_relationships=include_relationships,
+                    include_properties=include_properties,
+                )
+                for arg in args
+            )
+
+            if origin in (t.Union, types.UnionType):
+                if not resolved_args:  # pragma: no cover
+                    return field_type
+
+                union_type = resolved_args[0]
+                for union_arg in resolved_args[1:]:
+                    union_type = union_type | union_arg
+                return union_type
+
+            arg_spec: t.Any = resolved_args[0] if len(resolved_args) == 1 else resolved_args
+
+            try:
+                return origin[arg_spec]
+            except TypeError:  # pragma: no cover
+                return field_type
+
+        if not isinstance(field_type, type):
+            return field_type
+
+        registry = TypedDictRegistry()
+
+        if issubclass(field_type, TypedTable):
+            return field_type.as_typeddict(
+                include_relationships=include_relationships,
+                include_properties=include_properties,
+            )
+        elif issubclass(field_type, enum.Enum):
+            registry.add_to_world(field_type)
+
+        return field_type
+
+    @classmethod
+    def as_typescript(cls) -> str:
+        """
+        Generate TypeScript schema output for this model using the shared registry/world.
+        """
+        TypedDictRegistry.clear()
+
+        registry = TypedDictRegistry()
+        cls.as_typeddict()
+        return registry.get_typescript("as_typescript")
 
     @classmethod
     def as_json(cls, sanitize: bool = True, indent: t.Optional[int] = None, **kwargs: t.Any) -> str:
@@ -1203,5 +1412,7 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
 TypedRow = TypedTable
 
 # note: at the bottom to prevent circular import issues:
-from .fields import TypedField  # noqa: E402
+from .fields import TypedField, is_typed_field  # noqa: E402
 from .query_builder import QueryBuilder  # noqa: E402
+from .relationships import Relationship, resolve_relationship_type  # noqa: E402
+from .serializers.typescript import TypedDictRegistry  # noqa: E402

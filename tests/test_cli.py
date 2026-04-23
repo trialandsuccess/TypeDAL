@@ -1,6 +1,11 @@
+import json
 import tempfile
+import textwrap
+from pathlib import Path
 
 import pytest
+import tomli
+import yaml
 from typer.testing import CliRunner
 
 from src.typedal.__about__ import __version__
@@ -8,6 +13,16 @@ from src.typedal.cli import app, get_output_format
 
 # by default, click's cli runner mixes stdout and stderr for some reason...
 runner = CliRunner()
+
+MODEL_CODE = textwrap.dedent("""
+from typedal import TypeDAL, TypedTable
+
+db = TypeDAL("sqlite:memory")
+
+@db.define()
+class MyModel(TypedTable):
+    key: str
+""")
 
 
 def test_version():
@@ -58,12 +73,35 @@ def test_show_config():
     assert result.stdout.strip().startswith("<TypeDAL")
 
 
+def test_generate_typescript_stdout():
+    with tempfile.NamedTemporaryFile(suffix=".py") as f:
+        f.write(MODEL_CODE.encode())
+        f.flush()
+        result = runner.invoke(app, ["typescript.generate", f.name])
+
+    assert result.exit_code == 0
+    assert "interface MyModel {" in result.stdout
+
+
+def test_generate_typescript_overwrites_file():
+    with tempfile.TemporaryDirectory() as d:
+        source = Path(d) / "models.py"
+        source.write_text(MODEL_CODE)
+        output = Path(d) / "models.ts"
+        output.write_text("old-content")
+
+        result = runner.invoke(app, ["typescript.generate", str(source), "--output-file", str(output)])
+
+        print("o", result.stdout)
+        print("e", result.stderr)
+
+        assert result.exit_code == 0
+        rendered = output.read_text()
+        assert "old-content" not in rendered
+        assert "interface MyModel {" in rendered
+
+
 def test_get_output_format(capsys):
-    import json
-
-    import tomli
-    import yaml
-
     with pytest.raises(ValueError):
         assert not get_output_format("bleepbloop")
 
