@@ -290,10 +290,7 @@ def test_collect_into_public_user_example():
     def enrich_profile_url(row: PublicUser, _raw):
         row.profile_url = f"/users/{row.id}"
 
-    rows = (
-        User.where(is_active=True)
-        .collect_into(PublicUser, init=enrich_profile_url)
-    )
+    rows = User.where(is_active=True).collect_into(PublicUser, init=enrich_profile_url)
 
     assert len(rows) == 1
     row = rows.first()

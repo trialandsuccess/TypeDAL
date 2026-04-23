@@ -28,7 +28,7 @@ classifiers = [
 dependencies = [
     "pydal >= 20251012.3", # core
     "dill < 1", # caching
-    "configuraptor >= 2.0.1, < 3", # config
+    "configuraptor >= 2.1.0, < 3", # config
     "Configurable-JSON < 2", # json dumping
     "python-slugify < 9",
     "legacy-cgi; python_version >= '3.13'",
@@ -40,24 +40,48 @@ py4web = [
     "py4web",
 ]
 
-migrations = [
+cli = [
     "typer >=0.18, <0.19",
     "tabulate",
-    "pydal2sql>=1.2.0",
-    "edwh-migrate>=0.8.0",
     "questionary",
     "tomlkit",
+    "pydal2sql>=1.3.5",
+]
+
+migrations = [
+    "tabulate",
+    "pydal2sql>=1.3.5",
+    "edwh-migrate>=0.8.0",
+    # cli:
+    "typer >=0.18, <0.19",
+    "tabulate",
+    "questionary",
+    "tomlkit",
+    "pydal2sql>=1.3.5",
+]
+
+typescript = [
+    "typtyp < 1",
+    # cli:
+    "typer >=0.18, <0.19",
+    "tabulate",
+    "questionary",
+    "tomlkit",
+    "pydal2sql>=1.3.5",
 ]
 
 all = [
     "py4web",
-    "typer >=0.18, <0.19",
+    "typtyp < 1",
     "tabulate",
-    "pydal2sql[all]>=1.2.0",
     "edwh-migrate[full]>=0.8.0",
     "pydantic < 3",
+    # cli:
+    "typer >=0.18, <0.19",
+    "tabulate",
     "questionary",
     "tomlkit",
+    "pydal2sql[all]>=1.3.5",
 ]
 
 dev = [

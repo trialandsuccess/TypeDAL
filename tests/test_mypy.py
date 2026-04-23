@@ -50,15 +50,15 @@ def mypy_test_typedal_define() -> None:
     db.define(LaterDefine)
     reveal_type(LaterDefine())  # R: tests.test_mypy.LaterDefine
 
-    reveal_type(MyTable.normal)  # R: builtins.str
-    reveal_type(MyTable().normal)  # R: builtins.str
-    reveal_type(MyTable.fancy)  # R: typedal.fields.TypedField[builtins.str]
-    reveal_type(MyTable().fancy)  # R: builtins.str
-    reveal_type(MyTable.options)  # R: typedal.fields.TypedField[builtins.str]
-    reveal_type(MyTable().options)  # R: builtins.str
+    reveal_type(MyTable.normal)  # R: str
+    reveal_type(MyTable().normal)  # R: str
+    reveal_type(MyTable.fancy)  # R: typedal.fields.TypedField[str]
+    reveal_type(MyTable().fancy)  # R: str
+    reveal_type(MyTable.options)  # R: typedal.fields.TypedField[str]
+    reveal_type(MyTable().options)  # R: str
 
     reveal_type(MyTable.fancy.lower())  # R: typedal.types.Expression
-    reveal_type(MyTable().fancy.lower())  # R: builtins.str
+    reveal_type(MyTable().fancy.lower())  # R: str
 
     aliased_cls = MyTable.with_alias("---")
     reveal_type(aliased_cls)  # R: type[tests.test_mypy.MyTable]
@@ -112,10 +112,10 @@ def mypy_test_typedset_modern_union() -> None:
     counted3 = db(old_style).count()
     counted4 = MyTable.count()
 
-    reveal_type(counted1)  # R: builtins.int
-    reveal_type(counted2)  # R: builtins.int
-    reveal_type(counted3)  # R: builtins.int
-    reveal_type(counted4)  # R: builtins.int
+    reveal_type(counted1)  # R: int
+    reveal_type(counted2)  # R: int
+    reveal_type(counted3)  # R: int
+    reveal_type(counted4)  # R: int
 
     select1 = db(MyTable).select()  # E: [var-annotated]
     select2: TypedRows[MyTable] = db(MyTable).select()
@@ -156,9 +156,9 @@ def mypy_test_query() -> None:
 
     SomeField: typing.Any
 
-    reveal_type(MyTable.where().column(SomeField))  # R: builtins.list[Any]
-    reveal_type(MyTable.where().column(MyTable.normal))  # R: builtins.list[builtins.str]
-    reveal_type(MyTable.where().column(MyTable.fancy))  # R: builtins.list[builtins.str]
+    reveal_type(MyTable.where().column(SomeField))  # R: list[Any]
+    reveal_type(MyTable.where().column(MyTable.normal))  # R: list[str]
+    reveal_type(MyTable.where().column(MyTable.fancy))  # R: list[str]
 
 
 @pytest.mark.mypy_testing

@@ -373,9 +373,7 @@ def UploadField(**kw: t.Unpack[FieldSettings]) -> TypedField[str]:
 Upload = UploadField
 
 
-def ReferenceField[
-    T_subclass: (TypedTable, Table)
-](
+def ReferenceField[T_subclass: (TypedTable, Table)](
     other_table: str | t.Type[TypedTable] | TypedTable | Table | T_subclass,
     **kw: t.Unpack[FieldSettings],
 ) -> TypedField[int]:

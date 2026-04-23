@@ -22,6 +22,7 @@ from .helpers import (
     sql_expression,
     to_snake,
 )
+from .serializers.typescript import TypedDictRegistry
 
 # noinspection PyUnusedImports
 from .types import CacheStatus, Field, Template
@@ -498,6 +499,32 @@ class TypeDAL(pydal.DAL):
             Cached result or fresh computation
         """
         return memoize(self, func, *args, key=key, ttl=ttl, **kwargs)
+
+    def as_typescript(self, *tables: str | type[TypedTable]) -> str:
+        """
+        Generate a TypeScript schema string for all currently defined typedal models.
+        """
+        TypedDictRegistry.clear()  # clean registry in order to apply 'tables' filtering
+        registry = TypedDictRegistry()
+
+        do_filter: t.Callable[[str], bool]
+        if tables:
+            names = {
+                model.__name__
+                for table in tables
+                if (model := (self.find_model(table) if isinstance(table, str) else table))
+            }
+
+            do_filter = lambda name: name in names  # noqa: E731
+        else:
+            do_filter = lambda name: not name.startswith("_")  # noqa: E731
+
+        # Ensure all currently defined models are registered into the TypedDict registry/world.
+        for model in self._class_map.values():
+            if do_filter(model.__name__):
+                model.as_typeddict()
+
+        return registry.get_typescript("as_typescript")
 
 
 TypeDAL.representers.setdefault("rows_render", default_representer)

@@ -88,3 +88,15 @@ You can however overwrite the behavior as defined in the config. See all options
 ```bash
 typedal migrations.run --help
 ```
+
+## Related: TypeScript generation
+
+If you also want TypeScript types from your TypeDAL models, use:
+
+```bash
+typedal typescript.generate
+```
+
+This command is separate from migrations, but uses the same style of TypeDAL config and model discovery.
+See [10. Advanced APIs](./10_advanced_apis.md#typescript-schema-generation) for usage,
+and [7. Configuration](./7_configuration.md) for config options such as `typescript_output`.

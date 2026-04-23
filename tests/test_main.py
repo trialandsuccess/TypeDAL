@@ -194,12 +194,14 @@ def test_dont_allow_bool_in_query():
 
 def test_invalid_union():
     with pytest.raises(NotImplementedError):
+
         @db.define
         class Invalid(TypedTable):
             valid: int | None
             invalid: int | str
 
     with pytest.raises(NotImplementedError):
+
         @db.define
         class Invalid(TypedTable):
             valid: list[int]
@@ -277,6 +279,7 @@ def test_typedfield_to_field_type():
         optional_two = TypedField(str | None)
 
     with pytest.raises(NotImplementedError):
+
         @db.define()
         class Invalid(TypedTable):
             third = TypedField(dict[str, int])  # not supported
@@ -590,8 +593,7 @@ def test_forward_reference_class_314():
     class WithFakeRef(TypedTable):
         fwd: Fake
 
-    class Future(TypedTable):
-        ...
+    class Future(TypedTable): ...
 
     # note: this still has to be defined first because otherwise pydal can't create a database relation!:
     assert db.define(Future)
@@ -647,6 +649,7 @@ def test_literal_enum_fields():
         SECOND = 2
 
     with pytest.raises(TypeError, match="mixed value types"):
+
         @db.define()
         class MixedLiteralTable(TypedTable):
             enum_one: MixedEnum
