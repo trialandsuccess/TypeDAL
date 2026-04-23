@@ -11,9 +11,11 @@ from src.typedal.serializers.typescript import TypedDictRegistry
 
 db = TypeDAL("sqlite:memory")
 
+
 class SomeEnum(enum.StrEnum):
     FIRST = "one"
     SECOND = "two"
+
 
 @db.define()
 class SecondModel(TypedTable):
@@ -52,7 +54,7 @@ def test_typescript():
     assert "secret" not in typescript_code
 
     assert "1 | 2" in typescript_code
-    assert 'enum SomeEnum' in typescript_code
+    assert "enum SomeEnum" in typescript_code
 
 
 def test_typescript_filtered():
