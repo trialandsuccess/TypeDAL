@@ -555,11 +555,10 @@ def PointField(**kw: t.Unpack[FieldSettings]) -> TypedField[tuple[float, float]]
     kw["type"] = NativePointField
     return TypedField(tuple[float, float], **kw)
 
-
 NativeUUIDField = SQLCustomType(
     type="string",
     native="uuid",
-    encoder=str,
+    encoder=lambda val: "" if val is None else str(val),
     decoder=lambda value: uuid.UUID(value) if value else None,
 )
 

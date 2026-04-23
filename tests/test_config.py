@@ -333,6 +333,21 @@ def test_uuid_fields_sqlite(at_temp_dir):
 
     assert '"gid" uuid NOT NULL' in UUIDTable._sql()
 
+def test_null_uuidfield(at_temp_dir):
+    db = TypeDAL("sqlite:memory")
+
+    @db.define
+    class MaybeUUIDTable(TypedTable):
+        gid = UUIDField(notnull=False)
+
+    with_nothing = MaybeUUIDTable.insert()
+    with_str = MaybeUUIDTable.insert(gid='')
+    with_none = MaybeUUIDTable.insert(gid=None)
+
+    assert with_nothing.gid is None
+    assert with_str.gid is None
+    assert with_none.gid is None
+
 
 def test_cache_migrate_disabled():
     try:
