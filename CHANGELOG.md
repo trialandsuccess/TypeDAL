@@ -2,6 +2,17 @@
 
 <!--next-version-placeholder-->
 
+## v4.8.0 (2026-04-23)
+
+### Feature
+
+* TypeDAL 4.8: type... script? ([#9](https://github.com/trialandsuccess/TypeDAL/issues/9)) ([`9a688c0`](https://github.com/trialandsuccess/TypeDAL/commit/9a688c012ddcb77207b5879b7c66c6c2fee547c0))
+
+### Fix
+
+* **uuid:** Don't try to store NULL uuid as 'None' ([`29f8606`](https://github.com/trialandsuccess/TypeDAL/commit/29f8606972110b5472a42806c6c0e5b66f50095a))
+* Ensure `InvalidEnumValue` is falsey ([`21fea08`](https://github.com/trialandsuccess/TypeDAL/commit/21fea086e3219d47615f7b9539caf4d5f5c48327))
+
 ## v4.7.2 (2026-04-20)
 
 ### Fix
