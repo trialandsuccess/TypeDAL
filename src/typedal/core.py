@@ -144,7 +144,13 @@ def resolve_annotation(ftype: str, namespace: dict[str, type] | None = None) -> 
         return resolve_annotation_314(ftype, namespace=namespace)
 
 
-class TypeDAL(pydal.DAL):
+class DALProtocol(t.Protocol): ...
+
+
+BaseDAL = DALProtocol if t.TYPE_CHECKING else pydal.DAL
+
+
+class TypeDAL(BaseDAL):
     """
     Drop-in replacement for pyDAL with layer to convert class-based table definitions to classical pydal define_tables.
     """
