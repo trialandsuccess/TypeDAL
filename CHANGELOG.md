@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.8.1 (2026-05-10)
+
+### Fix
+
+* Extend from empty type-safe `DALProtocol` during type-checking to make some LSPs happier ([`d93a361`](https://github.com/trialandsuccess/TypeDAL/commit/d93a361e9caa6c9b94d6fbfa78644c8ff5e2bc23))
+
 ## v4.8.0 (2026-04-23)
 
 ### Feature
