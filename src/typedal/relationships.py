@@ -203,7 +203,7 @@ class Relationship[To_Type: TypedTable]:
 
     def __get__(
         self,
-        instance: "TypedTable",
+        instance: "TypedTable" | None,
         owner: t.Type["TypedTable"],
     ) -> "t.Optional[list[t.Any]] | Relationship[To_Type]":
         """
@@ -284,6 +284,14 @@ class Ref[To_Type: TypedTable]:
     """
 
 
+class _RelationshipAccessor[To_Type: TypedTable, T_Value](t.Protocol):
+    @t.overload
+    def __get__(self, instance: None, owner: t.Type["TypedTable"]) -> "Relationship[To_Type]": ...
+
+    @t.overload
+    def __get__(self, instance: "TypedTable", owner: t.Type["TypedTable"]) -> T_Value: ...
+
+
 @t.overload
 def relationship[To_Type: TypedTable](
     _type: type[list[To_Type]],
@@ -292,7 +300,7 @@ def relationship[To_Type: TypedTable](
     on: OnQuery = None,
     lazy: LazyPolicy | None = None,
     explicit: bool = False,
-) -> list[To_Type]:
+) -> _RelationshipAccessor[To_Type, list[To_Type]]:
     """
     Define a relationship that returns a list of related instances.
 
@@ -313,7 +321,7 @@ def relationship[To_Type: TypedTable](
     on: OnQuery = None,
     lazy: LazyPolicy | None = None,
     explicit: bool = False,
-) -> To_Type:
+) -> _RelationshipAccessor[To_Type, To_Type]:
     """
     Define a relationship that returns a single related instance (never None with inner join).
 
@@ -334,7 +342,7 @@ def relationship[To_Type: TypedTable](
     on: OnQuery = None,
     lazy: LazyPolicy | None = None,
     explicit: bool = False,
-) -> To_Type | None:
+) -> _RelationshipAccessor[To_Type, To_Type | None]:
     """
     Define a relationship that returns a single optional related instance.
 
@@ -353,7 +361,7 @@ def relationship[To_Type: TypedTable](
     on: OnQuery = None,
     lazy: LazyPolicy | None = None,
     explicit: bool = False,
-) -> list[To_Type] | To_Type | None:
+) -> _RelationshipAccessor[To_Type, list[To_Type] | To_Type | None]:
     """
     Define a relationship to another table, when its id is not stored in the current table.
 
@@ -402,11 +410,8 @@ def relationship[To_Type: TypedTable](
     If you'd try to capture this in a single 'condition', pydal would create a cross join which is much less efficient.
     """
     return t.cast(
-        # note: The descriptor `Relationship[To_Type]` is more correct, but pycharm doesn't really get that.
-        # so for ease of use, just cast to the refered type for now!
-        # e.g. x = relationship(Author) -> x: Author
-        To_Type,
-        Relationship(_type, condition, join, on, lazy=lazy, explicit=explicit),  # type: ignore
+        _RelationshipAccessor[To_Type, list[To_Type] | To_Type | None],
+        Relationship(_type, condition, join, on, lazy=lazy, explicit=explicit),  # type: ignore[arg-type]
     )
 
 

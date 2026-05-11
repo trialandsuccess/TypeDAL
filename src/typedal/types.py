@@ -11,10 +11,7 @@ import datetime as dt
 import types
 import typing as t
 
-import pydal.objects
-
 # Third-party
-from pydal.adapters.base import BaseAdapter
 from pydal.helpers.classes import OpRow as _OpRow
 from pydal.helpers.classes import Reference as _Reference
 from pydal.helpers.classes import SQLCustomType
@@ -63,6 +60,11 @@ class TableProtocol(t.Protocol):  # pragma: no cover
         Tables have table[field] syntax.
         """
 
+    def on(self, query: "QueryLike") -> "Expression | _Expression":
+        """
+        pydal Table.on(query) helper used in join callbacks.
+        """
+
 
 class CacheFn(t.Protocol):
     """
@@ -70,7 +72,7 @@ class CacheFn(t.Protocol):
     """
 
     def __call__(
-        self: BaseAdapter,
+        self,  # : BaseAdapter
         sql: str = "",
         fields: t.Iterable[str] = (),
         attributes: t.Iterable[str] = (),
@@ -153,8 +155,8 @@ class Validator(_Validator):
     """Pydal Validator object. Make mypy happy."""
 
 
-class Table(_Table, TableProtocol):
-    """Table with protocol support. Make mypy happy."""
+class Table(_Table):
+    """Pydal Table object. Make mypy happy."""
 
 
 # ---------------------------------------------------------------------------
@@ -312,11 +314,14 @@ type T_Query = t.Union[
 type T_Field = t.Union["TypedField[t.Any]", "Table", t.Type["TypedTable"]]
 
 # table-ish parameter:
-type P_Table = t.Union[t.Type["TypedTable"], pydal.objects.Table]
+# Use protocol typing so checkers know `.id` exists in relationship callbacks.
+type P_Table = t.Union[t.Type["_TypedTable"], TableProtocol]
 
-type Condition = t.Optional[t.Callable[[P_Table, P_Table], Query | bool]]
+type QueryLike = Query | _Query | bool
 
-type OnQuery = t.Optional[t.Callable[[P_Table, P_Table], list[Expression]]]
+type Condition = t.Optional[t.Callable[[P_Table, P_Table], QueryLike]]
+
+type OnQuery = t.Optional[t.Callable[[P_Table, P_Table], list[Expression | _Expression]]]
 
 type CacheModel = t.Callable[[str, CacheFn, int], Rows]
 type CacheTuple = tuple[CacheModel, int]

@@ -91,7 +91,9 @@ dev = [
     # test:
     "su6[all]>=1.9.0",
     "python-semantic-release < 8",
-    "pytest-mypy-testing",
+    # "pytest-mypy-testing",
+    "pytest-typing",
+    "pyright < 1.1.400",
     "contextlib-chdir",
     "testcontainers",
     "pydantic < 3",
@@ -263,9 +265,14 @@ add_ignore = [
 ## look nowhere for any code to 'build' since this is just used to manage (dev) dependencies
 #where = []
 
-[tool.pytest.ini_options]
+[tool.pytest]
 pythonpath = [
     "src",
+]
+
+typing_checkers = [
+    "mypy",
+    "pyright",
 ]
 
 [tool.typedal]

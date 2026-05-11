@@ -71,7 +71,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         """
         self.model = model
         table = self._ensure_table_defined()
-        default_query: Query = table.id > 0
+        default_query: Query = t.cast(Query, table.id > 0)
         self.query = add_query or default_query
         self.select_args = select_args or []
         self.select_kwargs = select_kwargs or {}
@@ -111,7 +111,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         Querybuilder is truthy if it has t.Any conditions.
         """
         table = self._ensure_table_defined()
-        default_query: Query = table.id > 0
+        default_query: Query = t.cast(Query, table.id > 0)
         return any(
             [
                 self.query != default_query,
