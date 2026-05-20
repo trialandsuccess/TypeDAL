@@ -47,8 +47,8 @@ db.commit()
 joined = WithoutBraces.join().first_or_fail()
 
 reveal_type(WithoutBraces.with_braces) # revealed: Relationship[WithBraces]
-reveal_type(WithoutBraces.deferred) # revealed: Relationship[DeferredDefine]
-reveal_type(WithoutBraces.multiple) # revealed: Relationship[WithoutBraces]
+reveal_type(WithoutBraces.deferred) # revealed: Relationship[DeferredDefine | None]
+reveal_type(WithoutBraces.multiple) # revealed: Relationship[list[WithoutBraces]]
 
 reveal_type(joined.with_braces) # revealed: WithBraces
 reveal_type(joined.deferred) # revealed: DeferredDefine | None

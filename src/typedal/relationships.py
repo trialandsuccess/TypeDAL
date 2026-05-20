@@ -18,13 +18,17 @@ from .types import Condition, OnQuery, T_Field
 
 # default lazy policy is defined at the TypeDAL() instance settings level
 
+To_Type = t.TypeVar("To_Type", bound="TypedTable")
+_RelTable = t.TypeVar("_RelTable", bound="TypedTable")
+_RelValue = t.TypeVar("_RelValue")
 
-class Relationship[To_Type: TypedTable]:
+
+class Relationship[To_Type]:
     """
     Define a relationship to another table.
     """
 
-    _type: t.Type[To_Type]
+    _type: t.Any
     table: t.Type["TypedTable"] | type | str  # use get_table() to resolve later on
     condition: Condition
     condition_and: Condition
@@ -39,7 +43,7 @@ class Relationship[To_Type: TypedTable]:
 
     def __init__(
         self,
-        _type: t.Type[To_Type],
+        _type: t.Any,
         condition: Condition = None,
         join: JOIN_OPTIONS = None,
         on: OnQuery = None,
@@ -56,7 +60,7 @@ class Relationship[To_Type: TypedTable]:
 
         resolved_type = resolve_relationship_type(_type, keep_unresolved=True)
         if resolved_type is not None:
-            _type = t.cast(t.Type[To_Type], resolved_type)
+            _type = resolved_type
 
         self._type = _type
         self.condition = condition
@@ -201,11 +205,31 @@ class Relationship[To_Type: TypedTable]:
 
         return str(table)
 
+    @t.overload
+    def __get__(
+        self: "Relationship[list[_RelTable]]", instance: None, owner: t.Type["TypedTable"]
+    ) -> "Relationship[list[_RelTable]]": ...
+
+    @t.overload
+    def __get__(
+        self: "Relationship[list[_RelTable]]", instance: "TypedTable", owner: t.Type["TypedTable"]
+    ) -> list[_RelTable]: ...
+
+    @t.overload
+    def __get__(
+        self: "Relationship[_RelValue]", instance: None, owner: t.Type["TypedTable"]
+    ) -> "Relationship[_RelValue]": ...
+
+    @t.overload
+    def __get__(
+        self: "Relationship[_RelValue]", instance: "TypedTable", owner: t.Type["TypedTable"]
+    ) -> _RelValue: ...
+
     def __get__(
         self,
         instance: "TypedTable" | None,
         owner: t.Type["TypedTable"],
-    ) -> "t.Optional[list[t.Any]] | Relationship[To_Type]":
+    ) -> "Relationship[To_Type] | list[t.Any] | t.Any | None":
         """
         Relationship is a descriptor class, which can be returned from a class but not an instance.
 
@@ -284,23 +308,15 @@ class Ref[To_Type: TypedTable]:
     """
 
 
-class _RelationshipAccessor[To_Type: TypedTable, T_Value](t.Protocol):
-    @t.overload
-    def __get__(self, instance: None, owner: t.Type["TypedTable"]) -> "Relationship[To_Type]": ...
-
-    @t.overload
-    def __get__(self, instance: "TypedTable", owner: t.Type["TypedTable"]) -> T_Value: ...
-
-
 @t.overload
-def relationship[To_Type: TypedTable](
+def relationship(
     _type: type[list[To_Type]],
     condition: Condition = None,
     join: JOIN_OPTIONS = None,
     on: OnQuery = None,
     lazy: LazyPolicy | None = None,
     explicit: bool = False,
-) -> _RelationshipAccessor[To_Type, list[To_Type]]:
+) -> "Relationship[list[To_Type]]":
     """
     Define a relationship that returns a list of related instances.
 
@@ -313,7 +329,7 @@ def relationship[To_Type: TypedTable](
 
 
 @t.overload
-def relationship[To_Type: TypedTable](
+def relationship(
     _type: t.Type[To_Type] | str | t.Type[Ref[To_Type]],
     condition: Condition = None,
     *,
@@ -321,7 +337,7 @@ def relationship[To_Type: TypedTable](
     on: OnQuery = None,
     lazy: LazyPolicy | None = None,
     explicit: bool = False,
-) -> _RelationshipAccessor[To_Type, To_Type]:
+) -> "Relationship[To_Type]":
     """
     Define a relationship that returns a single related instance (never None with inner join).
 
@@ -335,14 +351,14 @@ def relationship[To_Type: TypedTable](
 
 
 @t.overload
-def relationship[To_Type: TypedTable](
+def relationship(
     _type: t.Type[To_Type] | str | t.Type[Ref[To_Type]],
     condition: Condition = None,
     join: JOIN_OPTIONS = None,
     on: OnQuery = None,
     lazy: LazyPolicy | None = None,
     explicit: bool = False,
-) -> _RelationshipAccessor[To_Type, To_Type | None]:
+) -> "Relationship[To_Type | None]":
     """
     Define a relationship that returns a single optional related instance.
 
@@ -354,14 +370,14 @@ def relationship[To_Type: TypedTable](
     """
 
 
-def relationship[To_Type: TypedTable](
+def relationship(
     _type: type[list[To_Type]] | t.Type[To_Type] | str | t.Type[Ref[To_Type]],
     condition: Condition = None,
     join: JOIN_OPTIONS = None,
     on: OnQuery = None,
     lazy: LazyPolicy | None = None,
     explicit: bool = False,
-) -> _RelationshipAccessor[To_Type, list[To_Type] | To_Type | None]:
+) -> "Relationship[list[To_Type]] | Relationship[To_Type] | Relationship[To_Type | None]":
     """
     Define a relationship to another table, when its id is not stored in the current table.
 
@@ -410,8 +426,8 @@ def relationship[To_Type: TypedTable](
     If you'd try to capture this in a single 'condition', pydal would create a cross join which is much less efficient.
     """
     return t.cast(
-        _RelationshipAccessor[To_Type, list[To_Type] | To_Type | None],
-        Relationship(_type, condition, join, on, lazy=lazy, explicit=explicit),  # type: ignore[arg-type]
+        Relationship[list[To_Type]] | Relationship[To_Type] | Relationship[To_Type | None],
+        Relationship(_type, condition, join, on, lazy=lazy, explicit=explicit),
     )
 
 

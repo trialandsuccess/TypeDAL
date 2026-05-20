@@ -49,8 +49,8 @@ db.commit()
 joined = WithoutBraces.join().first_or_fail()
 
 reveal_type(WithoutBraces.with_braces) # revealed: typedal.relationships.Relationship[test_snippet.WithBraces]
-reveal_type(WithoutBraces.deferred) # revealed: typedal.relationships.Relationship[test_snippet.DeferredDefine]
-reveal_type(WithoutBraces.multiple) # revealed: typedal.relationships.Relationship[test_snippet.WithoutBraces]
+reveal_type(WithoutBraces.deferred) # revealed: typedal.relationships.Relationship[test_snippet.DeferredDefine | None]
+reveal_type(WithoutBraces.multiple) # revealed: typedal.relationships.Relationship[list[test_snippet.WithoutBraces]]
 
 reveal_type(joined.with_braces) # revealed: test_snippet.WithBraces
 reveal_type(joined.deferred) # revealed: test_snippet.DeferredDefine | None
