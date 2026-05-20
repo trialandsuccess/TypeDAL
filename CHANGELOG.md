@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.8.2 (2026-05-20)
+
+### Fix
+
+* **typing:** Improved LSP support + more type testing ([#10](https://github.com/trialandsuccess/TypeDAL/issues/10)) ([`ff6fc2e`](https://github.com/trialandsuccess/TypeDAL/commit/ff6fc2e1706d5cc37719c87b8b8ee565dd31cda3))
+
 ## v4.8.1 (2026-05-10)
 
 ### Fix
