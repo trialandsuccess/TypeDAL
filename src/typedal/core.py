@@ -37,7 +37,7 @@ except ImportError:  # pragma: no cover
 if t.TYPE_CHECKING:
     from .fields import TypedField
     from .query_builder import QueryBuilder
-    from .types import AnyDict, Expression, Rows, T_Query, Table
+    from .types import AnyDict, Expression, Rows, Set, T_Query, Table
 
 
 # note: these functions can not be moved to a different file,
@@ -144,13 +144,37 @@ def resolve_annotation(ftype: str, namespace: dict[str, type] | None = None) -> 
         return resolve_annotation_314(ftype, namespace=namespace)
 
 
-class DALProtocol(t.Protocol): ...
+if t.TYPE_CHECKING:
+
+    class _TypeDALBase:
+        # attributes accessed throughout the codebase
+        _adapter: t.Any
+        _migrate: t.Any
+        representers: t.Any
+
+        def __init__(self, *args: t.Any, **kwargs: t.Any) -> None: ...
+
+        def __call__(self, query: t.Any = None) -> "Set": ...
+
+        def commit(self) -> None: ...
+
+        def rollback(self) -> None: ...
+
+        def define_table(self, *args: t.Any, **kwargs: t.Any) -> "Table": ...
+
+        def has_representer(self, field_type: str) -> bool: ...
+
+        # pydal exposes dynamic table attributes like `db.my_table`.
+        # this keeps type checkers from flagging these as missing attributes.
+        def __getattr__(self, item: str) -> "Table": ...
+
+else:
+
+    class _TypeDALBase(pydal.DAL):
+        pass
 
 
-BaseDAL = DALProtocol if t.TYPE_CHECKING else pydal.DAL
-
-
-class TypeDAL(BaseDAL):
+class TypeDAL(_TypeDALBase):
     """
     Drop-in replacement for pyDAL with layer to convert class-based table definitions to classical pydal define_tables.
     """

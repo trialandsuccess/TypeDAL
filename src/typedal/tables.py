@@ -29,6 +29,7 @@ from .types import (
     OpRow,
     OrderBy,
     Query,
+    QueryLike,
     Reference,
     Row,
     SelectKwargs,
@@ -139,7 +140,7 @@ class TableMeta(type):
         Allow dict notation to get a column of this table (-> Field instance).
         """
         table = self._ensure_table_defined()
-        return table[item]
+        return t.cast(Field, table[item])
 
     def __str__(self) -> str:
         """
@@ -483,7 +484,7 @@ class TableMeta(type):
             **kwargs,
         )
 
-    def on(self, query: bool | Query) -> Expression:
+    def on(self, query: QueryLike) -> Expression:
         """
         Shadow Table.on.
 

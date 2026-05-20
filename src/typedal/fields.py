@@ -29,7 +29,7 @@ from .types import (
 
 if t.TYPE_CHECKING:
     # will be imported for real later:
-    from .tables import TypedTable, _TypedTable
+    from .tables import TypedTable
 
 
 ## general
@@ -71,21 +71,21 @@ class TypedField[T_Value](Expression):  # pragma: no cover
         # super().__init__()
 
     @t.overload
-    def __get__(self, instance: T_MetaInstance, owner: t.Type[T_MetaInstance]) -> T_Value:  # pragma: no cover
+    def __get__(self, instance: None, owner: "t.Type[t.Any]") -> "TypedField[T_Value]":  # pragma: no cover
         """
-        row.field -> (actual data).
+        Table.field -> Field.
         """
 
     @t.overload
-    def __get__(self, instance: None, owner: "t.Type[_TypedTable]") -> "TypedField[T_Value]":  # pragma: no cover
+    def __get__(self, instance: object, owner: "t.Type[t.Any]") -> T_Value:  # pragma: no cover
         """
-        Table.field -> Field.
+        row.field -> (actual data).
         """
 
     def __get__(
         self,
         instance: T_MetaInstance | None,
-        owner: t.Type[T_MetaInstance],
+        owner: t.Type[t.Any],
     ) -> t.Union[T_Value, "TypedField[T_Value]"]:
         """
         Since this class is a Descriptor field, \
