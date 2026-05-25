@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.8.3 (2026-05-25)
+
+### Fix
+
+* Improved typing hints on TypedField properties ([`55b5ce4`](https://github.com/trialandsuccess/TypeDAL/commit/55b5ce4ae2657ae43b9cfa19dbe90e4386609495))
+
 ## v4.8.2 (2026-05-20)
 
 ### Fix
