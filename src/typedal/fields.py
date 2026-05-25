@@ -18,9 +18,11 @@ from pydal.objects import Table
 
 from .core import TypeDAL
 from .types import (
+    AnyCallable,
     Expression,
     Field,
     FieldSettings,
+    FileSystemLike,
     Query,
     T_annotation,
     T_MetaInstance,
@@ -50,7 +52,44 @@ class TypedField[T_Value](Expression):  # pragma: no cover
     _type: T_annotation
     kwargs: t.Any
 
+    # Typed hints for common pydal.Field attrs forwarded via __getattr__ after bind().
+    type: str | type | Table | Field | SQLCustomType
+    type_name: str
+    length: int
+    default: T_Value
+    required: bool
+    ondelete: str
+    onupdate: str
+    notnull: bool
+    unique: bool
+    regex: str | None
+    options: list[t.Any] | AnyCallable | None
+    uploadfield: bool | str
+    uploadfolder: str | None
+    uploadseparate: bool
+    uploadfs: FileSystemLike | None
+    widget: AnyCallable | None
+    label: str
+    comment: str | None
+    writable: bool
+    readable: bool
+    searchable: bool
+    listable: bool
+    update: T_Value | AnyCallable | None
+    authorize: AnyCallable | None
+    autodelete: bool
     requires: Validator | t.Iterable[Validator]
+    represent: t.Callable[[T_Value, TypedTable | None], t.Any]
+    compute: AnyCallable | None
+    custom_store: AnyCallable | None
+    custom_retrieve: AnyCallable | None
+    custom_retrieve_file_properties: AnyCallable | None
+    custom_delete: AnyCallable | None
+    filter_in: AnyCallable | None
+    filter_out: AnyCallable | None
+    custom_qualifier: AnyCallable | None
+    map_none: T_Value | None
+    _raw_rname: str | None
 
     # NOTE: for the logic of converting a TypedField into a pydal Field, see TypeDAL._to_field
 
@@ -227,7 +266,6 @@ class TypedField[T_Value](Expression):  # pragma: no cover
             raise ValueError("Unbound Field can not be lowered!")
 
         return t.cast(Expression, self._field.lower())
-
 
 def is_typed_field(cls: t.Any) -> t.TypeGuard["TypedField[t.Any]"]:
     """
