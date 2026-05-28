@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.8.4 (2026-05-28)
+
+### Fix
+
+* Improved typing on OpRow; docstrings ([`064b454`](https://github.com/trialandsuccess/TypeDAL/commit/064b4546ceb709ee6124d4a749919c4193fb3752))
+
 ## v4.8.3 (2026-05-25)
 
 ### Fix
