@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.8.5 (2026-05-28)
+
+### Fix
+
+* **typing:** Use setattr instead of self.x = y to make the typecheckers happier ([`2642278`](https://github.com/trialandsuccess/TypeDAL/commit/2642278a9c144a15a89f1ffb8b6cc10910ecba0b))
+
 ## v4.8.4 (2026-05-28)
 
 ### Fix
