@@ -885,10 +885,10 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
         # self.as_yaml = self._as_yaml  # type: ignore
         self.as_xml = self._as_xml  # type: ignore
 
-        self.update = self._update  # type: ignore
-
-        self.delete_record = self._delete_record  # type: ignore
-        self.update_record = self._update_record  # type: ignore
+        # use setattr instead of self.x = y to make the typecheckers happier
+        setattr(self, "update", self._update)
+        setattr(self, "delete_record", self._delete_record)
+        setattr(self, "update_record", self._update_record)
 
     def __new__(
         cls,
