@@ -190,7 +190,7 @@ class SlugMixin(Mixin):
 
     @classmethod
     def __generate_slug_before_insert(cls, row: OpRow) -> None:
-        if row.get("slug"):  # type: ignore
+        if row.get("slug"):
             # manually set -> skip
             return None
 

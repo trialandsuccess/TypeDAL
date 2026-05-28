@@ -267,6 +267,7 @@ class TypedField[T_Value](Expression):  # pragma: no cover
 
         return t.cast(Expression, self._field.lower())
 
+
 def is_typed_field(cls: t.Any) -> t.TypeGuard["TypedField[t.Any]"]:
     """
     Is `cls` an instance or subclass of TypedField?

@@ -30,12 +30,7 @@ from .helpers import (
 )
 from .relationships import Relationship, to_relationship
 from .tables import TypedTable
-from .types import (
-    Field,
-    T_annotation,
-    Table,
-    _Types,
-)
+from .types import Field, T_annotation, Table, _Types
 
 try:
     # python 3.14+
@@ -46,12 +41,16 @@ except ImportError:  # pragma: no cover
 
 
 class IS_IN_ENUM(Validator):
+    """Validator that accepts only values present in a specific enum."""
+
     def __init__(self, etype: type[enum.Enum], error_message: str = "value not allowed"):
+        """Initialize the enum validator."""
         super().__init__()
         self.etype = etype
         self.error_message = error_message
 
     def validate(self, value: t.Any, _record_id: int | None = None) -> t.Any:
+        """Validate and normalize an enum-compatible value."""
         if value not in self.etype:
             raise ValidationError(self.translator(self.error_message))
 

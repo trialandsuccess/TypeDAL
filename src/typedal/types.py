@@ -62,7 +62,7 @@ class TableProtocol(t.Protocol):  # pragma: no cover
 
     def on(self, query: "QueryLike") -> "Expression | _Expression":
         """
-        pydal Table.on(query) helper used in join callbacks.
+        PyDAL `Table.on(query)` helper used in join callbacks.
         """
 
 
@@ -112,13 +112,26 @@ if t.TYPE_CHECKING:
         Pydal OpRow object for typing (otherwise mypy thinks it's Any).
         """
 
+        def __getattr__(self, name: str) -> t.Any:
+            """Dynamic attribute access (e.g. row.email)."""
+
         def __getitem__(self, item: str) -> t.Any:
             """row.item syntax."""
 
         def __setitem__(self, key: str, value: t.Any) -> None:
             """row.item = key syntax."""
 
-        # more methods could be added
+        def get(self, key: str, default: t.Any = None) -> t.Any:
+            """Dictionary-like get used by update hooks."""
+
+        def keys(self) -> t.Iterable[str]:
+            """Dictionary-like key access."""
+
+        def items(self) -> t.Iterable[tuple[str, t.Any]]:
+            """Dictionary-like item iteration."""
+
+        def values(self) -> t.Iterable[t.Any]:
+            """Dictionary-like value iteration."""
 
 else:
 

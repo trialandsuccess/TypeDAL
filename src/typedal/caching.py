@@ -416,6 +416,8 @@ def _expired_and_valid_query() -> tuple[str, str]:
 
 
 class Stats[T](t.TypedDict):
+    """Typed container for total/valid/expired metric groups."""
+
     total: T
     valid: T
     expired: T
@@ -578,6 +580,7 @@ def memoize[T: t.Any](
     # Cache miss - compute result
 
     def track_execute(_qb: "QueryBuilder[t.Any]", raw: Rows) -> None:
+        """Collect table/id dependencies from executed raw query results."""
         # find dependant table+id combinations, includes relationships:
         deps.update(_determine_dependencies_auto(raw))
 
@@ -591,6 +594,7 @@ def memoize[T: t.Any](
         deps.update({(table, 0) for table in related_tables})
 
     def track_collect(qb: "QueryBuilder[t.Any]", _: TypedRows[t.Any], raw: Rows) -> None:
+        """Collect dependencies from `.collect()` hooks by reusing execute tracking."""
         return track_execute(qb, raw)
 
     # hooks every .collect() to track extra dependencies

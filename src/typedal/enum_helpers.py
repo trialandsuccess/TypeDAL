@@ -1,3 +1,5 @@
+"""Helpers for parsing enum values and preserving invalid enum input context."""
+
 from __future__ import annotations
 
 import enum
@@ -7,6 +9,8 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class InvalidEnumValue:
+    """Sentinel payload used when a raw value cannot be parsed into an enum member."""
+
     enum_type: type[enum.Enum]
     raw: t.Any
     value: None = None
@@ -19,6 +23,7 @@ class InvalidEnumValue:
 
 
 def enum_value_type(enum_type: type[enum.Enum]) -> type[t.Any]:
+    """Return the shared Python type of all enum member values."""
     values = [member.value for member in enum_type]
     if not values:  # pragma: no cover
         raise TypeError(f"Enum {enum_type.__name__} has no members.")
@@ -32,6 +37,7 @@ def enum_value_type(enum_type: type[enum.Enum]) -> type[t.Any]:
 
 
 def parse_enum_value(enum_type: type[enum.Enum], raw: t.Any) -> enum.Enum | InvalidEnumValue | None:
+    """Parse a raw value into an enum member or return an invalid sentinel."""
     if raw is None:  # pragma: no cover
         return None
 
@@ -43,6 +49,8 @@ def parse_enum_value(enum_type: type[enum.Enum], raw: t.Any) -> enum.Enum | Inva
 
 
 def make_enum_filter_out(enum_type: type[enum.Enum]) -> t.Callable[[t.Any], enum.Enum | InvalidEnumValue | None]:
+    """Build a parser callback for enum values."""
+
     def _filter_out(raw: t.Any) -> enum.Enum | InvalidEnumValue | None:
         return parse_enum_value(enum_type, raw)
 

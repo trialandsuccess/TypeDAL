@@ -349,6 +349,7 @@ class TypeDAL(_TypeDALBase):
         """
 
         def wrapper(cls: t.Type[T]) -> t.Type[T]:
+            """Define and return a TypedTable class bound to this DB instance."""
             return self._builder.define(cls, **kwargs)
 
         if maybe_cls:

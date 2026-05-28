@@ -208,22 +208,32 @@ class Relationship[To_Type]:
     @t.overload
     def __get__(
         self: "Relationship[list[_RelTable]]", instance: None, owner: t.Type["TypedTable"]
-    ) -> "Relationship[list[_RelTable]]": ...
+    ) -> "Relationship[list[_RelTable]]":
+        """Return the descriptor itself when accessed on the class."""
+        ...
 
     @t.overload
     def __get__(
         self: "Relationship[list[_RelTable]]", instance: "TypedTable", owner: t.Type["TypedTable"]
-    ) -> list[_RelTable]: ...
+    ) -> list[_RelTable]:
+        """Return related rows for list-valued relationships."""
+        ...
 
     @t.overload
     def __get__(
         self: "Relationship[_RelValue]", instance: None, owner: t.Type["TypedTable"]
-    ) -> "Relationship[_RelValue]": ...
+    ) -> "Relationship[_RelValue]":
+        """Return the descriptor itself when accessed on the class."""
+        ...
 
     @t.overload
     def __get__(
-        self: "Relationship[_RelValue]", instance: "TypedTable", owner: t.Type["TypedTable"]
-    ) -> _RelValue: ...
+        self: "Relationship[_RelValue]",
+        instance: "TypedTable",
+        owner: t.Type["TypedTable"],
+    ) -> _RelValue:
+        """Return the related object for single-valued relationships."""
+        ...
 
     def __get__(
         self,
