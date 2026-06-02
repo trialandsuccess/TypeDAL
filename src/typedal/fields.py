@@ -412,7 +412,9 @@ def UploadField(**kw: t.Unpack[FieldSettings]) -> TypedField[str]:
 Upload = UploadField
 
 
-def ReferenceField[T_subclass: (TypedTable, Table)](
+def ReferenceField[
+    T_subclass: (TypedTable, Table)
+](
     other_table: str | t.Type[TypedTable] | TypedTable | Table | T_subclass,
     **kw: t.Unpack[FieldSettings],
 ) -> TypedField[int]:
@@ -489,6 +491,7 @@ def BigintField(**kw: t.Unpack[FieldSettings]) -> TypedField[int]:
 Bigint = BigintField
 
 ## Custom:
+
 
 def safe_encode_native_timestamp(value: dt.datetime | None) -> str | None:
     """
