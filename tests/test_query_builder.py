@@ -28,6 +28,10 @@ class TestRelationship(TypedTable):
     querytable: TestQueryTable
 
 
+class TestQueryTableBound(TestQueryTable):
+    pass
+
+
 class Undefined(TypedTable):
     value: int
 
@@ -208,6 +212,94 @@ def test_select():
 
     assert not other.name
     assert other.value
+
+
+def test_collect_into():
+    _setup_data()
+
+    rows = TestQueryTable.where(lambda row: row.number < 3).collect_into(TestQueryTableBound)
+    first = rows.first()
+
+    assert first
+    assert isinstance(first, TestQueryTableBound)
+    assert rows.model is TestQueryTable
+
+    joined = TestQueryTable.join("relations").where(id=1).collect_into(TestQueryTableBound)
+    joined_first = joined.first()
+
+    assert joined_first
+    assert isinstance(joined_first, TestQueryTableBound)
+    assert isinstance(joined_first.relations[0], TestRelationship)
+
+    marker = object()
+
+    def bind(sticker: TestQueryTableBound, _row):
+        sticker.item = marker
+
+    bound_rows = TestQueryTable.where(lambda row: row.number < 3).collect_into(TestQueryTableBound, init=bind)
+    assert all(getattr(row, "item", None) is marker for row in bound_rows)
+
+    calls: list[int] = []
+
+    def bind_once_per_root(sticker: TestQueryTableBound, _row):
+        calls.append(sticker.id)
+
+    TestQueryTable.join("relations").where(id=1).collect_into(TestQueryTableBound, init=bind_once_per_root)
+    assert calls == [1]
+
+    with pytest.raises(TypeError):
+        TestQueryTable.collect_into(dict)  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError):
+        TestQueryTable.collect_into(TestRelationship)
+
+
+def test_collect_into_cache_isolation():
+    _setup_data()
+
+    regular = TestQueryTable.where(id=1).cache().collect()
+    remapped_fresh = TestQueryTable.where(id=1).cache().collect_into(TestQueryTableBound)
+    remapped_cached = TestQueryTable.where(id=1).cache().collect_into(TestQueryTableBound)
+
+    assert regular.metadata["cache"]["status"] == "fresh"
+    assert remapped_fresh.metadata["cache"]["status"] == "fresh"
+    assert remapped_cached.metadata["cache"]["status"] == "cached"
+
+    assert isinstance(remapped_cached.first(), TestQueryTableBound)
+
+
+def test_collect_into_public_user_example():
+    @db.define()
+    class User(TypedTable):
+        id: int
+        email: str
+        password_hash: str
+        is_active: bool
+
+    class PublicUser(TypedTable):
+        id: int
+        email: str
+        is_active: bool
+        profile_url: str | None = None
+
+    User.truncate()
+    User.insert(email="a@example.com", password_hash="hash-a", is_active=True)
+    User.insert(email="b@example.com", password_hash="hash-b", is_active=False)
+    db.commit()
+
+    def enrich_profile_url(row: PublicUser, _raw):
+        row.profile_url = f"/users/{row.id}"
+
+    rows = User.where(is_active=True).collect_into(PublicUser, init=enrich_profile_url)
+
+    assert len(rows) == 1
+    row = rows.first()
+
+    assert isinstance(row, PublicUser)
+    assert row.email == "a@example.com"
+    assert row.profile_url == f"/users/{row.id}"
+    assert "password_hash" not in row
+    assert "password_hash" not in row.__dict__
 
 
 def test_paginate():
@@ -525,6 +617,14 @@ def test_minimal_functionality_on_pydal_style_tables():
 
     assert qb2
     assert len(qb2) == 1
+
+    first = QueryBuilder(db.test_query_table).where(number=2).first()
+    assert first
+    assert first.id == qb1.first().id
+
+    first_or_fail = QueryBuilder(db.test_query_table).where(number=2).first_or_fail()
+    assert first_or_fail
+    assert first_or_fail.id == qb1.first().id
 
 
 def test_before_after_collect(capsys):

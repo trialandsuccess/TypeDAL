@@ -10,7 +10,7 @@ name = "TypeDAL"
 dynamic = ["version"]
 description = 'Typing support for PyDAL'
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license-expression = "MIT"
 keywords = []
 authors = [
@@ -19,7 +19,6 @@ authors = [
 classifiers = [
     "Development Status :: 4 - Beta",
     "Programming Language :: Python",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
@@ -29,7 +28,7 @@ classifiers = [
 dependencies = [
     "pydal >= 20251012.3", # core
     "dill < 1", # caching
-    "configuraptor >= 2.0.1, < 3", # config
+    "configuraptor >= 2.1.0, < 3", # config
     "Configurable-JSON < 2", # json dumping
     "python-slugify < 9",
     "legacy-cgi; python_version >= '3.13'",
@@ -41,23 +40,48 @@ py4web = [
     "py4web",
 ]
 
-migrations = [
+cli = [
     "typer >=0.18, <0.19",
     "tabulate",
-    "pydal2sql>=1.2.0",
-    "edwh-migrate>=0.8.0",
     "questionary",
     "tomlkit",
+    "pydal2sql>=1.3.5",
+]
+
+migrations = [
+    "tabulate",
+    "pydal2sql>=1.3.5",
+    "edwh-migrate>=0.8.0",
+    # cli:
+    "typer >=0.18, <0.19",
+    "tabulate",
+    "questionary",
+    "tomlkit",
+    "pydal2sql>=1.3.5",
+]
+
+typescript = [
+    "typtyp < 1",
+    # cli:
+    "typer >=0.18, <0.19",
+    "tabulate",
+    "questionary",
+    "tomlkit",
+    "pydal2sql>=1.3.5",
 ]
 
 all = [
     "py4web",
+    "typtyp < 1",
+    "tabulate",
+    "edwh-migrate[full]>=0.8.0",
+    "pydantic < 3",
+    # cli:
     "typer >=0.18, <0.19",
     "tabulate",
-    "pydal2sql[all]>=1.2.0",
-    "edwh-migrate[full]>=0.8.0",
     "questionary",
     "tomlkit",
+    "pydal2sql[all]>=1.3.5",
 ]
 
 dev = [
@@ -67,9 +91,12 @@ dev = [
     # test:
     "su6[all]>=1.9.0",
     "python-semantic-release < 8",
-    "pytest-mypy-testing",
+    # "pytest-mypy-testing",
+    "pytest-typing",
+    "pyright < 1.1.400",
     "contextlib-chdir",
     "testcontainers",
+    "pydantic < 3",
     # depends on ->
     "requests<2.32",
     # mypy:
@@ -142,7 +169,7 @@ exclude_also = [
     ]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.13"
 
 # `some: int = None` looks nicer than `some: int | None = None` and pycharm still understands it
 no_implicit_optional = false  # I guess 'strict_optional' should be true, but disable this one because it's double!
@@ -182,6 +209,7 @@ select = [
     # "COM", # comma's - NO: annoying
     # "PTH", # use pathlib - NO: annoying
     "RUF", # ruff rules
+    # "D", # docs
 ]
 unfixable = [
     # Don't touch unused imports
@@ -190,12 +218,18 @@ unfixable = [
 extend-ignore = [
     # db.field == None should NOT be fixed to db.field is None
     "E711",
+    "D200",
+    "D212",
+    "D418",
 ]
-
 
 ignore = [
     "RUF013" # implicit optional
 ]
+
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
 
 [tool.bandit]
 # bandit -c pyproject.toml -r .
@@ -231,9 +265,14 @@ add_ignore = [
 ## look nowhere for any code to 'build' since this is just used to manage (dev) dependencies
 #where = []
 
-[tool.pytest.ini_options]
+[tool.pytest]
 pythonpath = [
     "src",
+]
+
+typing_checkers = [
+    "mypy",
+    "pyright",
 ]
 
 [tool.typedal]

@@ -2,6 +2,115 @@
 
 <!--next-version-placeholder-->
 
+## v4.8.5 (2026-05-28)
+
+### Fix
+
+* **typing:** Use setattr instead of self.x = y to make the typecheckers happier ([`2642278`](https://github.com/trialandsuccess/TypeDAL/commit/2642278a9c144a15a89f1ffb8b6cc10910ecba0b))
+
+## v4.8.4 (2026-05-28)
+
+### Fix
+
+* Improved typing on OpRow; docstrings ([`064b454`](https://github.com/trialandsuccess/TypeDAL/commit/064b4546ceb709ee6124d4a749919c4193fb3752))
+
+## v4.8.3 (2026-05-25)
+
+### Fix
+
+* Improved typing hints on TypedField properties ([`55b5ce4`](https://github.com/trialandsuccess/TypeDAL/commit/55b5ce4ae2657ae43b9cfa19dbe90e4386609495))
+
+## v4.8.2 (2026-05-20)
+
+### Fix
+
+* **typing:** Improved LSP support + more type testing ([#10](https://github.com/trialandsuccess/TypeDAL/issues/10)) ([`ff6fc2e`](https://github.com/trialandsuccess/TypeDAL/commit/ff6fc2e1706d5cc37719c87b8b8ee565dd31cda3))
+
+## v4.8.1 (2026-05-10)
+
+### Fix
+
+* Extend from empty type-safe `DALProtocol` during type-checking to make some LSPs happier ([`d93a361`](https://github.com/trialandsuccess/TypeDAL/commit/d93a361e9caa6c9b94d6fbfa78644c8ff5e2bc23))
+
+## v4.8.0 (2026-04-23)
+
+### Feature
+
+* TypeDAL 4.8: type... script? ([#9](https://github.com/trialandsuccess/TypeDAL/issues/9)) ([`9a688c0`](https://github.com/trialandsuccess/TypeDAL/commit/9a688c012ddcb77207b5879b7c66c6c2fee547c0))
+
+### Fix
+
+* **uuid:** Don't try to store NULL uuid as 'None' ([`29f8606`](https://github.com/trialandsuccess/TypeDAL/commit/29f8606972110b5472a42806c6c0e5b66f50095a))
+* Ensure `InvalidEnumValue` is falsey ([`21fea08`](https://github.com/trialandsuccess/TypeDAL/commit/21fea086e3219d47615f7b9539caf4d5f5c48327))
+
+## v4.7.2 (2026-04-20)
+
+### Fix
+
+* **enums:** Add safe enum parsing helper and docs for mixed-type rejection + invalid DB sentinel ([`33ee169`](https://github.com/trialandsuccess/TypeDAL/commit/33ee169b61522cf7a863e29c68822a3b0e07d376))
+
+## v4.7.1 (2026-04-20)
+
+### Fix
+
+* Collect_into() can now load into partially overlapping classes (instead of only subclasses) ([`a19e3e6`](https://github.com/trialandsuccess/TypeDAL/commit/a19e3e6b072bbf0ffe0cf68ecbee349f65fbe467))
+
+### Documentation
+
+* Updated documentation for new features since 4.6 ([`97e90a8`](https://github.com/trialandsuccess/TypeDAL/commit/97e90a847dff47651dfc0c21fa9e7442558914d2))
+
+## v4.7.0 (2026-04-20)
+
+### Feature
+
+* Support typing.Literal and Enum as field type with IS_IN_SET-based default 'requires' ([`221f60c`](https://github.com/trialandsuccess/TypeDAL/commit/221f60cf6db5cad5c12b5e8308ff00324583a6cb))
+
+## v4.6.4 (2026-03-30)
+
+### Fix
+
+* Add collect_into to allow instantiating results into different model classes + fix render ([#8](https://github.com/trialandsuccess/TypeDAL/issues/8)) ([`bc5b5b7`](https://github.com/trialandsuccess/TypeDAL/commit/bc5b5b78ce033b068c21f468932a4b2f3adfeeac))
+
+## v4.6.3 (2026-03-19)
+
+### Fix
+
+* `as_dict()` and similar changed behavior after doing `.render()` ([`8241503`](https://github.com/trialandsuccess/TypeDAL/commit/8241503073c5a9fd76cc898048f6c7796de3ce7a))
+
+## v4.6.2 (2026-03-13)
+
+### Fix
+
+* Move pydantic visibility/lazy-load filtering into schema-converter path used by FastAPI ([`63c2e2c`](https://github.com/trialandsuccess/TypeDAL/commit/63c2e2c2e3c78f8aa817911dd269f650f5ba3d7d))
+
+## v4.6.1 (2026-03-13)
+
+### Fix
+
+* **pydantic:** Exclude fields with 'readable=False' similar to pydal/py4web/web2py behavior ([`e47cc44`](https://github.com/trialandsuccess/TypeDAL/commit/e47cc442aa7736ba1177bc32a7dc6de58c2551aa))
+
+## v4.6.0 (2026-03-13)
+
+### Documentation
+
+* Add section about PydanticMixin ([`d91c504`](https://github.com/trialandsuccess/TypeDAL/commit/d91c50485f7f7dd7a1e04ae93998475a05bb3742))
+
+## v4.5.0 (2026-03-06)
+
+### Feature
+
+* **typing:** Support mixin-typed table class APIs without MRO conflicts ([`fe0c99e`](https://github.com/trialandsuccess/TypeDAL/commit/fe0c99eb2790baff8ddf4de3ec1f23c53e4b3a11))
+
+## v4.4.6 (2026-03-05)
+
+### Fix
+
+* Support .first() when using querybuilder on pydal-style tables. ([`d75f254`](https://github.com/trialandsuccess/TypeDAL/commit/d75f25440f0dcca51991bc047bf7ce8d479f942b))
+
+### Documentation
+
+* Make docs up-to-date with recently introduced features, improve reading flow for new users ([`64bb7be`](https://github.com/trialandsuccess/TypeDAL/commit/64bb7be220c5f1a5998940b320565b5a3dbca988))
+
 ## v4.4.5 (2026-02-27)
 
 ### Fix

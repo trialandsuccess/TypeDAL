@@ -1,3 +1,4 @@
+import enum
 import re
 import sys
 import typing
@@ -9,6 +10,7 @@ import pytest
 
 from src.typedal import TypedRows
 from src.typedal.__about__ import __version__
+from src.typedal.enum_helpers import InvalidEnumValue
 from src.typedal.fields import *
 
 
@@ -639,3 +641,76 @@ def test_reorder_fields():
     # 'name' should be dropped:
     Sub.reorder_fields(Sub.id, Sub.gid, keep_others=False)
     assert list(Sub) == [Sub.id, Sub.gid]
+
+
+def test_literal_enum_fields():
+    class MixedEnum(enum.Enum):
+        FIRST = "first"
+        SECOND = 2
+
+    with pytest.raises(TypeError, match="mixed value types"):
+
+        @db.define()
+        class MixedLiteralTable(TypedTable):
+            enum_one: MixedEnum
+
+    class TestStrEnum(enum.StrEnum):
+        FIRST = "first"
+        SECOND = "second"
+
+    class TestIntEnum(enum.IntEnum):
+        FIRST = 1
+        SECOND = 2
+
+    @db.define()
+    class LiteralTable(TypedTable):
+        lit_one: t.Literal["first", "second"]
+        lit_two = TypedField(t.Literal["first", "second"])
+
+        enum_one: TestStrEnum
+        enum_two = TypedField(TestIntEnum)
+
+    # should be ok
+    row, err = LiteralTable.validate_and_insert(
+        lit_one="first",
+        lit_two="second",
+        enum_one=TestStrEnum.FIRST,
+        enum_two=2,
+    )
+    assert not err, "unexpected error"
+    assert row, "expected row"
+
+    assert isinstance(row.enum_one, TestStrEnum)
+    assert row.enum_one.value == "first"
+    assert isinstance(row.enum_two, TestIntEnum)
+    assert row.enum_two == TestIntEnum.SECOND
+
+    # should error on lit_one
+    row, err = LiteralTable.validate_and_insert(
+        lit_one="wrong",
+        lit_two="wronger",
+        enum_one="invalid",
+        enum_two=-1,
+    )
+    assert not row, "unexpected row"
+    assert err, "expected err"
+
+    assert "lit_one" in err
+    assert "lit_two" in err
+    assert "enum_one" in err
+    assert "enum_two" in err
+
+    idx = db.executesql("""
+                        INSERT INTO literal_table(lit_one, lit_two, enum_one, enum_two)
+                            VALUES ('fake', 'fake', 'fake', 999)
+                            RETURNING id
+                        """)[0][0]
+
+    invalid_row = LiteralTable(idx)
+    assert isinstance(invalid_row.enum_one, InvalidEnumValue)
+    assert invalid_row.enum_one.raw == "fake"
+    assert not invalid_row.enum_one
+    assert invalid_row.enum_one.value is None
+    assert isinstance(invalid_row.enum_two, InvalidEnumValue)
+    assert invalid_row.enum_two.raw == 999
+    assert invalid_row.enum_two.value is None

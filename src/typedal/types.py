@@ -11,10 +11,7 @@ import datetime as dt
 import types
 import typing as t
 
-import pydal.objects
-
 # Third-party
-from pydal.adapters.base import BaseAdapter
 from pydal.helpers.classes import OpRow as _OpRow
 from pydal.helpers.classes import Reference as _Reference
 from pydal.helpers.classes import SQLCustomType
@@ -28,21 +25,24 @@ from pydal.objects import Table as _Table
 from pydal.validators import Validator as _Validator
 
 try:
-    from string.templatelib import Template
+    from string.templatelib import Template as TemplateAlias
 except ImportError:
-    Template: t.TypeAlias = str  # type: ignore
+    TemplateAlias: t.TypeAlias = str  # type: ignore
 
 # Internal references
 if t.TYPE_CHECKING:
     from .fields import TypedField
-    from .tables import TypedTable
+
+    # noinspection PyUnusedImports
+    from .tables import TypedTable, _TypedTable
 
 # ---------------------------------------------------------------------------
 # Aliases
 # ---------------------------------------------------------------------------
 
-AnyCallable: t.TypeAlias = t.Callable[..., t.Any]
-AnyDict: t.TypeAlias = dict[str, t.Any]
+Template: t.TypeAlias = TemplateAlias  # explicit export for mypy, NOT a `type` because it's used at runtime
+type AnyCallable = t.Callable[..., t.Any]
+type AnyDict = dict[str, t.Any]
 
 
 # ---------------------------------------------------------------------------
@@ -60,6 +60,11 @@ class TableProtocol(t.Protocol):  # pragma: no cover
         Tables have table[field] syntax.
         """
 
+    def on(self, query: "QueryLike") -> "Expression | _Expression":
+        """
+        PyDAL `Table.on(query)` helper used in join callbacks.
+        """
+
 
 class CacheFn(t.Protocol):
     """
@@ -67,7 +72,7 @@ class CacheFn(t.Protocol):
     """
 
     def __call__(
-        self: BaseAdapter,
+        self,  # : BaseAdapter
         sql: str = "",
         fields: t.Iterable[str] = (),
         attributes: t.Iterable[str] = (),
@@ -107,13 +112,26 @@ if t.TYPE_CHECKING:
         Pydal OpRow object for typing (otherwise mypy thinks it's Any).
         """
 
+        def __getattr__(self, name: str) -> t.Any:
+            """Dynamic attribute access (e.g. row.email)."""
+
         def __getitem__(self, item: str) -> t.Any:
             """row.item syntax."""
 
         def __setitem__(self, key: str, value: t.Any) -> None:
             """row.item = key syntax."""
 
-        # more methods could be added
+        def get(self, key: str, default: t.Any = None) -> t.Any:
+            """Dictionary-like get used by update hooks."""
+
+        def keys(self) -> t.Iterable[str]:
+            """Dictionary-like key access."""
+
+        def items(self) -> t.Iterable[tuple[str, t.Any]]:
+            """Dictionary-like item iteration."""
+
+        def values(self) -> t.Iterable[t.Any]:
+            """Dictionary-like value iteration."""
 
 else:
 
@@ -150,8 +168,8 @@ class Validator(_Validator):
     """Pydal Validator object. Make mypy happy."""
 
 
-class Table(_Table, TableProtocol):
-    """Table with protocol support. Make mypy happy."""
+class Table(_Table):
+    """Pydal Table object. Make mypy happy."""
 
 
 # ---------------------------------------------------------------------------
@@ -293,12 +311,10 @@ class FieldSettings(t.TypedDict, total=False):
 # Generics & Query Helpers
 # ---------------------------------------------------------------------------
 
-T = t.TypeVar("T", bound=t.Any)
-P = t.ParamSpec("P")
-R = t.TypeVar("R")
+# note: this one is used a lot so not rewritten as inline type parameter
+T_MetaInstance = t.TypeVar("T_MetaInstance", bound="_TypedTable")
 
-T_MetaInstance = t.TypeVar("T_MetaInstance", bound="TypedTable")
-T_Query = t.Union[
+type T_Query = t.Union[
     "Table",
     Query,
     bool,
@@ -308,24 +324,23 @@ T_Query = t.Union[
     Expression,
 ]
 
-T_subclass = t.TypeVar("T_subclass", "TypedTable", Table)
-T_Field: t.TypeAlias = t.Union["TypedField[t.Any]", "Table", t.Type["TypedTable"]]
-
-# use typing.cast(type, ...) to make mypy happy with unions
-T_Value = t.TypeVar("T_Value")  # actual type of the Field (via Generic)
+type T_Field = t.Union["TypedField[t.Any]", "Table", t.Type["TypedTable"]]
 
 # table-ish parameter:
-P_Table = t.Union[t.Type["TypedTable"], pydal.objects.Table]
+# Use protocol typing so checkers know `.id` exists in relationship callbacks.
+type P_Table = t.Union[t.Type["_TypedTable"], TableProtocol]
 
-Condition: t.TypeAlias = t.Optional[t.Callable[[P_Table, P_Table], Query | bool]]
+type QueryLike = Query | _Query | bool
 
-OnQuery: t.TypeAlias = t.Optional[t.Callable[[P_Table, P_Table], list[Expression]]]
+type Condition = t.Optional[t.Callable[[P_Table, P_Table], QueryLike]]
 
-CacheModel = t.Callable[[str, CacheFn, int], Rows]
-CacheTuple = tuple[CacheModel, int]
+type OnQuery = t.Optional[t.Callable[[P_Table, P_Table], list[Expression | _Expression]]]
 
-OrderBy: t.TypeAlias = str | Expression
-GroupBy: t.TypeAlias = Field | Expression
-Having: t.TypeAlias = Query | Expression
+type CacheModel = t.Callable[[str, CacheFn, int], Rows]
+type CacheTuple = tuple[CacheModel, int]
 
-T_annotation = t.Type[t.Any] | types.UnionType
+type OrderBy = str | Expression
+type GroupBy = Field | Expression
+type Having = Query | Expression
+
+type T_annotation = t.Type[t.Any] | types.UnionType

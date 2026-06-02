@@ -16,18 +16,19 @@ from .fields import TypedField
 from .helpers import extract_type_optional, looks_like, unwrap_type
 from .types import Condition, OnQuery, T_Field
 
-To_Type = t.TypeVar("To_Type", bound="TypedTable")
-
-
 # default lazy policy is defined at the TypeDAL() instance settings level
 
+To_Type = t.TypeVar("To_Type", bound="TypedTable")
+_RelTable = t.TypeVar("_RelTable", bound="TypedTable")
+_RelValue = t.TypeVar("_RelValue")
 
-class Relationship(t.Generic[To_Type]):
+
+class Relationship[To_Type]:
     """
     Define a relationship to another table.
     """
 
-    _type: t.Type[To_Type]
+    _type: t.Any
     table: t.Type["TypedTable"] | type | str  # use get_table() to resolve later on
     condition: Condition
     condition_and: Condition
@@ -42,7 +43,7 @@ class Relationship(t.Generic[To_Type]):
 
     def __init__(
         self,
-        _type: t.Type[To_Type],
+        _type: t.Any,
         condition: Condition = None,
         join: JOIN_OPTIONS = None,
         on: OnQuery = None,
@@ -57,16 +58,16 @@ class Relationship(t.Generic[To_Type]):
         if condition and on:
             raise self._error_duplicate_condition(condition, on)
 
+        resolved_type = resolve_relationship_type(_type, keep_unresolved=True)
+        if resolved_type is not None:
+            _type = resolved_type
+
         self._type = _type
         self.condition = condition
         self.join = "left" if on else join  # .on is always left join!
         self.on = on
         self.condition_and = condition_and
         self._lazy = lazy
-
-        if t.get_origin(_type) == Ref:
-            # unwrap Ref["City"] to ForwardRef("City") to be evaluated/stringified later on:
-            _type = t.get_args(_type)[0]
 
         if args := t.get_args(_type):
             self.table = unwrap_type(args[0])
@@ -184,7 +185,7 @@ class Relationship(t.Generic[To_Type]):
             return db._config.lazy_policy
 
         # conservative fallback:
-        return "warn"
+        return "warn"  # pragma: no cover
 
     def get_table_name(self) -> str:
         """
@@ -204,11 +205,41 @@ class Relationship(t.Generic[To_Type]):
 
         return str(table)
 
+    @t.overload
     def __get__(
-        self,
+        self: "Relationship[list[_RelTable]]", instance: None, owner: t.Type["TypedTable"]
+    ) -> "Relationship[list[_RelTable]]":
+        """Return the descriptor itself when accessed on the class."""
+        ...
+
+    @t.overload
+    def __get__(
+        self: "Relationship[list[_RelTable]]", instance: "TypedTable", owner: t.Type["TypedTable"]
+    ) -> list[_RelTable]:
+        """Return related rows for list-valued relationships."""
+        ...
+
+    @t.overload
+    def __get__(
+        self: "Relationship[_RelValue]", instance: None, owner: t.Type["TypedTable"]
+    ) -> "Relationship[_RelValue]":
+        """Return the descriptor itself when accessed on the class."""
+        ...
+
+    @t.overload
+    def __get__(
+        self: "Relationship[_RelValue]",
         instance: "TypedTable",
         owner: t.Type["TypedTable"],
-    ) -> "t.Optional[list[t.Any]] | Relationship[To_Type]":
+    ) -> _RelValue:
+        """Return the related object for single-valued relationships."""
+        ...
+
+    def __get__(
+        self,
+        instance: "TypedTable" | None,
+        owner: t.Type["TypedTable"],
+    ) -> "Relationship[To_Type] | list[t.Any] | t.Any | None":
         """
         Relationship is a descriptor class, which can be returned from a class but not an instance.
 
@@ -275,7 +306,7 @@ class Relationship(t.Generic[To_Type]):
             return fallback_value
 
 
-class Ref(t.Generic[To_Type]):
+class Ref[To_Type: TypedTable]:
     """
     Type-level forward reference wrapper.
 
@@ -295,7 +326,7 @@ def relationship(
     on: OnQuery = None,
     lazy: LazyPolicy | None = None,
     explicit: bool = False,
-) -> list[To_Type]:
+) -> "Relationship[list[To_Type]]":
     """
     Define a relationship that returns a list of related instances.
 
@@ -316,7 +347,7 @@ def relationship(
     on: OnQuery = None,
     lazy: LazyPolicy | None = None,
     explicit: bool = False,
-) -> To_Type:
+) -> "Relationship[To_Type]":
     """
     Define a relationship that returns a single related instance (never None with inner join).
 
@@ -337,7 +368,7 @@ def relationship(
     on: OnQuery = None,
     lazy: LazyPolicy | None = None,
     explicit: bool = False,
-) -> To_Type | None:
+) -> "Relationship[To_Type | None]":
     """
     Define a relationship that returns a single optional related instance.
 
@@ -356,7 +387,7 @@ def relationship(
     on: OnQuery = None,
     lazy: LazyPolicy | None = None,
     explicit: bool = False,
-) -> list[To_Type] | To_Type | None:
+) -> "Relationship[list[To_Type]] | Relationship[To_Type] | Relationship[To_Type | None]":
     """
     Define a relationship to another table, when its id is not stored in the current table.
 
@@ -405,11 +436,8 @@ def relationship(
     If you'd try to capture this in a single 'condition', pydal would create a cross join which is much less efficient.
     """
     return t.cast(
-        # note: The descriptor `Relationship[To_Type]` is more correct, but pycharm doesn't really get that.
-        # so for ease of use, just cast to the refered type for now!
-        # e.g. x = relationship(Author) -> x: Author
-        To_Type,
-        Relationship(_type, condition, join, on, lazy=lazy, explicit=explicit),  # type: ignore
+        Relationship[list[To_Type]] | Relationship[To_Type] | Relationship[To_Type | None],
+        Relationship(_type, condition, join, on, lazy=lazy, explicit=explicit),
     )
 
 
@@ -476,6 +504,60 @@ def to_relationship(
     join = "left" if optional or t.get_origin(field) is list else "inner"
 
     return Relationship(t.cast(type[TypedTable], field), condition, t.cast(JOIN_OPTIONS, join))
+
+
+def resolve_relationship_type(
+    relationship_type: t.Any,
+    namespace: dict[str, type] | None = None,
+    *,
+    keep_unresolved: bool = False,
+) -> t.Any | None:
+    """
+    Resolve a Relationship._type to an actual Python type.
+
+    Handles ForwardRefs, string references, Ref["X"] wrappers, and list[X] generics.
+    Used by PydanticMixin to build schema information from relationships.
+    """
+    if namespace is None:
+        namespace = {}
+
+    # Handle Ref["City"] -> resolve the inner type
+    if t.get_origin(relationship_type) is Ref:
+        args = t.get_args(relationship_type)
+        if not args:  # pragma: no cover  # typing never yields bare Ref without args in normal runtime code paths
+            return None
+        return resolve_relationship_type(args[0], namespace, keep_unresolved=keep_unresolved)
+
+    # Handle ForwardRef("City")
+    if isinstance(relationship_type, ForwardRef):
+        try:
+            return evaluate_forward_reference(relationship_type, namespace)
+        except Exception:
+            name = relationship_type.__forward_arg__
+            return namespace.get(name) or (relationship_type if keep_unresolved else None)
+
+    # Handle plain string "City"
+    if isinstance(relationship_type, str):
+        resolved = namespace.get(relationship_type)
+        if resolved is not None:
+            return resolved
+        return ForwardRef(relationship_type) if keep_unresolved else None
+
+    origin = t.get_origin(relationship_type)
+    args = t.get_args(relationship_type)
+
+    # Handle generic types like list["Post"] or list[Post]
+    if origin is not None and args:
+        resolved_args = [resolve_relationship_type(arg, namespace, keep_unresolved=keep_unresolved) for arg in args]
+        if any(a is None for a in resolved_args):
+            return None
+        if origin is list:
+            return list[resolved_args[0]]  # type: ignore[valid-type]
+        # Other generics: return as-is (already resolvable)
+        return relationship_type
+
+    # Already a concrete type
+    return relationship_type
 
 
 # note: these imports exist at the bottom of this file to prevent circular import issues:

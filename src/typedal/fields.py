@@ -18,14 +18,14 @@ from pydal.objects import Table
 
 from .core import TypeDAL
 from .types import (
+    AnyCallable,
     Expression,
     Field,
     FieldSettings,
+    FileSystemLike,
     Query,
     T_annotation,
     T_MetaInstance,
-    T_subclass,
-    T_Value,
     Validator,
 )
 
@@ -37,7 +37,7 @@ if t.TYPE_CHECKING:
 ## general
 
 
-class TypedField(Expression, t.Generic[T_Value]):  # pragma: no cover
+class TypedField[T_Value](Expression):  # pragma: no cover
     """
     Typed version of pydal.Field, which will be converted to a normal Field in the background.
     """
@@ -52,7 +52,44 @@ class TypedField(Expression, t.Generic[T_Value]):  # pragma: no cover
     _type: T_annotation
     kwargs: t.Any
 
+    # Typed hints for common pydal.Field attrs forwarded via __getattr__ after bind().
+    type: str | type | Table | Field | SQLCustomType
+    type_name: str
+    length: int
+    default: T_Value
+    required: bool
+    ondelete: str
+    onupdate: str
+    notnull: bool
+    unique: bool
+    regex: str | None
+    options: list[t.Any] | AnyCallable | None
+    uploadfield: bool | str
+    uploadfolder: str | None
+    uploadseparate: bool
+    uploadfs: FileSystemLike | None
+    widget: AnyCallable | None
+    label: str
+    comment: str | None
+    writable: bool
+    readable: bool
+    searchable: bool
+    listable: bool
+    update: T_Value | AnyCallable | None
+    authorize: AnyCallable | None
+    autodelete: bool
     requires: Validator | t.Iterable[Validator]
+    represent: t.Callable[[T_Value, TypedTable | None], t.Any]
+    compute: AnyCallable | None
+    custom_store: AnyCallable | None
+    custom_retrieve: AnyCallable | None
+    custom_retrieve_file_properties: AnyCallable | None
+    custom_delete: AnyCallable | None
+    filter_in: AnyCallable | None
+    filter_out: AnyCallable | None
+    custom_qualifier: AnyCallable | None
+    map_none: T_Value | None
+    _raw_rname: str | None
 
     # NOTE: for the logic of converting a TypedField into a pydal Field, see TypeDAL._to_field
 
@@ -73,21 +110,21 @@ class TypedField(Expression, t.Generic[T_Value]):  # pragma: no cover
         # super().__init__()
 
     @t.overload
-    def __get__(self, instance: T_MetaInstance, owner: t.Type[T_MetaInstance]) -> T_Value:  # pragma: no cover
+    def __get__(self, instance: None, owner: "t.Type[t.Any]") -> "TypedField[T_Value]":  # pragma: no cover
         """
-        row.field -> (actual data).
+        Table.field -> Field.
         """
 
     @t.overload
-    def __get__(self, instance: None, owner: "t.Type[TypedTable]") -> "TypedField[T_Value]":  # pragma: no cover
+    def __get__(self, instance: object, owner: "t.Type[t.Any]") -> T_Value:  # pragma: no cover
         """
-        Table.field -> Field.
+        row.field -> (actual data).
         """
 
     def __get__(
         self,
         instance: T_MetaInstance | None,
-        owner: t.Type[T_MetaInstance],
+        owner: t.Type[t.Any],
     ) -> t.Union[T_Value, "TypedField[T_Value]"]:
         """
         Since this class is a Descriptor field, \
@@ -375,7 +412,7 @@ def UploadField(**kw: t.Unpack[FieldSettings]) -> TypedField[str]:
 Upload = UploadField
 
 
-def ReferenceField(
+def ReferenceField[T_subclass: (TypedTable, Table)](
     other_table: str | t.Type[TypedTable] | TypedTable | Table | T_subclass,
     **kw: t.Unpack[FieldSettings],
 ) -> TypedField[int]:
@@ -569,7 +606,7 @@ def PointField(**kw: t.Unpack[FieldSettings]) -> TypedField[tuple[float, float]]
 NativeUUIDField = SQLCustomType(
     type="string",
     native="uuid",
-    encoder=str,
+    encoder=lambda val: "" if val is None else str(val),
     decoder=lambda value: uuid.UUID(value) if value else None,
 )
 

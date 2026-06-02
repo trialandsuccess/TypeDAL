@@ -112,12 +112,22 @@ def test_load_both_config(at_temp_dir):
 
 def test_converting(at_temp_dir):
     from edwh_migrate import Config as MigrateConfig
-    from pydal2sql.typer_support import Config as P2SConfig
+    from pydal2sql_core.state import Config as P2SConfig
 
     config = load_config()
 
     assert isinstance(config.to_migrate(), MigrateConfig)
     assert isinstance(config.to_pydal2sql(), P2SConfig)
+
+
+def test_typescript_output_from_toml(at_temp_dir):
+    Path("pyproject.toml").write_text("""
+[tool.typedal]
+typescript_output = "types/models.ts"
+""")
+
+    config = load_config()
+    assert config.typescript_output == "types/models.ts"
 
 
 def test_environ(at_temp_dir):
@@ -341,6 +351,22 @@ def test_uuid_fields_sqlite(at_temp_dir):
         UUIDTable.insert(gid="not-a-uuid")
 
     assert '"gid" uuid NOT NULL' in UUIDTable._sql()
+
+
+def test_null_uuidfield(at_temp_dir):
+    db = TypeDAL("sqlite:memory")
+
+    @db.define
+    class MaybeUUIDTable(TypedTable):
+        gid = UUIDField(notnull=False)
+
+    with_nothing = MaybeUUIDTable.insert()
+    with_str = MaybeUUIDTable.insert(gid="")
+    with_none = MaybeUUIDTable.insert(gid=None)
+
+    assert with_nothing.gid is None
+    assert with_str.gid is None
+    assert with_none.gid is None
 
 
 def test_cache_migrate_disabled():

@@ -14,7 +14,7 @@ from .core import TypeDAL
 from .helpers import mktable
 from .query_builder import QueryBuilder
 from .serializers import as_json
-from .tables import TypedTable
+from .tables import TypedTable, _TypedTable
 from .types import (
     AnyDict,
     Field,
@@ -24,7 +24,6 @@ from .types import (
     Query,
     Row,
     Rows,
-    T,
     T_MetaInstance,
 )
 
@@ -62,22 +61,7 @@ class TypedRows(t.Collection[T_MetaInstance], Rows):
         `metadata` can be t.Any (un)structured data
         `model` is a Typed Table class
         """
-
-        def _get_id(row: Row) -> int:
-            """
-            Try to find the id field in a row.
-
-            If _extra exists, the row changes:
-            <Row {'test_relationship': {'id': 1}, '_extra': {'COUNT("test_relationship"."querytable")': 8}}>
-            """
-            if idx := getattr(row, "id", None):
-                return t.cast(int, idx)
-            elif main := getattr(row, str(model), None):
-                return t.cast(int, main.id)
-            else:  # pragma: no cover
-                raise NotImplementedError(f"`id` could not be found for {row}")
-
-        records = records or {_get_id(row): model(row) for row in rows}
+        records = records or {self._get_id(row, model): model(row) for row in rows}
         raw = raw or {}
 
         for idx, entity in records.items():
@@ -87,6 +71,21 @@ class TypedRows(t.Collection[T_MetaInstance], Rows):
         self.model = model
         self.metadata = metadata or {}
         self.colnames = rows.colnames
+
+    @staticmethod
+    def _get_id(row: Row, model: t.Type[t.Any]) -> int:
+        """
+        Try to find the id field in a row.
+
+        If _extra exists, the row changes:
+        <Row {'test_relationship': {'id': 1}, '_extra': {'COUNT("test_relationship"."querytable")': 8}}>
+        """
+        if idx := getattr(row, "id", None):
+            return t.cast(int, idx)
+        elif main := getattr(row, str(model), None):
+            return t.cast(int, main.id)
+        else:  # pragma: no cover
+            raise NotImplementedError(f"`id` could not be found for {row}")
 
     def __len__(self) -> int:
         """
@@ -199,7 +198,7 @@ class TypedRows(t.Collection[T_MetaInstance], Rows):
 
         return mktable(data, headers)
 
-    def group_by_value(
+    def group_by_value[T: t.Any, T_MetaInstance: _TypedTable](
         self,
         *fields: "str | Field | TypedField[T]",
         one_result: bool = False,
@@ -375,11 +374,22 @@ class TypedRows(t.Collection[T_MetaInstance], Rows):
         rows: Rows,
         model: t.Type[T_MetaInstance],
         metadata: Metadata = None,
+        into: t.Type[_TypedTable] | None = None,
+        init: t.Callable[[_TypedTable, Row], None] | None = None,
     ) -> "TypedRows[T_MetaInstance]":
         """
         Internal method to convert a Rows object to a TypedRows.
         """
-        return cls(rows, model, metadata=metadata)
+        target_model = into or model
+
+        def build(row: Row) -> T_MetaInstance:
+            instance = t.cast(T_MetaInstance, target_model(row))
+            if init:
+                init(instance, row)
+            return instance
+
+        records = {cls._get_id(row, model): build(row) for row in rows}
+        return cls(rows, model, records=records, metadata=metadata)
 
     def __getstate__(self) -> AnyDict:
         """
@@ -400,14 +410,31 @@ class TypedRows(t.Collection[T_MetaInstance], Rows):
         self.__dict__.update(state)
         # db etc. set after undill by caching.py
 
+    @t.overload
+    def render(
+        self,
+        i: None = None,
+        fields: list[Field] | None = None,
+    ) -> t.Generator[T_MetaInstance, None, None]:
+        """With no index, yield rendered rows as a generator."""
+
+    @t.overload
+    def render(
+        self,
+        i: int,
+        fields: list[Field] | None = None,
+    ) -> T_MetaInstance:
+        """With an index, return one rendered row instance."""
+
     def render(
         self,
         i: int | None = None,
         fields: list[Field] | None = None,
-    ) -> t.Generator[T_MetaInstance, None, None]:
+    ) -> t.Generator[T_MetaInstance, None, None] | T_MetaInstance:
         """
-        Takes an index and returns a copy of the indexed row with values \
-            transformed via the "represent" attributes of the associated fields.
+        Take an index and return a copy of the indexed row with values.
+
+        Values are transformed via the "represent" attributes of the associated fields.
 
         Args:
             i: index. If not specified, a generator is returned for iteration

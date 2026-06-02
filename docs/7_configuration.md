@@ -50,18 +50,20 @@ fake_migrate = false
 database_to_restore = "data/backup.sql"
 tables = ["users", "posts"]
 noop = false
+typescript_output = "src/types/typedal.ts"
 ```
 
 ### Generating Migrations (pydal2sql)
 
 - **`input`**: Path to your TypeDAL table definitions file
-- **`output`**: Path to the generated migration `.py` fil
+- **`output`**: Path to the generated migration `.py` file
 - **`dialect`**: Database type: `sqlite`, `postgres`, `mysql`, etc. (if unclear from database uri)
 - **`magic`**: Insert missing variables to prevent crashes (default: `true`).
   See [pydal2sql docs](https://github.com/robinvandernoord/pydal2sql#configuration).
 - **`function`**: Function name containing your `db.define()` calls (default: `"define_tables"`)
 - **`tables`**: Specific tables to generate migrations for (optional; usually set via CLI instead)
 - **`noop`**: Don't write to output (usually set via CLI)
+- **`typescript_output`**: Output path used by `typedal typescript.generate` (optional)
 
 ### Running Migrations (edwh-migrate)
 

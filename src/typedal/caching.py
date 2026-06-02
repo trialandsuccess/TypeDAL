@@ -204,9 +204,6 @@ def _remove_cache(s: Set, tablename: str) -> None:
     remove_cache(indeces, tablename)
 
 
-T_TypedTable = t.TypeVar("T_TypedTable", bound=TypedTable)
-
-
 def get_expire(
     expires_at: t.Optional[dt.datetime] = None,
     ttl: t.Optional[int | dt.timedelta] = None,
@@ -250,7 +247,7 @@ def _insert_cache_entry(
     db.commit()
 
 
-def save_to_cache(
+def save_to_cache[T_TypedTable: TypedTable](
     instance: TypedRows[T_TypedTable],
     rows: Rows,
     expires_at: t.Optional[dt.datetime] = None,
@@ -418,8 +415,13 @@ def _expired_and_valid_query() -> tuple[str, str]:
     return expired_items, valid_items
 
 
-T = t.TypeVar("T")
-Stats = t.TypedDict("Stats", {"total": T, "valid": T, "expired": T})
+class Stats[T](t.TypedDict):
+    """Typed container for total/valid/expired metric groups."""
+
+    total: T
+    valid: T
+    expired: T
+
 
 RowStats = t.TypedDict(
     "RowStats",
@@ -527,7 +529,7 @@ def calculate_stats(db: "TypeDAL") -> Stats[GenericStats]:
     }
 
 
-def memoize(
+def memoize[T: t.Any](
     db: "TypeDAL",
     func: t.Callable[..., T],
     *args: TypedRows[t.Any] | TypedTable,
@@ -578,6 +580,7 @@ def memoize(
     # Cache miss - compute result
 
     def track_execute(_qb: "QueryBuilder[t.Any]", raw: Rows) -> None:
+        """Collect table/id dependencies from executed raw query results."""
         # find dependant table+id combinations, includes relationships:
         deps.update(_determine_dependencies_auto(raw))
 
@@ -591,6 +594,7 @@ def memoize(
         deps.update({(table, 0) for table in related_tables})
 
     def track_collect(qb: "QueryBuilder[t.Any]", _: TypedRows[t.Any], raw: Rows) -> None:
+        """Collect dependencies from `.collect()` hooks by reusing execute tracking."""
         return track_execute(qb, raw)
 
     # hooks every .collect() to track extra dependencies

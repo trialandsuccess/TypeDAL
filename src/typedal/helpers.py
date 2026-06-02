@@ -15,7 +15,7 @@ from collections import ChainMap
 
 from pydal import DAL
 
-from .types import AnyDict, Expression, Field, Row, T, Table, Template  # type: ignore
+from .types import AnyDict, Expression, Field, Row, Table, Template
 
 try:
     import annotationlib
@@ -91,7 +91,7 @@ def all_annotations(cls: type, _except: t.Optional[t.Iterable[str]] = None) -> d
     return {k: v for k, v in _all.items() if k not in _except}
 
 
-def instanciate(cls: t.Type[T] | T, with_args: bool = False) -> T:
+def instanciate[T: t.Any](cls: t.Type[T] | T, with_args: bool = False) -> T:
     """
     Create an instance of T (if it is a class).
 
@@ -173,10 +173,6 @@ def mktable(
     return output.getvalue()
 
 
-K = t.TypeVar("K")
-V = t.TypeVar("V")
-
-
 def looks_like(v: t.Any, _type: type[t.Any]) -> bool:
     """
     Returns true if v or v's class is of type _type, including if it is a generic.
@@ -189,7 +185,7 @@ def looks_like(v: t.Any, _type: type[t.Any]) -> bool:
     return isinstance(v, _type) or (isinstance(v, type) and issubclass(v, _type)) or origin_is_subclass(v, _type)
 
 
-def filter_out(mut_dict: dict[K, V], _type: type[T]) -> dict[K, T]:
+def filter_out[K, V, T](mut_dict: dict[K, V], _type: type[T]) -> dict[K, T]:
     """
     Split a dictionary into things matching _type and the rest.
 
@@ -211,20 +207,20 @@ def unwrap_type(_type: type) -> type:
 
 
 @t.overload
-def extract_type_optional(annotation: T) -> tuple[T, bool]:
+def extract_type_optional[T](annotation: T) -> tuple[T, bool]:
     """
     T -> T is not exactly right because you'll get the inner type, but mypy seems happy with this.
     """
 
 
 @t.overload
-def extract_type_optional(annotation: None) -> tuple[None, bool]:
+def extract_type_optional[T](annotation: None) -> tuple[None, bool]:
     """
     None leads to None, False.
     """
 
 
-def extract_type_optional(annotation: T | None) -> tuple[T | None, bool]:
+def extract_type_optional[T](annotation: T | None) -> tuple[T | None, bool]:
     """
     Given an annotation, extract the actual type and whether it is optional.
     """
@@ -256,13 +252,13 @@ class DummyQuery:
     Placeholder to &= and |= actual query parts.
     """
 
-    def __or__(self, other: T) -> T:
+    def __or__[T](self, other: T) -> T:
         """
         For 'or': DummyQuery | Other == Other.
         """
         return other
 
-    def __and__(self, other: T) -> T:
+    def __and__[T](self, other: T) -> T:
         """
         For 'and': DummyQuery & Other == Other.
         """
@@ -275,7 +271,7 @@ class DummyQuery:
         return False
 
 
-def as_lambda(value: T) -> t.Callable[..., T]:
+def as_lambda[T](value: T) -> t.Callable[..., T]:
     """
     Wrap value in a callable.
     """
@@ -342,7 +338,7 @@ class classproperty:
         """
         self.fget = fget
 
-    def __get__(self, obj: t.Any, owner: t.Type[T]) -> t.Any:
+    def __get__[T](self, obj: t.Any, owner: t.Type[T]) -> t.Any:
         """
         Retrieve the property value.
 
@@ -589,7 +585,7 @@ def normalize_table_keys(row: Row, pattern: re.Pattern[str] = re.compile(r"^([a-
     return Row(new_data)
 
 
-def default_representer(field: TypedField[T], value: T, table: t.Type[TypedTable]) -> str:
+def default_representer[T: t.Any](field: TypedField[T], value: T, table: t.Type[TypedTable]) -> str:
     """
     Simply call field.represent on the value.
     """

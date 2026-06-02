@@ -7,6 +7,7 @@ Mixins can add reusable fields and behavior (optimally both, otherwise it doesn'
 import base64
 import datetime as dt
 import os
+import types
 import typing as t
 import warnings
 
@@ -16,21 +17,20 @@ from slugify import slugify
 
 from .core import TypeDAL
 from .fields import DatetimeField, StringField
-from .tables import _TypedTable
+from .helpers import all_dict, filter_out
+from .relationships import Relationship, resolve_relationship_type
+from .tables import TableMeta, TypedTable, _TypedTable
 from .types import OpRow, Set, T_MetaInstance
 
-if t.TYPE_CHECKING:
-    from .tables import TypedTable  # noqa: F401
 
-
-class Mixin(_TypedTable):
+class Mixin(_TypedTable, metaclass=TableMeta):
     """
     A mixin should be derived from this class.
 
     The mixin base class itself doesn't do anything,
     but using it makes sure the mixin fields are placed AFTER the table's normal fields (instead of before)
 
-    During runtime, mixin should not have a base class in order to prevent MRO issues
+    During runtime, mixin should not inherit from TypedTable to prevent MRO issues
         ('inconsistent method resolution' or 'metaclass conflicts')
     """
 
@@ -85,9 +85,6 @@ def slug_random_suffix(length: int = 8) -> str:
     return base64.urlsafe_b64encode(os.urandom(length)).rstrip(b"=").decode().strip("=")
 
 
-T = t.TypeVar("T")
-
-
 # noinspection PyPep8Naming
 class HAS_UNIQUE_SLUG(IS_NOT_IN_DB):
     """
@@ -108,7 +105,7 @@ class HAS_UNIQUE_SLUG(IS_NOT_IN_DB):
         """
         super().__init__(db, field, error_message)
 
-    def validate(self, original: T, record_id: t.Optional[int] = None) -> T:
+    def validate[T](self, original: T, record_id: t.Optional[int] = None) -> T:
         """
         Performs checks to see if the slug already exists for a different row.
         """
@@ -193,7 +190,7 @@ class SlugMixin(Mixin):
 
     @classmethod
     def __generate_slug_before_insert(cls, row: OpRow) -> None:
-        if row.get("slug"):  # type: ignore
+        if row.get("slug"):
             # manually set -> skip
             return None
 
@@ -251,3 +248,311 @@ class SlugMixin(Mixin):
             builder = builder.join()
 
         return builder.first_or_fail()
+
+
+@t.runtime_checkable
+class BaseModeProtocol(t.Protocol):
+    """Minimal protocol for pydantic-compatible objects."""
+
+    def model_dump(self, mode: str = "python", **kwargs: t.Any) -> dict[str, t.Any]:
+        """Return a serialized mapping representation."""
+
+
+try:
+    from pydantic import BaseModel
+except ImportError:
+    BaseModel = BaseModeProtocol  # type: ignore
+
+
+def dump_pydantic[T](values: T, _shallow_nested: bool = False) -> T:
+    """Recursively convert pydantic-like values into plain JSON-compatible structures."""
+    if isinstance(values, PydanticMixin):
+        return values.model_dump(mode="json", _shallow=_shallow_nested)  # type: ignore
+    elif isinstance(values, BaseModel):
+        return values.model_dump(mode="json")  # type: ignore
+    elif callable(getattr(values, "as_dict", None)):
+        return dump_pydantic(values.as_dict(), _shallow_nested)  # type: ignore
+    elif callable(getattr(values, "as_list", None)):
+        return dump_pydantic(values.as_list(), _shallow_nested)  # type: ignore
+    elif isinstance(values, dict):
+        return {k: dump_pydantic(v, _shallow_nested) for k, v in values.items()}  # type: ignore
+    elif isinstance(values, (list, set, tuple)):
+        return [dump_pydantic(value, _shallow_nested) for value in values]  # type: ignore
+    else:
+        return values
+
+
+class PydanticMixin(Mixin):
+    """Mixin that provides pydantic schema generation and dumping helpers."""
+
+    @classmethod
+    def _ensure_pydantic_compatible_type(
+        cls,
+        field_name: str,
+        field_type: t.Any,
+    ) -> None:
+        origin = t.get_origin(field_type)
+        args = t.get_args(field_type)
+
+        if origin is not None:
+            for arg in args:
+                cls._ensure_pydantic_compatible_type(field_name, arg)
+            return
+
+        if not isinstance(field_type, type):
+            return
+
+        is_typedal_model = issubclass(field_type, TypedTable)
+        has_pydantic_hook = getattr(field_type, "__get_pydantic_core_schema__", None)
+
+        if is_typedal_model and not has_pydantic_hook:
+            raise ValueError(
+                f"{cls.__name__}.{field_name} references "
+                f"{field_type.__name__}, but {field_type.__name__} is not "
+                f"Pydantic-compatible. Add PydanticMixin to that model too.",
+            )
+
+    @classmethod
+    def _typedal_resolve_relationship_python_type(
+        cls,
+        relationship_value: t.Any,
+    ) -> t.Any | None:
+        relationship_type = getattr(relationship_value, "_type", None)
+        if relationship_type is None:
+            return None
+
+        known_classes = db._known_classes() if (db := getattr(cls, "_db", None)) else {}
+
+        return resolve_relationship_type(
+            relationship_type,
+            namespace=known_classes,
+        )
+
+    @classmethod
+    def _typedal_collect_relationship_fields(
+        cls,
+        full_dict: dict[str, t.Any] | None = None,
+    ) -> dict[str, t.Any]:
+        relationship_fields: dict[str, t.Any] = {}
+
+        for field_name, relationship_value in filter_out(full_dict or {}, Relationship).items():
+            relationship_type = cls._typedal_resolve_relationship_python_type(
+                relationship_value=relationship_value,
+            )
+            if relationship_type is not None:
+                relationship_fields[field_name] = relationship_type
+
+        return relationship_fields
+
+    @classmethod
+    def _pydantic_fields(
+        cls,
+        *,
+        include_relationships: bool = False,
+        include_properties: bool = False,
+    ) -> dict[str, t.Any]:
+        full_dict = all_dict(cls)
+        relationship_fields = cls._typedal_collect_relationship_fields(full_dict)
+        fields = cls._collect_model_fields(
+            include_relationships=include_relationships,
+            include_properties=include_properties,
+            relationship_fields=relationship_fields,
+        )
+
+        for field_name, field_type in fields.items():
+            cls._ensure_pydantic_compatible_type(field_name, field_type)
+
+        return fields
+
+    @staticmethod
+    def _make_instance_converter(model_cls: type, fields: dict[str, t.Any]) -> t.Callable[[t.Any], t.Any]:
+        _PRIMITIVES = (str, float, bool, bytes)
+        relationship_names = set(model_cls.get_relationships()) if hasattr(model_cls, "get_relationships") else set()
+
+        def convert(value: t.Any) -> t.Any:
+            if isinstance(value, dict):
+                return value
+            if isinstance(value, int):
+                # Raw foreign-key integer — represent as minimal record with just the id
+                return {"id": value}
+            if isinstance(value, _PRIMITIVES) or value is None:
+                return value
+            # Handles both TypedTable instances and raw pydal Row objects
+            values_dict = getattr(value, "__dict__", {})
+            result: dict[str, t.Any] = {}
+            for field_name in fields:
+                # Never trigger lazy-loads during pydantic conversion.
+                if field_name in relationship_names and field_name not in values_dict:
+                    continue
+
+                result[field_name] = getattr(value, field_name, None)
+
+            return result
+
+        return convert
+
+    @classmethod
+    def _field_core_schema(
+        cls,
+        field_type: t.Any,
+        handler: t.Any,
+    ) -> t.Any:
+        from pydantic_core import core_schema
+
+        origin = t.get_origin(field_type)
+        args = t.get_args(field_type)
+
+        if origin is None:
+            if (
+                isinstance(field_type, type)
+                and issubclass(field_type, TypedTable)
+                and issubclass(field_type, PydanticMixin)
+            ):
+                shallow_fields = field_type._pydantic_fields(
+                    include_relationships=False,
+                    include_properties=False,
+                )
+                return core_schema.no_info_before_validator_function(
+                    cls._make_instance_converter(field_type, shallow_fields),
+                    field_type._typed_dict_schema(handler=handler, _fields=shallow_fields),
+                )
+
+            return handler.generate_schema(field_type)
+
+        # Lists/sets/frozensets are handled explicitly; other generics fall back to pydantic.
+        sequence_builders = {
+            list: core_schema.list_schema,
+            set: core_schema.set_schema,
+            frozenset: core_schema.frozenset_schema,
+        }
+        if origin in sequence_builders:
+            item_type = args[0] if args else t.Any
+            return sequence_builders[origin](cls._field_core_schema(item_type, handler))
+
+        if isinstance(origin, type) and issubclass(origin, t.Mapping):
+            key_type = args[0] if len(args) > 0 else t.Any
+            value_type = args[1] if len(args) > 1 else t.Any
+            return core_schema.dict_schema(
+                keys_schema=cls._field_core_schema(key_type, handler),
+                values_schema=cls._field_core_schema(value_type, handler),
+            )
+
+        if origin is tuple:
+            if len(args) == 2 and args[1] is Ellipsis:
+                return core_schema.tuple_variable_schema(
+                    cls._field_core_schema(args[0], handler),
+                )
+            return core_schema.tuple_schema(
+                [cls._field_core_schema(item_type, handler) for item_type in args],
+            )
+
+        if origin in (t.Union, types.UnionType):
+            non_none_args = [arg for arg in args if arg is not type(None)]
+            has_none = len(non_none_args) != len(args)
+
+            if len(non_none_args) == 1 and has_none:
+                return core_schema.nullable_schema(cls._field_core_schema(non_none_args[0], handler))
+
+            return core_schema.union_schema([cls._field_core_schema(arg, handler) for arg in args])
+
+        return handler.generate_schema(field_type)
+
+    @classmethod
+    def _typed_dict_schema(
+        cls,
+        handler: t.Any,
+        *,
+        include_relationships: bool = False,
+        include_properties: bool = False,
+        _fields: dict[str, t.Any] | None = None,
+        _required_fields: set[str] = frozenset(),  # type: ignore
+    ) -> t.Any:
+        from pydantic_core import core_schema
+
+        is_shallow = _fields is not None
+        fields = (
+            _fields
+            if is_shallow
+            else cls._pydantic_fields(
+                include_relationships=include_relationships,
+                include_properties=include_properties,
+            )
+        ) or {}
+
+        def make_field(field_name: str, field_type: t.Any) -> t.Any:
+            inner = cls._field_core_schema(field_type, handler)
+            if field_name in _required_fields:
+                # Always computed — keep required and non-nullable for clean TS types
+                return core_schema.typed_dict_field(inner, required=True)
+            # DB fields / relationships: TypeDAL can return partial rows, so allow None when present,
+            # but keep missing fields absent (don't auto-fill null/default values).
+            return core_schema.typed_dict_field(core_schema.nullable_schema(inner), required=False)
+
+        schema_fields = {field_name: make_field(field_name, field_type) for field_name, field_type in fields.items()}
+
+        # Shallow (nested) schemas are inlined — no $defs entry, no ugly suffix in OpenAPI.
+        # Full schemas use the clean class name so OpenAPI shows "Song", not "Song_rel_True...".
+        ref = None if is_shallow else f"{cls.__module__}.{cls.__qualname__}"
+
+        return core_schema.typed_dict_schema(schema_fields, ref=ref)
+
+    @classmethod
+    def __get_pydantic_core_schema__(
+        cls,
+        source_type: t.Any,
+        handler: t.Any,
+    ) -> t.Any:
+        """Build the pydantic-core schema for this TypeDAL model."""
+        from pydantic_core import core_schema
+
+        fields = cls._pydantic_fields(
+            include_relationships=True,
+            include_properties=True,
+        )
+
+        # Properties are always computed — they must stay required + non-nullable
+        # so the generated TypeScript types don't become `string | null | undefined`.
+        full_dict = all_dict(cls)
+        property_names = {
+            name for name, val in full_dict.items() if not name.startswith("_") and isinstance(val, property)
+        }
+
+        return core_schema.no_info_before_validator_function(
+            cls._make_instance_converter(cls, fields),
+            cls._typed_dict_schema(
+                handler=handler,
+                include_relationships=True,
+                include_properties=True,
+                _required_fields=property_names,
+            ),
+        )
+
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls,
+        schema: t.Any,
+        handler: t.Any,
+    ) -> dict[str, t.Any]:
+        """Build the JSON schema by delegating to pydantic's handler."""
+        return handler(schema)  # type: ignore
+
+    def model_dump(self, mode: str = "python", *, _shallow: bool = False) -> dict[str, t.Any]:
+        """Serialize this model to a dict, with optional shallow nested output."""
+        cls = type(self)
+        relationship_names = set(cls.get_relationships())
+        data: dict[str, t.Any] = {}
+        for field_name in self._pydantic_fields(
+            include_relationships=not _shallow,
+            include_properties=not _shallow,
+        ):
+            # Only include relationship data that was already selected/joined.
+            # This prevents model_dump from triggering lazy-loading queries.
+            if field_name in relationship_names and field_name not in self.__dict__:
+                continue
+
+            data[field_name] = getattr(self, field_name, None)
+
+        if mode == "json":
+            return dump_pydantic(data, _shallow_nested=True)
+
+        return data

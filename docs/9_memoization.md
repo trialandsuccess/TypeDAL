@@ -148,3 +148,8 @@ class SpecialTable(TypedTable):
 ```
 
 **Warning:** Disabling this may break caching functionality for queries involving this table.
+
+---
+
+Want to explore less common but useful APIs (like old-style pyDAL `QueryBuilder`, validation/upsert helpers, and field reordering)?
+Continue with [10. Advanced APIs](./10_advanced_apis.md).

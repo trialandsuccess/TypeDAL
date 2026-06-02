@@ -7,14 +7,17 @@ Since otherwise helper methods would clutter up the TypeDAl class.
 from __future__ import annotations
 
 import copy
+import enum
 import types
 import typing as t
 import warnings
 
 import pydal
+from pydal.validators import IS_IN_SET, ValidationError, Validator
 
 from .constants import BASIC_MAPPINGS
 from .core import TypeDAL, evaluate_forward_reference, resolve_annotation
+from .enum_helpers import enum_value_type, make_enum_filter_out
 from .fields import TypedField, is_typed_field
 from .helpers import (
     all_annotations,
@@ -27,13 +30,7 @@ from .helpers import (
 )
 from .relationships import Relationship, to_relationship
 from .tables import TypedTable
-from .types import (
-    Field,
-    T,
-    T_annotation,
-    Table,
-    _Types,
-)
+from .types import Field, T_annotation, Table, _Types
 
 try:
     # python 3.14+
@@ -41,6 +38,24 @@ try:
 except ImportError:  # pragma: no cover
     # python 3.13-
     from typing import ForwardRef
+
+
+class IS_IN_ENUM(Validator):
+    """Validator that accepts only values present in a specific enum."""
+
+    def __init__(self, etype: type[enum.Enum], error_message: str = "value not allowed"):
+        """Initialize the enum validator."""
+        super().__init__()
+        self.etype = etype
+        self.error_message = error_message
+
+    def validate(self, value: t.Any, _record_id: int | None = None) -> t.Any:
+        """Validate and normalize an enum-compatible value."""
+        if value not in self.etype:
+            raise ValidationError(self.translator(self.error_message))
+
+        # normalize value:
+        return self.etype(value).value
 
 
 class TableDefinitionBuilder:
@@ -53,7 +68,7 @@ class TableDefinitionBuilder:
         self.db = db
         self.class_map: dict[str, t.Type["TypedTable"]] = {}
 
-    def define(self, cls: t.Type[T], **kwargs: t.Any) -> t.Type[T]:
+    def define[T: t.Any](self, cls: t.Type[T], **kwargs: t.Any) -> t.Type[T]:
         """Build and register a table from a TypedTable class."""
         full_dict = all_dict(cls)
         tablename = to_snake(cls.__name__)
@@ -102,8 +117,9 @@ class TableDefinitionBuilder:
                 table=table,
                 relationships=t.cast(dict[str, Relationship[t.Any]], relationships),
             )
-            self.class_map[str(table)] = cls
-            self.class_map[table._rname] = cls
+            self.class_map[str(table)] = cls  # tablename - pydal name
+            self.class_map[cls.__name__] = cls  # TableName - typedal name
+            self.class_map[table._rname] = cls  # table_model - sql name
             cls.__on_define__(self.db)
         else:
             warnings.warn("db.define used without inheriting TypedTable. This could lead to strange problems!")
@@ -133,7 +149,7 @@ class TableDefinitionBuilder:
         """Convert Python type annotation to pydal field type string."""
         ftype = t.cast(type, ftype_annotation)  # cast from Type to type to make mypy happy)
 
-        known_classes = {table.__name__: table for table in self.class_map.values()}
+        known_classes = self.db._known_classes()
 
         if isinstance(ftype, str):
             # extract type from string
@@ -158,6 +174,16 @@ class TableDefinitionBuilder:
         elif origin_is_subclass(ftype, TypedField):
             # TypedField[int]
             return self.annotation_to_pydal_fieldtype(t.get_args(ftype)[0], mut_kw)
+        elif t.get_origin(ftype) is t.Literal:
+            mut_kw.setdefault("requires", [IS_IN_SET(t.get_args(ftype))])
+            _child_type = type(t.get_args(ftype)[0])
+            return self.annotation_to_pydal_fieldtype(_child_type, mut_kw)
+        elif isinstance(ftype, type) and issubclass(ftype, enum.Enum):
+            _child_type = enum_value_type(ftype)
+            # mut_kw.setdefault("requires", [IS_IN_SET(_values)])
+            mut_kw.setdefault("requires", [IS_IN_ENUM(ftype)])
+            mut_kw.setdefault("filter_out", make_enum_filter_out(ftype))
+            return self.annotation_to_pydal_fieldtype(_child_type, mut_kw)
         elif isinstance(ftype, types.GenericAlias) and t.get_origin(ftype) in (list, TypedField):
             # list[str] -> str -> string -> list:string
             _child_type = t.get_args(ftype)[0]

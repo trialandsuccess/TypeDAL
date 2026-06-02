@@ -234,7 +234,7 @@ def test_table_with_methods():
 
             return self.get_age(dob, today)
 
-        def _as_dict(self, **kwargs):
+        def _as_dict(self, **_):
             # custom as_dict behavior! Used by as_json()
             return super()._as_dict() | {"age": self.age(simulated_today)}
 

@@ -230,16 +230,50 @@ The Query Builder has a few operations that don't return a new builder instance:
   be indexed by ID instead of a list index (e.g. `rows[15]` to get the row with ID 15)
 - paginate: this works similarly to `collect`, but returns a PaginatedRows instead, which has a `.next()`
   and `.previous()` method to easily load more pages.
+- collect_into: instantiate rows as another TypedTable model that is unbound or bound to the same table.
 - collect_or_fail: where `collect` may return an empty result, this variant will raise an error if there are no results.
 - execute: get the raw rows matching your query as returned by pydal, without entity mapping or relationship loading.
   Useful for subqueries or when you need lower-level control.
 - first: get the first entity matching your query, possibly with relationships loaded (if .join was used)
 - first_or_fail: where `first` may return an empty result, this variant will raise an error if there are no results.
 - to_sql: get the SQL string that would run, useful for debugging, subqueries and other advanced SQL operations.
-- update: instead of selecting rows, update those matching the current query (see [Delete](#delete))
-- delete: instead of selecting rows, delete those matching the current query (see [Update](#update))
+- update: instead of selecting rows, update those matching the current query (see [Update](#update))
+- delete: instead of selecting rows, delete those matching the current query (see [Delete](#delete))
 
 Additionally, you can directly call `.all()`, `.collect()`, `.count()`, `.first()` on a model (e.g. `User.all()`).
+
+#### collect_into example
+
+Use `collect_into` when you want a different model shape for the same table.
+If no explicit `.select(...)` is provided, TypeDAL defaults to fields declared on the target model.
+
+```python
+@db.define()
+class User(TypedTable):
+    id: int
+    email: str
+    password_hash: str
+    is_active: bool
+
+class PublicUser(TypedTable):
+    id: int
+    email: str
+    is_active: bool
+    profile_url: str | None = None
+
+def enrich_profile_url(row: PublicUser, _raw):
+    row.profile_url = f"/users/{row.id}"
+
+rows = User.where(is_active=True).collect_into(
+    PublicUser,
+    # note: `init` is optional:
+    init=enrich_profile_url,
+)
+row = rows.first()
+
+assert isinstance(row, PublicUser)
+assert "password_hash" not in row
+```
 
 ## Update
 
@@ -264,7 +298,7 @@ person.update_record(name="New Name")
 db(db.person.name == "Old Name").delete()
 
 row = db.person(4)
-row.update_record(name="New Name")
+row.delete_record()
 
 # typedal:
 Person.where(id="Old Name").delete()  # via query builder
@@ -272,3 +306,8 @@ Person.where(id="Old Name").delete()  # via query builder
 person = Person(4)
 person.delete_record()
 ```
+
+---
+
+Need less-common query patterns (for example, using `QueryBuilder` on old-style pyDAL tables)?
+See [10. Advanced APIs](./10_advanced_apis.md).

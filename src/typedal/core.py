@@ -4,6 +4,7 @@ Core functionality of TypeDAL.
 
 from __future__ import annotations
 
+# noinspection PyUnusedImports
 import datetime as dt
 import sys
 import typing as t
@@ -21,7 +22,10 @@ from .helpers import (
     sql_expression,
     to_snake,
 )
-from .types import CacheStatus, Field, T, Template  # type: ignore
+from .serializers.typescript import TypedDictRegistry
+
+# noinspection PyUnusedImports
+from .types import CacheStatus, Field, Template
 
 try:
     # python 3.14+
@@ -33,7 +37,7 @@ except ImportError:  # pragma: no cover
 if t.TYPE_CHECKING:
     from .fields import TypedField
     from .query_builder import QueryBuilder
-    from .types import AnyDict, Expression, Rows, T_Query, Table
+    from .types import AnyDict, Expression, Rows, Set, T_Query, Table
 
 
 # note: these functions can not be moved to a different file,
@@ -140,7 +144,37 @@ def resolve_annotation(ftype: str, namespace: dict[str, type] | None = None) -> 
         return resolve_annotation_314(ftype, namespace=namespace)
 
 
-class TypeDAL(pydal.DAL):
+if t.TYPE_CHECKING:
+
+    class _TypeDALBase:
+        # attributes accessed throughout the codebase
+        _adapter: t.Any
+        _migrate: t.Any
+        representers: t.Any
+
+        def __init__(self, *args: t.Any, **kwargs: t.Any) -> None: ...
+
+        def __call__(self, query: t.Any = None) -> "Set": ...
+
+        def commit(self) -> None: ...
+
+        def rollback(self) -> None: ...
+
+        def define_table(self, *args: t.Any, **kwargs: t.Any) -> "Table": ...
+
+        def has_representer(self, field_type: str) -> bool: ...
+
+        # pydal exposes dynamic table attributes like `db.my_table`.
+        # this keeps type checkers from flagging these as missing attributes.
+        def __getattr__(self, item: str) -> "Table": ...
+
+else:
+
+    class _TypeDALBase(pydal.DAL):
+        pass
+
+
+class TypeDAL(_TypeDALBase):
     """
     Drop-in replacement for pyDAL with layer to convert class-based table definitions to classical pydal define_tables.
     """
@@ -246,7 +280,7 @@ class TypeDAL(pydal.DAL):
             self.try_define(_TypedalCache)
             self.try_define(_TypedalCacheDependency)
 
-    def try_define(self, model: t.Type[T], verbose: bool = False) -> t.Type[T]:
+    def try_define[T: t.Any](self, model: t.Type[T], verbose: bool = False) -> t.Type[T]:
         """
         Try to define a model with migrate or fall back to fake migrate.
         """
@@ -270,7 +304,7 @@ class TypeDAL(pydal.DAL):
     }
 
     @t.overload
-    def define(self, maybe_cls: None = None, **kwargs: t.Any) -> t.Callable[[t.Type[T]], t.Type[T]]:
+    def define[T: t.Any](self, maybe_cls: None = None, **kwargs: t.Any) -> t.Callable[[t.Type[T]], t.Type[T]]:
         """
         Typing Overload for define without a class.
 
@@ -279,7 +313,7 @@ class TypeDAL(pydal.DAL):
         """
 
     @t.overload
-    def define(self, maybe_cls: t.Type[T], **kwargs: t.Any) -> t.Type[T]:
+    def define[T: t.Any](self, maybe_cls: t.Type[T], **kwargs: t.Any) -> t.Type[T]:
         """
         Typing Overload for define with a class.
 
@@ -287,7 +321,7 @@ class TypeDAL(pydal.DAL):
         class MyTable(TypedTable): ...
         """
 
-    def define(
+    def define[T: t.Any](
         self,
         maybe_cls: t.Type[T] | None = None,
         **kwargs: t.Any,
@@ -315,6 +349,7 @@ class TypeDAL(pydal.DAL):
         """
 
         def wrapper(cls: t.Type[T]) -> t.Type[T]:
+            """Define and return a TypedTable class bound to this DB instance."""
             return self._builder.define(cls, **kwargs)
 
         if maybe_cls:
@@ -378,6 +413,14 @@ class TypeDAL(pydal.DAL):
     def _class_map(self) -> dict[str, t.Type["TypedTable"]]:
         # alias for backward-compatibility
         return self._builder.class_map
+
+    def _known_classes(self) -> dict[str, t.Type["TypedTable"]]:
+        """
+        Return currently defined TypedTable classes keyed by class name.
+
+        Useful when resolving forward references in annotations/relationships.
+        """
+        return {table.__name__: table for table in self._class_map.values()}
 
     @staticmethod
     def to_snake(camel: str) -> str:
@@ -460,7 +503,7 @@ class TypeDAL(pydal.DAL):
         """
         return sql_expression(self, sql_fragment, *raw_args, output_type=output_type, **raw_kwargs)
 
-    def memoize(
+    def memoize[T: t.Any](
         self,
         func: t.Callable[..., T],
         # should be TypedRows[TypedTable] or TypedTable but for some reason that breaks
@@ -487,6 +530,32 @@ class TypeDAL(pydal.DAL):
             Cached result or fresh computation
         """
         return memoize(self, func, *args, key=key, ttl=ttl, **kwargs)
+
+    def as_typescript(self, *tables: str | type[TypedTable]) -> str:
+        """
+        Generate a TypeScript schema string for all currently defined typedal models.
+        """
+        TypedDictRegistry.clear()  # clean registry in order to apply 'tables' filtering
+        registry = TypedDictRegistry()
+
+        do_filter: t.Callable[[str], bool]
+        if tables:
+            names = {
+                model.__name__
+                for table in tables
+                if (model := (self.find_model(table) if isinstance(table, str) else table))
+            }
+
+            do_filter = lambda name: name in names  # noqa: E731
+        else:
+            do_filter = lambda name: not name.startswith("_")  # noqa: E731
+
+        # Ensure all currently defined models are registered into the TypedDict registry/world.
+        for model in self._class_map.values():
+            if do_filter(model.__name__):
+                model.as_typeddict()
+
+        return registry.get_typescript("as_typescript")
 
 
 TypeDAL.representers.setdefault("rows_render", default_representer)

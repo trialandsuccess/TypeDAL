@@ -266,6 +266,15 @@ def test_render():
     assert rendered_two.normal == "123"
     assert rendered_two.list_field == "abc, def"
     assert rendered_two.related.also_normal == "321"
+    assert json.loads(rendered_two.as_json()) == {
+        "id": rendered_two.id,
+        "normal": "123",
+        "list_field": "abc, def",
+        "related": {
+            "id": rendered_two.related.id,
+            "also_normal": "321",
+        },
+    }
 
     # test list:
 
@@ -287,3 +296,39 @@ def test_render():
     assert rendered_four.normal == "123"
     assert rendered_four.list_field == "abc, def"
     assert rendered_four.related_list[0].also_normal == "321"
+    assert json.loads(rendered_four.as_json()) == {
+        "id": rendered_four.id,
+        "normal": "123",
+        "list_field": "abc, def",
+        "related_list": [
+            {
+                "id": rendered_four.related_list[0].id,
+                "also_normal": "321",
+            }
+        ],
+    }
+
+
+def test_render_with_none_single_relationship_row():
+    @db.define()
+    class RelatedTableNone(TypedTable):
+        value: str
+
+    @db.define()
+    class RenderTableNone(TypedTable):
+        normal: str
+        related = relationship(
+            RelatedTableNone,
+            condition=lambda this, that: this.normal == that.value,
+        )
+
+    RenderTableNone.insert(normal="no-match")
+
+    row = RenderTableNone.select().join("related").first()
+
+    assert row
+    assert row.related is None
+
+    rendered = row.render()
+
+    assert rendered.related is None

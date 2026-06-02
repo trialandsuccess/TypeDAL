@@ -98,6 +98,30 @@ In this example, `Relationship["Sidekick"]` is added as an extra type hint, sinc
 after the superhero class.
 Adding the `Relationship["Sidekick"]` hint is optional, but recommended to improve editor support.
 
+### Forward References with `Ref[...]` (typing helper)
+
+For relationship targets, you can use `Ref[...]` as a typed replacement for the string form:
+
+```python
+from typedal.relationships import Ref
+
+bestie = relationship(Ref["BestFriend"], lambda user, bestie: user.id == bestie.friend)
+```
+
+This is equivalent at runtime to:
+
+```python
+bestie = relationship("BestFriend", lambda user, bestie: user.id == bestie.friend)
+```
+
+`Ref[...]` is primarily for type-checking/editor support. It does not change runtime behavior.
+
+For normal table fields, `Ref[...]` is not needed. Use standard forward-reference annotations, for example:
+
+```python
+owner: "User"
+```
+
 ## Many-to-Many
 
 Setting up a relationship that uses a junction/pivot table is slightly harder.
@@ -199,4 +223,3 @@ Depending on your setup:
 - **Using py4web or web2py?** → [5. py4web & web2py](./5_py4web.md)
 - **Ready to manage your database?** → [6. Migrations](./6_migrations.md)
 - **Dive deeper into functionality?** → [8.: Mixins](./8_mixins.md)
-

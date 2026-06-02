@@ -17,13 +17,14 @@ from .core import TypeDAL
 from .fields import TypedField, is_typed_field
 from .helpers import (
     DummyQuery,
+    all_annotations,
     as_lambda,
     filter_out,
     looks_like,
     normalize_table_keys,
     throw,
 )
-from .tables import TableMeta, TypedTable
+from .tables import TableMeta, TypedTable, _TypedTable
 from .types import (
     CacheMetadata,
     Condition,
@@ -33,15 +34,15 @@ from .types import (
     OnQuery,
     OrderBy,
     Query,
+    Row,
     Rows,
     SelectKwargs,
-    T,
     T_MetaInstance,
     Table,
 )
 
 
-class QueryBuilder(t.Generic[T_MetaInstance]):
+class QueryBuilder[T_MetaInstance: _TypedTable]:
     """
     Abstration on top of pydal's query system.
     """
@@ -70,7 +71,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         """
         self.model = model
         table = self._ensure_table_defined()
-        default_query: Query = table.id > 0
+        default_query: Query = t.cast(Query, table.id > 0)
         self.query = add_query or default_query
         self.select_args = select_args or []
         self.select_kwargs = select_kwargs or {}
@@ -110,7 +111,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         Querybuilder is truthy if it has t.Any conditions.
         """
         table = self._ensure_table_defined()
-        default_query: Query = table.id > 0
+        default_query: Query = t.cast(Query, table.id > 0)
         return any(
             [
                 self.query != default_query,
@@ -518,7 +519,11 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         """
         return self.to_sql()
 
-    def _collect_cached(self, metadata: Metadata) -> "TypedRows[T_MetaInstance] | None":
+    def _collect_cached(
+        self,
+        metadata: Metadata,
+        into: t.Type[_TypedTable],
+    ) -> "TypedRows[T_MetaInstance] | None":
         expires_at = metadata["cache"].get("expires_at")
         metadata["cache"] |= {
             # key is partly dependant on cache metadata but not these:
@@ -530,6 +535,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
 
         _, key = create_and_hash_cache_key(
             self.model,
+            f"{into.__module__}.{into.__qualname__}",
             metadata,
             self.query,
             self.select_args,
@@ -567,12 +573,15 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         verbose: bool = False,
         _to: t.Type["TypedRows[t.Any]"] = None,
         add_id: bool = True,
-    ) -> "TypedRows[T_MetaInstance]":
+        _into: t.Type[_TypedTable] | None = None,
+        _init: t.Callable[[_TypedTable, Row], None] | None = None,
+    ) -> TypedRows[T_MetaInstance]:
         """
         Execute the built query and turn it into model instances, while handling relationships.
         """
         if _to is None:
             _to = TypedRows
+        into = _into or self.model
 
         if not isinstance(self.model, TableMeta):
             # tried to use querybuilder with a non-typedal table,
@@ -586,7 +595,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
 
         metadata: Metadata = self.metadata.copy()
 
-        if metadata.get("cache", {}).get("enabled") and (result := self._collect_cached(metadata)):
+        if metadata.get("cache", {}).get("enabled") and (result := self._collect_cached(metadata, into)):
             return result
 
         query, select_args, select_kwargs = self._before_query(metadata, add_id=add_id)
@@ -610,12 +619,12 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
 
         if not self.relationships:
             # easy
-            typed_rows = _to.from_rows(rows, self.model, metadata=metadata)
+            typed_rows = _to.from_rows(rows, self.model, metadata=metadata, into=into, init=_init)
         else:
             # harder: try to match rows to the belonging objects
             # assume structure of {'table': <data>} per row.
             # if that's not the case, return default behavior again
-            typed_rows = self._collect_with_relationships(rows, metadata=metadata, _to=_to)
+            typed_rows = self._collect_with_relationships(rows, metadata=metadata, _to=_to, _into=into, _init=_init)
 
         for fn_after in db._after_collect:
             fn_after(self, typed_rows, rows)
@@ -623,19 +632,60 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         # only saves if requested in metadata:
         return save_to_cache(typed_rows, rows)
 
+    def collect_into[T_Into: _TypedTable](
+        self,
+        into: t.Type[T_Into],
+        verbose: bool = False,
+        add_id: bool = True,
+        init: t.Callable[[T_Into, Row], None] | None = None,
+    ) -> TypedRows[T_Into]:
+        """
+        Execute the built query and instantiate root records as another model class.
+        """
+        self._validate_collect_into_model(into)
+        query = self
+        if not self.select_args:
+            query = self.select(*self._collect_into_default_fields(into))
+        _init = t.cast(t.Callable[[_TypedTable, Row], None] | None, init)
+        rows = query.collect(verbose=verbose, add_id=add_id, _into=into, _init=_init)
+        return t.cast(TypedRows[T_Into], rows)
+
+    def _validate_collect_into_model(self, into: t.Type[t.Any]) -> None:
+        if not isinstance(into, TableMeta):
+            raise TypeError("collect_into expects a TypedTable class")
+
+        source = self.model._ensure_table_defined()
+
+        if not getattr(into, "_table", None):
+            into.__set_internals__(db=self._get_db(), table=source, relationships={})
+
+        target = into._ensure_table_defined()
+
+        if source is target or str(source) == str(target):
+            return
+
+        raise ValueError(
+            f"collect_into target '{into.__name__}' must be bound to table '{source}', got '{target}'",
+        )
+
+    def _collect_into_default_fields(self, into: t.Type[_TypedTable]) -> list[t.Any]:
+        source = self.model._ensure_table_defined()
+
+        return [source[name] for name in all_annotations(into) if name in source.fields]
+
     @t.overload
-    def column(self, field: TypedField[T], **options: t.Unpack[SelectKwargs]) -> list[T]:
+    def column[T: t.Any](self, field: TypedField[T], **options: t.Unpack[SelectKwargs]) -> list[T]:
         """
         If a typedfield is passed, the output type can be safely determined.
         """
 
     @t.overload
-    def column(self, field: T, **options: t.Unpack[SelectKwargs]) -> list[T]:
+    def column[T: t.Any](self, field: T, **options: t.Unpack[SelectKwargs]) -> list[T]:
         """
         Otherwise, the output type is loosely determined (assumes `field: type` or t.Any).
         """
 
-    def column(self, field: TypedField[T] | T, **options: t.Unpack[SelectKwargs]) -> list[T]:
+    def column[T: t.Any](self, field: TypedField[T] | T, **options: t.Unpack[SelectKwargs]) -> list[T]:
         """
         Get all values in a specific column.
 
@@ -698,7 +748,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         return joins
 
     def _build_inner_joins_recursive(
-        self, relation: Relationship[t.Any], parent_table: t.Type[TypedTable], key: str, parent_key: str = ""
+        self, relation: Relationship[t.Any], parent_table: t.Type[_TypedTable], key: str, parent_key: str = ""
     ) -> list[t.Any]:
         """Recursively build inner joins for a relationship and its nested relationships."""
         db = self._get_db()
@@ -764,7 +814,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         key: str,
         select_args: list[t.Any],
         left_joins: list[Expression],
-        parent_table: t.Type[TypedTable],
+        parent_table: t.Type[_TypedTable],
         parent_key: str = "",
     ) -> list[t.Any]:
         """Process a single relationship for left join and field selection."""
@@ -844,12 +894,15 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         rows: Rows,
         metadata: Metadata,
         _to: t.Type["TypedRows[T_MetaInstance]"],
+        _into: t.Type[_TypedTable] | None = None,
+        _init: t.Callable[[_TypedTable, Row], None] | None = None,
     ) -> "TypedRows[T_MetaInstance]":
         """
         Transform the raw rows into Typed Table model instances with nested relationships.
         """
         db = self._get_db()
         main_table = self._ensure_table_defined()
+        into = _into or self.model
 
         # id: Model
         records: dict[t.Any, T_MetaInstance] = {}
@@ -867,7 +920,9 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
             raw_per_id[main_id].append(normalize_table_keys(row))
 
             if main_id not in records:
-                records[main_id] = self.model(main)
+                records[main_id] = t.cast(T_MetaInstance, into(main))
+                if _init:
+                    _init(t.cast(_TypedTable, records[main_id]), row)
                 records[main_id]._with = list(self.relationships.keys())
 
                 # Setup all relationship defaults (once)
@@ -1003,7 +1058,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
                 path=path,
             )
 
-    def collect_or_fail(self, exception: t.Optional[Exception] = None) -> "TypedRows[T_MetaInstance]":
+    def collect_or_fail(self, exception: t.Optional[Exception] = None) -> TypedRows[T_MetaInstance]:
         """
         Call .collect() and raise an error if nothing found.
 
@@ -1106,7 +1161,7 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
         builder = self.__paginate(limit, page)
         return builder._collect()
 
-    def chunk(self, chunk_size: int) -> t.Generator["TypedRows[T_MetaInstance]", t.Any, None]:
+    def chunk(self, chunk_size: int) -> t.Generator[TypedRows[T_MetaInstance], t.Any, None]:
         """
         Generator that yields rows from a paginated source in chunks.
 
@@ -1133,10 +1188,15 @@ class QueryBuilder(t.Generic[T_MetaInstance]):
 
         Also adds paginate, since it would be a waste to select more rows than needed.
         """
-        if row := self.paginate(page=1, limit=1, verbose=verbose).first():
-            return self.model.from_row(row)
-        else:
+        row = self.paginate(page=1, limit=1, verbose=verbose).first()
+        if not row:
             return None
+
+        if not isinstance(self.model, TableMeta):
+            # old-style pydal table: keep pydal semantics and return raw Row
+            return row
+
+        return self.model.from_row(row)
 
     def _first(self) -> str:
         return self._paginate(page=1, limit=1)

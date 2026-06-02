@@ -16,7 +16,7 @@ from src.typedal.caching import (
     clear_expired,
     remove_cache,
 )
-from src.typedal.relationships import Ref
+from src.typedal.relationships import Ref, resolve_relationship_type
 from src.typedal.serializers import as_json
 
 db = TypeDAL("sqlite:memory", lazy_policy="warn")
@@ -775,6 +775,10 @@ def test_memoize_nested_dependencies2():
     # no change
     bogus, status = db.memoize(something_slow)
     assert status == "cached"
+
+
+def test_resolve_relationship_type_plain_string_lookup():
+    assert resolve_relationship_type("Tag", namespace={"Tag": Tag}) is Tag
 
 
 def test_memoize_with_empty_table():
