@@ -453,10 +453,20 @@ Bigint = BigintField
 
 ## Custom:
 
+def safe_encode_native_timestamp(value: dt.datetime | None) -> str | None:
+    """
+    Encode timestamp values for SQL without turning None into the string 'None'.
+    """
+    if value is None:
+        return None
+
+    return f"'{value}'"
+
+
 NativeTimestampField = SQLCustomType(
     type="datetime",
     native="timestamp",
-    encoder=lambda x: f"'{x}'",  # extra quotes
+    encoder=safe_encode_native_timestamp,
     # decoder=lambda x: x, # already parsed into datetime
 )
 

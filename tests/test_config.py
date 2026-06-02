@@ -1,4 +1,5 @@
 import datetime as dt
+from datetime import datetime
 import os
 import shutil
 import sqlite3
@@ -169,9 +170,11 @@ def test_timestamp_fields_sqlite(at_temp_dir):
         ts = TimestampField(default=dt.datetime.now)
         dt = TypedField(dt.datetime, default=dt.datetime.now)
 
+        ts_optional: TypedField[datetime | None] = TimestampField(default=None, notnull=False)
+
     db.define(Timestamp)
 
-    row = Timestamp.insert()
+    row = Timestamp.insert(ts_optional=None)
 
     # old:
     assert isinstance(row.dt, dt.datetime), "not a datetime"
@@ -180,8 +183,10 @@ def test_timestamp_fields_sqlite(at_temp_dir):
     # new:
     assert isinstance(row.ts, dt.datetime), "not a datetime"
     assert "." in str(row.ts)  # ms precision
+    assert row.ts_optional is None
 
     assert '"ts" timestamp NOT NULL' in Timestamp._sql()
+
 
 
 def test_timestamp_fields_psql(at_temp_dir):
@@ -196,9 +201,11 @@ def test_timestamp_fields_psql(at_temp_dir):
         ts = TimestampField(default=dt.datetime.now)
         dt = TypedField(dt.datetime, default=dt.datetime.now)
 
+        ts_optional: TypedField[datetime | None] = TimestampField(default=None, notnull=False)
+
     db.define(Timestamp)
 
-    row = Timestamp.insert()
+    row = Timestamp.insert(ts_optional=None)
 
     # old:
     assert isinstance(row.dt, dt.datetime), "not a datetime"
@@ -207,8 +214,10 @@ def test_timestamp_fields_psql(at_temp_dir):
     # new:
     assert isinstance(row.ts, dt.datetime), "not a datetime"
     assert "." in str(row.ts)  # ms precision
+    assert row.ts_optional is None
 
     assert '"ts" timestamp NOT NULL' in Timestamp._sql()
+
 
 
 def test_point_fields_sqlite(at_temp_dir):
