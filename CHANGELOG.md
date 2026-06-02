@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.8.6 (2026-06-02)
+
+### Fix
+
+* Support `None` for timestamp fields ([`e49be64`](https://github.com/trialandsuccess/TypeDAL/commit/e49be6425158c0c299bdccb9d5c18187f4f1c10e))
+
 ## v4.8.5 (2026-05-28)
 
 ### Fix
