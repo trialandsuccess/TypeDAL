@@ -880,12 +880,13 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
         }
 
     def _setup_instance_methods(self) -> None:
-        self.as_dict = self._as_dict  # type: ignore
-        self.__json__ = self.as_json = self._as_json  # type: ignore
-        # self.as_yaml = self._as_yaml  # type: ignore
-        self.as_xml = self._as_xml  # type: ignore
-
         # use setattr instead of self.x = y to make the typecheckers happier
+        setattr(self, "as_dict", self._as_dict)
+        setattr(self, "__json__", self._as_json)
+        setattr(self, "as_json", self._as_json)
+        setattr(self, "as_xml", self._as_xml)
+        # setattr(self, "as_yaml", self._as_yaml)
+
         setattr(self, "update", self._update)
         setattr(self, "delete_record", self._delete_record)
         setattr(self, "update_record", self._update_record)

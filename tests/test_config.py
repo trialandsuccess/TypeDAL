@@ -1,10 +1,10 @@
 import datetime as dt
-from datetime import datetime
 import os
 import shutil
 import sqlite3
 import tempfile
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -198,7 +198,6 @@ def test_timestamp_fields_sqlite(at_temp_dir):
     assert '"ts" timestamp NOT NULL' in Timestamp._sql()
 
 
-
 def test_timestamp_fields_psql(at_temp_dir):
     examples = Path(__file__).parent / "configs"
     shutil.copy(examples / "valid.env", "./.env")
@@ -227,7 +226,6 @@ def test_timestamp_fields_psql(at_temp_dir):
     assert row.ts_optional is None
 
     assert '"ts" timestamp NOT NULL' in Timestamp._sql()
-
 
 
 def test_point_fields_sqlite(at_temp_dir):
