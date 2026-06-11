@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.8.7 (2026-06-11)
+
+### Fix
+
+* Make type checker happy about as_dict and similar methods; reformat ([`f6be55f`](https://github.com/trialandsuccess/TypeDAL/commit/f6be55f253e87d409e0ac017f2bdb89233620391))
+
 ## v4.8.6 (2026-06-02)
 
 ### Fix
