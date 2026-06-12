@@ -26,7 +26,7 @@ from src.typedal.helpers import (
     to_snake,
     unwrap_type,
 )
-from src.typedal.types import Field
+from src.typedal.types import Field, merge_permissions
 
 
 def test_is_union():
@@ -273,3 +273,8 @@ def test_sql_expression_314():
     from .py314_tests import test_sql_expression_314
 
     test_sql_expression_314(database)
+
+def test_merge_permissions():
+    combined = merge_permissions({"read": True, "insert": False}, {"read": False, "insert": False})
+    assert len(combined) == 4
+    assert combined == {"read": False, "insert": False, "update": True, "delete": True}

@@ -33,12 +33,15 @@ from .types import (
     Metadata,
     OnQuery,
     OrderBy,
+    Permissions,
     Query,
     Row,
     Rows,
     SelectKwargs,
     T_MetaInstance,
     Table,
+    merge_permissions,
+    require_permission,
 )
 
 
@@ -53,6 +56,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
     select_kwargs: SelectKwargs
     relationships: dict[str, Relationship[t.Any]]
     metadata: Metadata
+    _permissions: Permissions
 
     def __init__(
         self,
@@ -62,6 +66,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         select_kwargs: t.Optional[SelectKwargs] = None,
         relationships: dict[str, Relationship[t.Any]] = None,
         metadata: Metadata = None,
+        permissions: Permissions | None = None,
     ):
         """
         Normally, you wouldn't manually initialize a QueryBuilder but start using a method on a TypedTable.
@@ -77,6 +82,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         self.select_kwargs = select_kwargs or {}
         self.relationships = relationships or {}
         self.metadata = metadata or {}
+        self._permissions = merge_permissions(getattr(model, "_permissions", None), permissions)
 
     def _ensure_table_defined(self) -> Table:
         model = self.model
@@ -130,6 +136,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         select_kwargs: t.Optional[SelectKwargs] = None,
         relationships: dict[str, Relationship[t.Any]] = None,
         metadata: Metadata = None,
+        permissions: Permissions | None = None,
     ) -> "QueryBuilder[T_MetaInstance]":
         return QueryBuilder(
             self.model,
@@ -138,7 +145,14 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
             (self.select_kwargs | select_kwargs) if select_kwargs else self.select_kwargs,
             (self.relationships | relationships) if relationships else self.relationships,
             (self.metadata | (metadata or {})) if metadata else self.metadata,
+            permissions=merge_permissions(self._permissions, permissions),
         )
+
+    def permissions(self, **permissions: t.Unpack[Permissions]) -> "QueryBuilder[T_MetaInstance]":
+        """
+        Return a clone of this builder with permission overrides merged in.
+        """
+        return self._extend(permissions=t.cast(Permissions, permissions))
 
     def select(self, *fields: t.Any, **options: t.Unpack[SelectKwargs]) -> "QueryBuilder[T_MetaInstance]":
         """
@@ -455,6 +469,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         """
         Based on the current query, delete rows and return a list of deleted IDs.
         """
+        require_permission(self._permissions, "delete")
         db = self._get_db()
         removed_ids = [_.id for _ in db(self.query).select("id")]
         if db(self.query).delete():
@@ -472,6 +487,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         Based on the current query, update `fields` and return a list of updated IDs.
         """
         # todo: limit?
+        require_permission(self._permissions, "update")
         db = self._get_db()
         updated_ids = db(self.query).select("id").column("id")
         if db(self.query).update(**fields):
@@ -553,6 +569,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         """
         Raw version of .collect which only executes the SQL, without performing t.Any magic afterwards.
         """
+        require_permission(self._permissions, "read")
         db = self._get_db()
         metadata: Metadata = self.metadata.copy()
 
@@ -579,6 +596,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         """
         Execute the built query and turn it into model instances, while handling relationships.
         """
+        require_permission(self._permissions, "read")
         if _to is None:
             _to = TypedRows
         into = _into or self.model
@@ -1092,6 +1110,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         """
         Return the amount of rows matching the current query.
         """
+        require_permission(self._permissions, "read")
         db = self._get_db()
         query = self.__count(db, distinct=distinct)
 
@@ -1115,6 +1134,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         Returns:
             bool: A boolean indicating whether t.Any records exist.
         """
+        require_permission(self._permissions, "read")
         return bool(self.count())
 
     def __paginate(
@@ -1146,6 +1166,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         Note: when using relationships, this limit is only applied to the 'main' table and t.Any number of extra rows \
             can be loaded with relationship data!
         """
+        require_permission(self._permissions, "read")
         builder = self.__paginate(limit, page)
 
         rows = t.cast(PaginatedRows[T_MetaInstance], builder.collect(verbose=verbose, _to=PaginatedRows))
@@ -1176,6 +1197,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
                     pass
             ```
         """
+        require_permission(self._permissions, "read")
         page = 1
 
         while rows := self.__paginate(chunk_size, page).collect():
@@ -1188,6 +1210,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
 
         Also adds paginate, since it would be a waste to select more rows than needed.
         """
+        require_permission(self._permissions, "read")
         row = self.paginate(page=1, limit=1, verbose=verbose).first()
         if not row:
             return None
@@ -1207,6 +1230,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
 
         Basically unwraps t.Optional type.
         """
+        require_permission(self._permissions, "read")
         return self.first(verbose=verbose) or throw(exception or ValueError("Nothing found!"))
 
 

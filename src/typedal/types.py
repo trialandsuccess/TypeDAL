@@ -44,6 +44,41 @@ Template: t.TypeAlias = TemplateAlias  # explicit export for mypy, NOT a `type` 
 type AnyCallable = t.Callable[..., t.Any]
 type AnyDict = dict[str, t.Any]
 
+PermissionType = t.Literal["read", "insert", "update", "delete"]
+
+type Permissions = dict[PermissionType, bool]
+
+
+def merge_permissions(*permission_sets: Permissions | None) -> Permissions:
+    """
+    Merge zero or more permission mappings, keeping the most restrictive result.
+
+    Unspecified flags default to allowed.
+    """
+    permission_types = t.get_args(PermissionType)
+    merged: dict[str, bool] = {key: True for key in permission_types}
+
+    for permission_set in permission_sets:
+        if not permission_set:
+            continue
+
+        for key in permission_types:
+            if key in permission_set:
+                merged[key] = merged[key] and bool(permission_set[key])
+
+    return t.cast(Permissions, merged)
+
+
+def permission_allowed(permissions: Permissions | None, action: PermissionType) -> bool:
+    """Return whether the given permission flag is enabled."""
+    return merge_permissions(permissions).get(action, False)
+
+
+def require_permission(permissions: Permissions | None, action: PermissionType) -> None:
+    """Raise PermissionError when a permission flag is disabled."""
+    if not permission_allowed(permissions, action):
+        raise PermissionError(f"{action} is not allowed")
+
 
 # ---------------------------------------------------------------------------
 # Protocols
@@ -305,6 +340,35 @@ class FieldSettings(t.TypedDict, total=False):
     custom_qualifier: t.Any
     map_none: t.Any
     rname: str
+
+
+class DefineKwargs(t.TypedDict, total=False):
+    """
+    Keyword arguments accepted by `db.define()` and forwarded to `define_table()`.
+
+    `cache_dependency` is internal to TypeDAL and stripped before calling PyDAL.
+    """
+
+    # typedal-specific
+    cache_dependency: bool
+    permissions: Permissions
+
+    # common
+    fake_migrate: bool
+    migrate: bool
+    redefine: bool
+    rname: str
+    singular: str
+    plural: str
+    format: str
+
+    # pydal-internals
+    common_filter: t.Callable[..., t.Any]
+    on_define: t.Callable[["Table"], t.Any]
+    primarykey: list[str] | tuple[str, ...]
+    sequence_name: str
+    table_class: type[t.Any]
+    trigger_name: str
 
 
 # ---------------------------------------------------------------------------

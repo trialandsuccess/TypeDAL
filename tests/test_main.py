@@ -187,6 +187,47 @@ def test_mixed_defines(capsys):
     assert db.find_model(SecondNewSyntax._rname) is SecondNewSyntax
 
 
+def test_disallow_insert():
+    @db.define(permissions={"insert": False})
+    class ReadOnlyTable(TypedTable):
+        name: str
+
+    with pytest.raises(PermissionError, match="insert"):
+        ReadOnlyTable.insert(name="blocked")
+
+    with pytest.raises(PermissionError, match="insert"):
+        ReadOnlyTable.bulk_insert([{"name": "blocked"}])
+
+    with pytest.raises(PermissionError, match="insert"):
+        ReadOnlyTable.validate_and_insert(name="blocked")
+
+    with pytest.raises(PermissionError, match="insert"):
+        ReadOnlyTable.update_or_insert(name="blocked")
+
+
+def test_disallow_update_and_delete():
+    @db.define(permissions={"update": False})
+    class ReadOnlyUpdateTable(TypedTable):
+        name: str
+
+    update_row = ReadOnlyUpdateTable.insert(name="seed")
+
+    with pytest.raises(PermissionError, match="update"):
+        update_row.update_record(name="changed")
+
+    with pytest.raises(PermissionError, match="update"):
+        ReadOnlyUpdateTable.update(ReadOnlyUpdateTable.id == update_row.id, name="changed")
+
+    @db.define(permissions={"delete": False})
+    class ReadOnlyDeleteTable(TypedTable):
+        name: str
+
+    delete_row = ReadOnlyDeleteTable.insert(name="seed")
+
+    with pytest.raises(PermissionError, match="delete"):
+        delete_row.delete_record()
+
+
 def test_dont_allow_bool_in_query():
     with pytest.raises(ValueError):
         db(True)
