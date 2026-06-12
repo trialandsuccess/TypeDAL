@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.9.0 (2026-06-12)
+
+### Feature
+
+* **orm:** Add table and query builder permissions ([`e737666`](https://github.com/trialandsuccess/TypeDAL/commit/e737666b5f16a62a7c71ff1e0c21ed9d4f7418f5))
+
 ## v4.8.7 (2026-06-11)
 
 ### Fix
