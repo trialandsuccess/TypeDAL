@@ -30,7 +30,7 @@ from .helpers import (
 )
 from .relationships import Relationship, to_relationship
 from .tables import TypedTable
-from .types import Field, T_annotation, Table, _Types
+from .types import DefineKwargs, Field, Permissions, T_annotation, Table, _Types
 
 try:
     # python 3.14+
@@ -68,8 +68,9 @@ class TableDefinitionBuilder:
         self.db = db
         self.class_map: dict[str, t.Type["TypedTable"]] = {}
 
-    def define[T: t.Any](self, cls: t.Type[T], **kwargs: t.Any) -> t.Type[T]:
+    def define[T: t.Any](self, cls: t.Type[T], **kwargs: t.Unpack[DefineKwargs]) -> t.Type[T]:
         """Build and register a table from a TypedTable class."""
+        permissions: Permissions | None = kwargs.pop("permissions", None)
         full_dict = all_dict(cls)
         tablename = to_snake(cls.__name__)
         annotations = all_annotations(cls)
@@ -116,6 +117,7 @@ class TableDefinitionBuilder:
                 db=self.db,
                 table=table,
                 relationships=t.cast(dict[str, Relationship[t.Any]], relationships),
+                permissions=permissions,
             )
             self.class_map[str(table)] = cls  # tablename - pydal name
             self.class_map[cls.__name__] = cls  # TableName - typedal name

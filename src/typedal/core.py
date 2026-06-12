@@ -37,7 +37,7 @@ except ImportError:  # pragma: no cover
 if t.TYPE_CHECKING:
     from .fields import TypedField
     from .query_builder import QueryBuilder
-    from .types import AnyDict, Expression, Rows, Set, T_Query, Table
+    from .types import AnyDict, DefineKwargs, Expression, Rows, Set, T_Query, Table
 
 
 # note: these functions can not be moved to a different file,
@@ -304,7 +304,11 @@ class TypeDAL(_TypeDALBase):
     }
 
     @t.overload
-    def define[T: t.Any](self, maybe_cls: None = None, **kwargs: t.Any) -> t.Callable[[t.Type[T]], t.Type[T]]:
+    def define[T: t.Any](
+        self,
+        maybe_cls: None = None,
+        **kwargs: t.Unpack[DefineKwargs],
+    ) -> t.Callable[[t.Type[T]], t.Type[T]]:
         """
         Typing Overload for define without a class.
 
@@ -313,7 +317,7 @@ class TypeDAL(_TypeDALBase):
         """
 
     @t.overload
-    def define[T: t.Any](self, maybe_cls: t.Type[T], **kwargs: t.Any) -> t.Type[T]:
+    def define[T: t.Any](self, maybe_cls: t.Type[T], **kwargs: t.Unpack[DefineKwargs]) -> t.Type[T]:
         """
         Typing Overload for define with a class.
 
@@ -324,7 +328,7 @@ class TypeDAL(_TypeDALBase):
     def define[T: t.Any](
         self,
         maybe_cls: t.Type[T] | None = None,
-        **kwargs: t.Any,
+        **kwargs: t.Unpack[DefineKwargs],
     ) -> t.Type[T] | t.Callable[[t.Type[T]], t.Type[T]]:
         """
         Can be used as a decorator on a class that inherits `TypedTable`, \

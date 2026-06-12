@@ -28,6 +28,7 @@ from .types import (
     OnQuery,
     OpRow,
     OrderBy,
+    Permissions,
     Query,
     QueryLike,
     Reference,
@@ -37,6 +38,8 @@ from .types import (
     T_MetaInstance,
     T_Query,
     Table,
+    merge_permissions,
+    require_permission,
 )
 
 if t.TYPE_CHECKING:
@@ -97,18 +100,26 @@ class TableMeta(type):
     _db: TypeDAL | None = None
     _table: Table | None = None
     _relationships: dict[str, Relationship[t.Any]] | None = None
+    _permissions: Permissions | None = None
 
     #########################
     # TypeDAL custom logic: #
     #########################
 
-    def __set_internals__(self, db: pydal.DAL, table: Table, relationships: dict[str, Relationship[t.Any]]) -> None:
+    def __set_internals__(
+        self,
+        db: pydal.DAL,
+        table: Table,
+        relationships: dict[str, Relationship[t.Any]],
+        permissions: Permissions | None = None,
+    ) -> None:
         """
         Store the related database and pydal table for later usage.
         """
         self._db = db
         self._table = table
         self._relationships = relationships
+        self._permissions = merge_permissions(permissions)
 
     def __getattr__(self, col: str) -> t.Optional[Field]:
         """
@@ -186,6 +197,7 @@ class TableMeta(type):
 
         """
         table = self._ensure_table_defined()
+        require_permission(self._permissions, "insert")
 
         result = table.insert(**fields)
         # it already is an int but mypy doesn't understand that
@@ -201,6 +213,7 @@ class TableMeta(type):
         Insert multiple rows, returns a TypedRows set of new instances.
         """
         table = self._ensure_table_defined()
+        require_permission(self._permissions, "insert")
         result = table.bulk_insert(items)
         return self.where(lambda row: row.id.belongs(result)).collect()
 
@@ -239,6 +252,7 @@ class TableMeta(type):
         Returns a tuple of (the created instance, a dict of errors).
         """
         table = self._ensure_table_defined()
+        require_permission(self._permissions, "insert")
         result = table.validate_and_insert(**fields)
         if row_id := result.get("id"):
             return self(row_id), None
@@ -256,6 +270,7 @@ class TableMeta(type):
         Returns a tuple of (the updated instance, a dict of errors).
         """
         table = self._ensure_table_defined()
+        require_permission(self._permissions, "update")
 
         result = table.validate_and_update(query, **fields)
 
@@ -278,7 +293,14 @@ class TableMeta(type):
         Returns a tuple of (the updated/created instance, a dict of errors).
         """
         table = self._ensure_table_defined()
-        result = table.validate_and_update_or_insert(query, **fields)
+        record = table(query)
+
+        if record:
+            require_permission(self._permissions, "update")
+            result = table.validate_and_update(query, **fields)
+        else:
+            require_permission(self._permissions, "insert")
+            result = table.validate_and_insert(**fields)
 
         if errors := result.get("errors"):
             return None, errors
@@ -347,6 +369,12 @@ class TableMeta(type):
         See QueryBuilder.cache!
         """
         return QueryBuilder(self).cache(*deps, **kwargs)
+
+    def permissions(self: t.Type[T_MetaInstance], **permissions: bool) -> "QueryBuilder[T_MetaInstance]":
+        """
+        See QueryBuilder.permissions!
+        """
+        return QueryBuilder(self).permissions(**permissions)
 
     def count(self: t.Type[T_MetaInstance]) -> int:
         """
@@ -1254,12 +1282,14 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
             return None
 
     def _update(self: T_MetaInstance, **fields: t.Any) -> T_MetaInstance:
+        require_permission(getattr(self, "_permissions", None), "update")
         row = self._ensure_matching_row()
         row.update(**fields)
         self.__dict__.update(**fields)
         return self
 
     def _update_record(self: T_MetaInstance, **fields: t.Any) -> T_MetaInstance:
+        require_permission(getattr(self, "_permissions", None), "update")
         row = self._ensure_matching_row()
         new_row = row.update_record(**fields)
         self._update(**new_row)
@@ -1277,6 +1307,7 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
         """
         Actual logic in `pydal.helpers.classes.RecordDeleter`.
         """
+        require_permission(getattr(self, "_permissions", None), "delete")
         row = self._ensure_matching_row()
         result = row.delete_record()
         self.__dict__ = {}  # empty self, since row is no more.

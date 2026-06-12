@@ -627,6 +627,32 @@ def test_minimal_functionality_on_pydal_style_tables():
     assert first_or_fail.id == qb1.first().id
 
 
+def test_query_builder_permissions():
+    _setup_data()
+
+    read_restricted = TestQueryTable.permissions(read=False).where(number=2)
+
+    # to_sql stays available because it is an internal/debug helper, not a query execution path.
+    assert "select" in read_restricted.to_sql().lower()
+
+    with pytest.raises(PermissionError, match="read"):
+        read_restricted.collect()
+
+    update_only = TestQueryTable.permissions(read=False, update=True, delete=False).where(number=2)
+    assert update_only.update(number=20) == [3]
+    assert TestQueryTable(3).number == 20
+
+    delete_only = TestQueryTable.where(number=4).permissions(read=False, update=False, delete=True)
+    assert delete_only.delete() == [5]
+    assert TestQueryTable(5) is None
+
+    with pytest.raises(PermissionError, match="update"):
+        TestQueryTable.where(number=1).permissions(update=False).update(number=11)
+
+    with pytest.raises(PermissionError, match="delete"):
+        TestQueryTable.where(number=0).permissions(delete=False).delete()
+
+
 def test_before_after_collect(capsys):
     _setup_data()
 
