@@ -89,6 +89,27 @@ Important constraints and behavior:
 | `Field('name', 'string', required=True)` | `name: str`                                                               | `name: TypedField[str]`                                                                           | `name = TypedField(str, required=True)`               | `name = StringField(required=True)`  |
 | `Field('name', 'text', required=False)`  | `name: typing.Optional[str]` or  <br/> <code>name: str &#124; None</code> | `name: TypedField[typing.Optional[str]]` or  <br/> <code>name: TypedField[str &#124; None]</code> | `name = TypedField(str, type="text", required=False)` | `name = StringField(required=False)` |
 
+### Table permissions
+
+You can restrict table-level operations when defining a model:
+
+```python
+@db.define(permissions={"read": True, "insert": False, "update": True, "delete": False})
+class Article(TypedTable):
+    title: str
+    body: str
+```
+
+Permissions are currently available for:
+
+- `read`
+- `insert`
+- `update`
+- `delete`
+
+Any permission you do not specify is treated as allowed by default.
+Use this when a table should exist in the schema but should not be writable, or when you want to prevent reads from a given model entirely.
+
 # Hooks
 
 Some logic can be added when data is added/edited/deleted from the database.

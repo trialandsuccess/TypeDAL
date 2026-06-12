@@ -219,6 +219,28 @@ Be aware doing this might break some caching functionality!
 
 **Note:** For caching function results (instead of just query results), see [9. Function Memoization](./9_memoization.md).
 
+### permissions
+
+TypeDAL lets you override permissions on a query builder without changing the underlying table definition.
+This is useful when a query should be more restrictive or more permissive than the model defaults.
+
+```python
+# deny reads for this query
+restricted = Article.permissions(read=False).where(id=1)
+
+# allow a write operation only for this chain
+Article.where(id=1).permissions(update=True, delete=False).update(title="New title")
+```
+
+The same method is available on `TypedTable` as a convenience wrapper:
+
+```python
+Article.permissions(read=False).where(id=1).collect()
+```
+
+Permissions merge across the table definition and the query chain, with the most restrictive value winning.
+Supported flags are `read`, `insert`, `update`, and `delete`.
+
 ### Collecting
 
 The Query Builder has a few operations that don't return a new builder instance:
