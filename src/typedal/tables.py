@@ -370,7 +370,9 @@ class TableMeta(type):
         """
         return QueryBuilder(self).cache(*deps, **kwargs)
 
-    def permissions(self: t.Type[T_MetaInstance], **permissions: bool) -> "QueryBuilder[T_MetaInstance]":
+    def permissions(
+        self: t.Type[T_MetaInstance], **permissions: t.Unpack[Permissions]
+    ) -> "QueryBuilder[T_MetaInstance]":
         """
         See QueryBuilder.permissions!
         """

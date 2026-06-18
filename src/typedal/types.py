@@ -46,7 +46,14 @@ type AnyDict = dict[str, t.Any]
 
 PermissionType = t.Literal["read", "insert", "update", "delete"]
 
-type Permissions = dict[PermissionType, bool]
+
+# type Permissions = dict[PermissionType, bool]
+class Permissions(t.TypedDict):
+    # note: extra source of truth because the dynamic dict doesn't work for all type checkers
+    read: bool
+    insert: bool
+    update: bool
+    delete: bool
 
 
 def merge_permissions(*permission_sets: Permissions | None) -> Permissions:

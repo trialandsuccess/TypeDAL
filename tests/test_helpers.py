@@ -274,6 +274,7 @@ def test_sql_expression_314():
 
     test_sql_expression_314(database)
 
+
 def test_merge_permissions():
     combined = merge_permissions({"read": True, "insert": False}, {"read": False, "insert": False})
     assert len(combined) == 4
