@@ -2,6 +2,17 @@
 
 <!--next-version-placeholder-->
 
+## v4.9.1 (2026-07-02)
+
+### Fix
+
+* **typing:** `select(distinct=` can also be a str ([`dc05389`](https://github.com/trialandsuccess/TypeDAL/commit/dc05389e89102cfb5de4a3b174857b8a7866a005))
+* Improved typing for Permissions ([`236e4a8`](https://github.com/trialandsuccess/TypeDAL/commit/236e4a8ebfc42ed438dc8f626c192c6baca52f02))
+
+### Documentation
+
+* Added info about `permissions` in docs ([`a5a9a85`](https://github.com/trialandsuccess/TypeDAL/commit/a5a9a85bb737acf5d5521e8923df56b3608b1ef5))
+
 ## v4.9.0 (2026-06-12)
 
 ### Feature
