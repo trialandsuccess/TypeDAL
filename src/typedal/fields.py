@@ -268,6 +268,20 @@ class TypedField[T_Value](Expression):  # pragma: no cover
         return t.cast(Expression, self._field.lower())
 
 
+def rname(field: TypedField[t.Any] | Field) -> str:
+    """
+    Return the full rname (table and field).
+    """
+
+    table = field._table
+    inner_field = field._field if isinstance(field, TypedField) else field
+
+    if not (table and inner_field):
+        raise ValueError("missing table or inner field on this 'field'")
+
+    return "%s.%s" % (table._rname, inner_field._rname)
+
+
 def is_typed_field(cls: t.Any) -> t.TypeGuard["TypedField[t.Any]"]:
     """
     Is `cls` an instance or subclass of TypedField?

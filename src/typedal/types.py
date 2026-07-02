@@ -71,7 +71,7 @@ def merge_permissions(*permission_sets: Permissions | None) -> Permissions:
 
         for key in permission_types:
             if key in permission_set:
-                merged[key] = merged[key] and bool(permission_set[key])
+                merged[key] = merged[key] and bool(permission_set[key])  # type: ignore
 
     return t.cast(Permissions, merged)
 
@@ -188,6 +188,8 @@ class Reference(_Reference):
 class Field(_Field):
     """Pydal Field object. Make mypy happy."""
 
+    _rname: str
+
 
 class Rows(_Rows):
     """Pydal Rows object. Make mypy happy."""
@@ -283,7 +285,7 @@ class SelectKwargs(t.TypedDict, total=False):
     groupby: "GroupBy | t.Iterable[GroupBy] | None"
     having: "Having | None"
     limitby: t.Optional[tuple[int, int]]
-    distinct: bool | Field | Expression | str
+    distinct: bool | Field | Expression | str | t.Iterable[str]
     orderby_on_limitby: bool
     cacheable: bool
     cache: "CacheTuple"

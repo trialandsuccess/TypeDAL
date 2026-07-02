@@ -1,8 +1,9 @@
 import pytest
-from pydal.objects import Query
+from pydal.objects import Field, Query
 
 from src.typedal import TypeDAL, TypedField, TypedTable, relationship
 from typedal import QueryBuilder
+from typedal.fields import rname
 
 db = TypeDAL("sqlite:memory")
 
@@ -557,6 +558,48 @@ def test_orderby():
         TestQueryTable.orderby(TestQueryTable.yet_another, TestQueryTable.number).to_sql()
         == TestQueryTable.select(orderby=TestQueryTable.yet_another | TestQueryTable.number).to_sql()
     )
+
+
+def test_select_kwargs_use_rname_psql(dal_psql: TypeDAL):
+    db = dal_psql
+
+    @db.define(rname="some_table")
+    class Sometable(TypedTable):
+        name = TypedField(str, rname="some_name")
+
+    Sometable.insert(name="B")
+    Sometable.insert(name="A")
+    Sometable.insert(name="A")
+    db.commit()
+
+    # default orderby/distinct
+
+    orderby_sql = Sometable.select(orderby=Sometable.name).to_sql().lower()
+
+    assert "sometable.name" not in orderby_sql
+    assert "some_table.some_name" in orderby_sql
+
+    distinct_sql1 = Sometable.select(Sometable.name, distinct=Sometable.name).to_sql().lower()
+    distinct_sql2 = Sometable.select(Sometable.name, distinct=(Sometable.name, Sometable.id)).to_sql().lower()
+    distinct_sql3 = Sometable.select(Sometable.name, distinct=("name", "id")).to_sql().lower()
+
+    for sql in (distinct_sql1, distinct_sql2, distinct_sql3):
+        assert "sometable.name" not in sql
+        assert "some_table.some_name" in sql
+
+    builder = Sometable.select(orderby=Sometable.name)
+    existing_orderby: Field = builder.select_kwargs.get("orderby")
+
+    existing_orderby_name = rname(existing_orderby)
+    sometable_name = rname(Sometable.name)
+    sometable_name_pydal = rname(db.sometable.name)
+
+    with pytest.raises(ValueError):
+        rname(TypedField(str, rname="some_name"))
+
+    for sql in (existing_orderby_name, sometable_name, sometable_name_pydal):
+        assert "sometable.name" not in sql
+        assert "some_table.some_name" in sql
 
 
 def test_execute():

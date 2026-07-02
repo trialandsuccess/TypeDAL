@@ -152,7 +152,22 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         """
         Return a clone of this builder with permission overrides merged in.
         """
-        return self._extend(permissions=t.cast(Permissions, permissions))
+        return self._extend(permissions=permissions)
+
+    def _normalize_select_option(
+        self, value: str | Field | Expression | bool | t.Iterable[str | Field]
+    ) -> str | bool | list[str]:
+        # currently only used for 'distinct' since orderby, ... are patched by pydal itself in select()
+        if isinstance(value, bool):
+            return value
+
+        if isinstance(value, (list, tuple, set)):
+            return list(self._normalize_select_option(val) for val in value)
+
+        if rname := getattr(value, "_rname", None):
+            return str(rname)
+
+        return str(value)
 
     def select(self, *fields: t.Any, **options: t.Unpack[SelectKwargs]) -> "QueryBuilder[T_MetaInstance]":
         """
@@ -179,6 +194,11 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
             left: othertable.on(query) - do a LEFT JOIN. Using TypeDAL relationships with .join() is recommended!
             cache: cache the query result to speed up repeated queries; e.g. (cache=(cache.ram, 3600), cacheable=True)
         """
+
+        for key in ("distinct",):
+            if options.get(key):
+                options[key] = self._normalize_select_option(options[key])
+
         return self._extend(select_args=list(fields), select_kwargs=options)
 
     def orderby(self, *fields: OrderBy) -> "QueryBuilder[T_MetaInstance]":
@@ -272,7 +292,10 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         return self._extend(overwrite_query=new_query)
 
     def _parse_relationships(
-        self, fields: t.Iterable[str | t.Type[TypedTable]], method: JOIN_OPTIONS = None, **update: t.Any
+        self,
+        fields: t.Iterable[str | t.Type[TypedTable]],
+        method: JOIN_OPTIONS = None,
+        **update: t.Any,
     ) -> dict[str, Relationship[t.Any]]:
         """
         Parse relationship fields into a dict of base relationships with nested relationships.
@@ -766,7 +789,11 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         return joins
 
     def _build_inner_joins_recursive(
-        self, relation: Relationship[t.Any], parent_table: t.Type[_TypedTable], key: str, parent_key: str = ""
+        self,
+        relation: Relationship[t.Any],
+        parent_table: t.Type[_TypedTable],
+        key: str,
+        parent_key: str = "",
     ) -> list[t.Any]:
         """Recursively build inner joins for a relationship and its nested relationships."""
         db = self._get_db()
@@ -876,13 +903,21 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
             # todo: add additional test, deduplicate
             nested_key = f"{parent_key}.{nested_name}" if parent_key else f"{key}.{nested_name}"
             select_args = self._process_relationship_for_left_join(
-                nested, nested_name, select_args, left_joins, other, nested_key
+                nested,
+                nested_name,
+                select_args,
+                left_joins,
+                other,
+                nested_key,
             )
 
         return select_args
 
     def _ensure_relationship_fields(
-        self, select_args: list[t.Any], other: t.Type[TypedTable], select_fields: str
+        self,
+        select_args: list[t.Any],
+        other: t.Type[TypedTable],
+        select_fields: str,
     ) -> list[t.Any]:
         """Ensure required fields from relationship table are selected."""
         if f"{other}." not in select_fields:
@@ -895,7 +930,10 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         return select_args
 
     def _update_select_args_with_alias(
-        self, select_args: list[t.Any], pre_alias: str, other: t.Type[TypedTable]
+        self,
+        select_args: list[t.Any],
+        pre_alias: str,
+        other: t.Type[TypedTable],
     ) -> list[t.Any]:
         """Update select_args to use aliased table names."""
         post_alias = str(other).split(" AS ")[-1]
