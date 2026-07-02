@@ -97,6 +97,7 @@ dev = [
     "contextlib-chdir",
     "testcontainers",
     "pydantic < 3",
+    "psycopg2-binary",
     # depends on ->
     "requests<2.32",
     # mypy:

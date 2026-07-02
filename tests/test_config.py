@@ -9,7 +9,6 @@ from pathlib import Path
 
 import pytest
 from contextlib_chdir import chdir
-from testcontainers.postgres import PostgresContainer
 
 from src.typedal import TypeDAL, TypedField, TypedTable
 from src.typedal.config import (
@@ -19,22 +18,6 @@ from src.typedal.config import (
     load_config,
 )
 from src.typedal.fields import PointField, TimestampField, UUIDField
-
-postgres = PostgresContainer(
-    dbname="postgres",
-    username="someuser",
-    password="somepass",
-)
-
-
-@pytest.fixture(scope="module", autouse=True)
-def psql(request):
-    postgres.ports = {
-        5432: 9631,  # as set in valid.env
-    }
-
-    request.addfinalizer(postgres.stop)
-    postgres.start()
 
 
 @pytest.fixture
