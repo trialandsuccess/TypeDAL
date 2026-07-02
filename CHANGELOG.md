@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.9.2 (2026-07-02)
+
+### Fix
+
+* **query-builder:** Normalize field rnames in select options ([`5fe46d9`](https://github.com/trialandsuccess/TypeDAL/commit/5fe46d9b4acd3081ff6e87cf7f9a45b8f4aa876b))
+
 ## v4.9.1 (2026-07-02)
 
 ### Fix
