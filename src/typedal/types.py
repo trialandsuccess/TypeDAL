@@ -283,7 +283,7 @@ class SelectKwargs(t.TypedDict, total=False):
     groupby: "GroupBy | t.Iterable[GroupBy] | None"
     having: "Having | None"
     limitby: t.Optional[tuple[int, int]]
-    distinct: bool | Field | Expression
+    distinct: bool | Field | Expression | str
     orderby_on_limitby: bool
     cacheable: bool
     cache: "CacheTuple"
