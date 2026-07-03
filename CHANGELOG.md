@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.9.3 (2026-07-03)
+
+### Fix
+
+* Pagination count with joined relationships ([`2eaefc0`](https://github.com/trialandsuccess/TypeDAL/commit/2eaefc051a94d4a4204164e0773a8d7691aae63e))
+
 ## v4.9.2 (2026-07-02)
 
 ### Fix
