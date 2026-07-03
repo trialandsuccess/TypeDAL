@@ -818,6 +818,46 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
 
         return joins
 
+    def _selectable_orderby_fields(self, orderby: OrderBy | t.Iterable[OrderBy] | None) -> list[OrderBy]:
+        """Extract field values from pydal orderby expressions."""
+        if not orderby:
+            return []
+
+        if isinstance(orderby, (list, tuple, set)):
+            return [field for item in orderby for field in self._selectable_orderby_fields(item)]
+
+        if isinstance(orderby, pydal.objects.Field):
+            return [orderby]
+
+        fields = []
+        first = getattr(orderby, "first", None)
+        second = getattr(orderby, "second", None)
+
+        if first is not None:
+            fields.extend(self._selectable_orderby_fields(first))
+        if second is not None:
+            fields.extend(self._selectable_orderby_fields(second))
+
+        return fields
+
+    def _select_distinct_ids_with_orderby_fields(self, query: Query, select_kwargs: SelectKwargs) -> str:
+        db = self._get_db()
+        model = self.model
+        select_args: list[OrderBy] = [model.id]
+        seen = {str(model.id)}
+
+        for field in self._selectable_orderby_fields(select_kwargs.get("orderby")):
+            key = str(field)
+            if key not in seen:
+                select_args.append(field)
+                seen.add(key)
+
+        ids = db(query)._select(*select_args, **select_kwargs).rstrip(";")
+        id_column = getattr(model.id, "_raw_rname", model.id.name)
+        return f'SELECT "{id_column}" FROM ({ids}) AS typedal_paginate_ids'  # nosec:
+        # id_column originates from code
+        # ids is a safe subquery, originating from code
+
     def _apply_limitby_optimization(
         self,
         query: Query,
@@ -839,7 +879,11 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
             kwargs["join"] = joins
             kwargs["distinct"] = True
 
-        ids = db(query)._select(model.id, **kwargs)
+        if joins and kwargs.get("orderby"):
+            ids = self._select_distinct_ids_with_orderby_fields(query, kwargs)
+        else:
+            ids = db(query)._select(model.id, **kwargs)
+
         query = model.id.belongs(ids)
         metadata["ids"] = ids
 

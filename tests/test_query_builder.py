@@ -519,6 +519,10 @@ def test_orderby():
     base_qt = TestQueryTable.select(TestQueryTable.id, TestQueryTable.number)
 
     assert base_qt.count() == 5
+    assert base_qt._selectable_orderby_fields(None) == []
+
+    composite_fields = base_qt._selectable_orderby_fields(TestQueryTable.number | TestQueryTable.other)
+    assert composite_fields == [TestQueryTable.number, TestQueryTable.other]
 
     rows1 = base_qt.orderby(TestQueryTable.id).paginate(limit=3, page=1)
     rows2 = base_qt.select(orderby=TestQueryTable.id, limitby=(0, 3)).collect()
@@ -600,6 +604,45 @@ def test_select_kwargs_use_rname_psql(dal_psql: TypeDAL):
     for sql in (existing_orderby_name, sometable_name, sometable_name_pydal):
         assert "sometable.name" not in sql
         assert "some_table.some_name" in sql
+
+
+def test_paginate_inner_joins_with_related_orderby_psql(dal_psql: TypeDAL):
+    db = dal_psql
+
+    @db.define()
+    class Method(TypedTable):
+        gid = TypedField(str)
+        name = TypedField(str)
+
+    @db.define()
+    class Supplier(TypedTable):
+        gid = TypedField(str)
+        name = TypedField(str)
+
+    @db.define()
+    class Product(TypedTable):
+        name = TypedField(str)
+        method: Method
+        supplier: Supplier
+
+    supplier = Supplier.insert(gid="supplier", name="Supplier")
+    slow = Method.insert(gid="slow", name="Slow")
+    fast = Method.insert(gid="fast", name="Fast")
+    Product.insert(name="Product slow", method=slow, supplier=supplier)
+    Product.insert(name="Product fast", method=fast, supplier=supplier)
+    db.commit()
+
+    builder = Product.join("method", method="inner").join("supplier", method="inner")
+    method_relation = builder.relationships["method"]
+    method_alias = method_relation.get_table(db).with_alias(f"method_{hash(method_relation)}")
+    builder = builder.orderby(method_alias.name)
+    builder = builder.select(Method.gid, Method.name)
+    builder = builder.select(Supplier.gid, Supplier.name)
+
+    page = builder.paginate(page=1, limit=1)
+
+    assert len(page) == 1
+    assert page.first().method.name == "Fast"
 
 
 def test_execute():
