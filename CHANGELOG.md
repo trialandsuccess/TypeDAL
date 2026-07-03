@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.9.4 (2026-07-03)
+
+### Fix
+
+* **query_builder:** Include orderby fields in distinct-id subquery for paginated joins ([`d343a43`](https://github.com/trialandsuccess/TypeDAL/commit/d343a4326fdbf93fb5fd8b5db061ea5b3355e3de))
+
 ## v4.9.3 (2026-07-03)
 
 ### Fix
