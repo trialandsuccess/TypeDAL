@@ -837,6 +837,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
 
         if joins:
             kwargs["join"] = joins
+            kwargs["distinct"] = True
 
         ids = db(query)._select(model.id, **kwargs)
         query = model.id.belongs(ids)
@@ -1128,19 +1129,31 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         """
         yield from self.collect()
 
-    def __count(self, db: TypeDAL, distinct: t.Optional[bool] = None) -> Query:
+    def __count(
+        self,
+        db: TypeDAL,
+        distinct: t.Optional[bool] = None,
+        *,
+        include_left_for_distinct: bool = True,
+    ) -> Query:
         # internal, shared logic between .count and ._count
         model = self.model
         query = self.query
         for key, relation in self.relationships.items():
-            if (not relation.condition or relation.join != "inner") and not distinct:
+            if not relation.condition:
+                continue
+
+            include_left_join = distinct and include_left_for_distinct
+            if relation.join != "inner" and not include_left_join:
                 continue
 
             other = relation.get_table(db)
             if not distinct:
                 # todo: can this lead to other issues?
                 other = other.with_alias(f"{key}_{hash(relation)}")
-            query &= relation.condition(model, other)
+
+            if relation.condition is not None:
+                query &= relation.condition(model, other)
 
         return query
 
@@ -1175,12 +1188,20 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         require_permission(self._permissions, "read")
         return bool(self.count())
 
+    def __pagination_count(self) -> int:
+        if not self.relationships:
+            return self.count()
+
+        db = self._get_db()
+        query = self.__count(db, distinct=self.model.id, include_left_for_distinct=False)
+        return db(query).count(self.model.id)
+
     def __paginate(
         self,
         limit: int,
         page: int = 1,
     ) -> "QueryBuilder[T_MetaInstance]":
-        available = self.count()
+        available = self.__pagination_count()
 
         _from = limit * (page - 1)
         _to = (limit * page) if limit else available

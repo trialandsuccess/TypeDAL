@@ -888,6 +888,33 @@ def test_join_with_select():
         assert not hasattr(user.articles[0], "title")
 
 
+def test_paginate_with_inner_join_uses_root_entities():
+    _setup_data()
+
+    page1 = User.join("articles", method="inner").orderby(~User.id).paginate(limit=2, page=1)
+    page2 = page1.next()
+    page1_again = page2.previous()
+
+    assert [user.id for user in page1] == [4, 3]
+    assert [user.id for user in page2] == [2]
+    assert [user.id for user in page1_again] == [4, 3]
+
+    assert sorted(article.title for article in page1.first().articles) == [
+        "Untagged Article 1",
+        "Untagged Article 2",
+    ]
+    assert [article.title for article in page2.first().articles] == ["Article 1"]
+
+    assert page1.pagination["total_items"] == 3
+    assert page1.pagination["total_pages"] == 2
+    assert page1.pagination["has_next_page"] is True
+    assert page2.pagination["has_next_page"] is False
+    assert page2.pagination["has_prev_page"] is True
+
+    with pytest.raises(StopIteration):
+        page2.next()
+
+
 def test_count_with_join():
     _setup_data()
 
