@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.9.5 (2026-07-05)
+
+### Fix
+
+* Restore 3.12-support syntax-wise ([`908a5a4`](https://github.com/trialandsuccess/TypeDAL/commit/908a5a49f2a83637acba7073ef3062ab2dd84496))
+
 ## v4.9.4 (2026-07-03)
 
 ### Fix
