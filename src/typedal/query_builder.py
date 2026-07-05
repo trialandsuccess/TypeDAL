@@ -818,6 +818,46 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
 
         return joins
 
+    def _selectable_orderby_fields(self, orderby: OrderBy | t.Iterable[OrderBy] | None) -> list[OrderBy]:
+        """Extract field values from pydal orderby expressions."""
+        if not orderby:
+            return []
+
+        if isinstance(orderby, (list, tuple, set)):
+            return [field for item in orderby for field in self._selectable_orderby_fields(item)]
+
+        if isinstance(orderby, pydal.objects.Field):
+            return [orderby]
+
+        fields = []
+        first = getattr(orderby, "first", None)
+        second = getattr(orderby, "second", None)
+
+        if first is not None:
+            fields.extend(self._selectable_orderby_fields(first))
+        if second is not None:
+            fields.extend(self._selectable_orderby_fields(second))
+
+        return fields
+
+    def _select_distinct_ids_with_orderby_fields(self, query: Query, select_kwargs: SelectKwargs) -> str:
+        db = self._get_db()
+        model = self.model
+        select_args: list[OrderBy] = [model.id]
+        seen = {str(model.id)}
+
+        for field in self._selectable_orderby_fields(select_kwargs.get("orderby")):
+            key = str(field)
+            if key not in seen:
+                select_args.append(field)
+                seen.add(key)
+
+        ids = db(query)._select(*select_args, **select_kwargs).rstrip(";")
+        id_column = getattr(model.id, "_raw_rname", model.id.name)
+        return f'SELECT "{id_column}" FROM ({ids}) AS typedal_paginate_ids'  # nosec:
+        # id_column originates from code
+        # ids is a safe subquery, originating from code
+
     def _apply_limitby_optimization(
         self,
         query: Query,
@@ -837,8 +877,13 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
 
         if joins:
             kwargs["join"] = joins
+            kwargs["distinct"] = True
 
-        ids = db(query)._select(model.id, **kwargs)
+        if joins and kwargs.get("orderby"):
+            ids = self._select_distinct_ids_with_orderby_fields(query, kwargs)
+        else:
+            ids = db(query)._select(model.id, **kwargs)
+
         query = model.id.belongs(ids)
         metadata["ids"] = ids
 
@@ -1128,19 +1173,31 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         """
         yield from self.collect()
 
-    def __count(self, db: TypeDAL, distinct: t.Optional[bool] = None) -> Query:
+    def __count(
+        self,
+        db: TypeDAL,
+        distinct: t.Optional[bool] = None,
+        *,
+        include_left_for_distinct: bool = True,
+    ) -> Query:
         # internal, shared logic between .count and ._count
         model = self.model
         query = self.query
         for key, relation in self.relationships.items():
-            if (not relation.condition or relation.join != "inner") and not distinct:
+            if not relation.condition:
+                continue
+
+            include_left_join = distinct and include_left_for_distinct
+            if relation.join != "inner" and not include_left_join:
                 continue
 
             other = relation.get_table(db)
             if not distinct:
                 # todo: can this lead to other issues?
                 other = other.with_alias(f"{key}_{hash(relation)}")
-            query &= relation.condition(model, other)
+
+            if relation.condition is not None:
+                query &= relation.condition(model, other)
 
         return query
 
@@ -1175,12 +1232,20 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         require_permission(self._permissions, "read")
         return bool(self.count())
 
+    def __pagination_count(self) -> int:
+        if not self.relationships:
+            return self.count()
+
+        db = self._get_db()
+        query = self.__count(db, distinct=self.model.id, include_left_for_distinct=False)
+        return db(query).count(self.model.id)
+
     def __paginate(
         self,
         limit: int,
         page: int = 1,
     ) -> "QueryBuilder[T_MetaInstance]":
-        available = self.count()
+        available = self.__pagination_count()
 
         _from = limit * (page - 1)
         _to = (limit * page) if limit else available
