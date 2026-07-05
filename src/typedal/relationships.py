@@ -237,7 +237,7 @@ class Relationship[To_Type]:
 
     def __get__(
         self,
-        instance: "TypedTable" | None,
+        instance: "TypedTable | None",
         owner: t.Type["TypedTable"],
     ) -> "Relationship[To_Type] | list[t.Any] | t.Any | None":
         """
