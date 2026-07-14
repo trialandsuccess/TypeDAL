@@ -342,16 +342,16 @@ class TypeDAL(_TypeDALBase):
                 _purge_dialect_expressions(adapter)
 
             for table_name in tuple(getattr(self, "tables", ())):
-                table = getattr(self, table_name, None)
-                if table is None:
+                table: Table | None = getattr(self, table_name, None)
+                if table is None: # pragma: no cover
                     continue
 
                 if hasattr(table, "_db"):
                     table._db = None
 
                 for field_name in getattr(table, "fields", ()):
-                    field: Field = getattr(table, field_name, None)
-                    if field is None:
+                    field: Field | None = getattr(table, field_name, None)
+                    if field is None: # pragma: no cover
                         continue
 
                     if hasattr(field, "_db"):
