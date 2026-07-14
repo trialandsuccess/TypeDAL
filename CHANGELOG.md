@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.9.8-beta.2 (2026-07-14)
+
+### Fix
+
+* **core:** Fully detach tables and fields when closing TypeDAL ([`469e0cb`](https://github.com/trialandsuccess/TypeDAL/commit/469e0cbc5b4f1584849040735ced0232adc18b65))
+
 ## v4.9.8-beta.1 (2026-07-14)
 
 ### Fix
