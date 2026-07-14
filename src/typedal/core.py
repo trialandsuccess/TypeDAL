@@ -40,6 +40,53 @@ if t.TYPE_CHECKING:
     from .types import AnyDict, DefineKwargs, Expression, Rows, Set, T_Query, Table
 
 
+def _expression_subclasses() -> t.Iterator[type]:
+    """
+    Yield pydal.objects.Expression and every (nested) subclass currently loaded, e.g. Field and TypedField.
+    """
+    seen = {pydal.objects.Expression}
+    stack = [pydal.objects.Expression]
+    while stack:
+        for subclass in stack.pop().__subclasses__():
+            if subclass not in seen:
+                seen.add(subclass)
+                stack.append(subclass)
+
+    return iter(seen)
+
+
+def _purge_dialect_expressions(adapter: t.Any) -> None:
+    """
+    Undo pydal's global dialect-expression registration for a closed adapter.
+
+    Some dialects (currently Postgres and Snowflake) register extra Expression methods
+    (e.g. `.dow`, `.doy`) by stashing a wrapper per name in the process-wide, class-level
+    `Expression._dialect_expressions_` dict. `Expression.__new__` then copies each wrapper
+    onto every instantiated Expression subclass (Field, TypedField, ...) as a bound method.
+    Both of those are permanent references living outside of any object graph tied to a
+    specific db, so they are not reference cycles: closing the adapter and even running
+    `gc.collect()` will not free it, and with it the entire db (tables, fields, models)
+    it belongs to, for the lifetime of the process, unless explicitly undone here.
+    """
+    expressions = pydal.objects.Expression._dialect_expressions_
+    stale = [
+        name
+        for name, wrapper in expressions.items()
+        if getattr(getattr(wrapper, "dialect", None), "adapter", None) is adapter
+    ]
+
+    if not stale:
+        return
+
+    for name in stale:
+        del expressions[name]
+
+    for cls in _expression_subclasses():
+        for name in stale:
+            if name in cls.__dict__:
+                delattr(cls, name)
+
+
 # note: these functions can not be moved to a different file,
 #  because then they will have different globals and it breaks!
 
@@ -282,12 +329,17 @@ class TypeDAL(_TypeDALBase):
 
     def close(self) -> None:
         """Close the database connection and unbind all defined TypedTable models."""
+        adapter = self._adapter
         try:
             super().close()
         finally:
             for model in set(self._builder.class_map.values()):
                 model.unbind()
             self._builder.class_map.clear()
+
+            if adapter is not None:
+                adapter.db = None
+                _purge_dialect_expressions(adapter)
 
     def try_define[T: t.Any](self, model: t.Type[T], verbose: bool = False) -> t.Type[T]:
         """

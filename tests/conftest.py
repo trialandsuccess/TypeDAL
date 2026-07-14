@@ -21,10 +21,12 @@ def psql(request):
     request.addfinalizer(postgres.stop)
     postgres.start()
 
+@pytest.fixture
+def dal_psql_uri(psql) -> str:
+    conn_str = postgres.get_connection_url()
+    return "postgres://" + conn_str.split("://")[-1]
 
 @pytest.fixture
-def dal_psql(psql):
-    conn_str = postgres.get_connection_url()
-    uri = "postgres://" + conn_str.split("://")[-1]
+def dal_psql(dal_psql_uri: str):
     with tempfile.TemporaryDirectory() as d:
-        yield TypeDAL(uri, attempts=1, migrate=True, enable_typedal_caching=False, folder=d)
+        yield TypeDAL(dal_psql_uri, attempts=1, migrate=True, enable_typedal_caching=False, folder=d)

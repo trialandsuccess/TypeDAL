@@ -10,7 +10,7 @@ from typing import ForwardRef
 
 import pytest
 
-from src.typedal import TypedRows
+from src.typedal import TypeDAL, TypedRows
 from src.typedal.__about__ import __version__
 from src.typedal.enum_helpers import InvalidEnumValue
 from src.typedal.fields import *
@@ -65,6 +65,37 @@ def test_database_with_auth_user_is_garbage_collected_after_close():
     gc.collect()
 
     assert db_ref() is None
+
+
+def test_database_is_garbage_collected_after_close_postgres(dal_psql_uri, tmp_path):
+    # Postgres (and Snowflake) dialects register extra Expression methods (e.g. `.dow`) in the
+    # process-wide, class-level `Expression._dialect_expressions_` dict. That's a permanent
+    # reference living outside of any db-specific object graph, so unlike the sqlite case above,
+    # gc.collect() alone can't free it - close() has to explicitly undo the registration.
+    # (built directly from the conftest `postgres` container, not the `dal_psql` fixture: a
+    # suspended fixture generator would itself keep `db` alive for the duration of the test)
+
+    db = TypeDAL(dal_psql_uri, attempts=1, migrate=True, enable_typedal_caching=False, folder=str(tmp_path))
+
+    @db.define
+    class TemporaryPsqlTable(TypedTable):
+        value = TypedField(str)
+
+    db_ref = weakref.ref(db)
+    adapter_ref = weakref.ref(db._adapter)
+
+    db.close()
+
+    assert TemporaryPsqlTable._db is None
+    assert TemporaryPsqlTable._table is None
+
+    del db
+    gc.collect()
+
+    assert db_ref() is None
+    # the adapter itself is allowed to leak (pydal has no public API to fully undo the global
+    # dialect registration) as long as it no longer drags the rest of the db graph with it:
+    assert adapter_ref() is None or adapter_ref().db is None
 
 
 def test_mixed_defines(capsys):
