@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.9.6 (2026-07-14)
+
+### Fix
+
+* **core:** Unbind models when closing database ([`e025d0c`](https://github.com/trialandsuccess/TypeDAL/commit/e025d0c13cdb95943ad22430d9822171834c3092))
+
 ## v4.9.5 (2026-07-05)
 
 ### Fix
