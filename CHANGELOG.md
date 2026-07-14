@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.9.7 (2026-07-14)
+
+### Fix
+
+* **fields:** Clear field requirements during unbind ([`7e054f9`](https://github.com/trialandsuccess/TypeDAL/commit/7e054f947358a3fbb491db0d777410433da43d44))
+
 ## v4.9.6 (2026-07-14)
 
 ### Fix
