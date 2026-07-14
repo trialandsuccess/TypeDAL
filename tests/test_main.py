@@ -3,12 +3,15 @@ import gc
 import re
 import sys
 import typing
+import types
 import weakref
+from contextlib import contextmanager
 from copy import copy
 from sqlite3 import IntegrityError
 from typing import ForwardRef
 
 import pytest
+from pydal.validators import IS_NOT_IN_DB
 
 from src.typedal import TypeDAL, TypedRows
 from src.typedal.__about__ import __version__
@@ -43,6 +46,47 @@ def test_database_is_garbage_collected_after_close():
     assert field._field is None
 
     del db
+    gc.collect()
+
+    assert db_ref() is None
+
+
+def test_database_is_garbage_collected_after_context_manager():
+
+    @contextmanager
+    def typedal_context():
+        db = TypeDAL("sqlite:memory", enable_typedal_caching=False)
+        try:
+            yield db
+            db.commit()
+        except:
+            db.rollback()
+        finally:
+            db.close()
+
+    def in_scope():
+        with typedal_context() as db:
+            @db.define
+            class RelatedTable(TypedTable):
+                value = TypedField(str)
+
+            @db.define
+            class TemporaryTable(TypedTable):
+                related: RelatedTable
+                value = TypedField(str)
+
+                @classmethod
+                def __on_define__(cls, db):
+                    cls.id.requires = IS_NOT_IN_DB(db, cls.id)
+                    cls.after_insert(lambda _row, _id, db=db: None)
+
+            query = TemporaryTable.where(id=0)
+            assert not query.paginate(limit=1)
+
+            return weakref.ref(db)
+
+    db_ref = in_scope()
+
     gc.collect()
 
     assert db_ref() is None

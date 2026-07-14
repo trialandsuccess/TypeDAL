@@ -343,15 +343,27 @@ class TypeDAL(_TypeDALBase):
 
             for table_name in tuple(getattr(self, "tables", ())):
                 table: Table | None = getattr(self, table_name, None)
-                if table is None: # pragma: no cover
+                if table is None:  # pragma: no cover
                     continue
+
+                for hook_name in (
+                    "_before_insert",
+                    "_after_insert",
+                    "_before_update",
+                    "_after_update",
+                    "_before_delete",
+                    "_after_delete",
+                ):
+                    hooks = getattr(table, hook_name, None)
+                    if isinstance(hooks, list):
+                        hooks.clear()
 
                 if hasattr(table, "_db"):
                     table._db = None
 
                 for field_name in getattr(table, "fields", ()):
                     field: Field | None = getattr(table, field_name, None)
-                    if field is None: # pragma: no cover
+                    if field is None:  # pragma: no cover
                         continue
 
                     if hasattr(field, "_db"):
@@ -362,6 +374,8 @@ class TypeDAL(_TypeDALBase):
                         field.table = None
                     if hasattr(field, "_table"):
                         field._table = None
+                    if hasattr(field, "requires"):
+                        field.requires = []
 
     def try_define[T: t.Any](self, model: t.Type[T], verbose: bool = False) -> t.Type[T]:
         """
