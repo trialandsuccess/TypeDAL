@@ -14,6 +14,7 @@ from src.typedal import TypedRows
 from src.typedal.__about__ import __version__
 from src.typedal.enum_helpers import InvalidEnumValue
 from src.typedal.fields import *
+from src.typedal.web2py_py4web_shared import AuthUser
 
 
 def test_about():
@@ -40,6 +41,25 @@ def test_database_is_garbage_collected_after_close():
     assert TemporaryTable._table is None
     assert field._table is None
     assert field._field is None
+
+    del db
+    gc.collect()
+
+    assert db_ref() is None
+
+
+def test_database_with_auth_user_is_garbage_collected_after_close():
+    db = TypeDAL("sqlite:memory", enable_typedal_caching=False)
+    db.define(AuthUser, redefine=True)
+
+    AuthUser.after_insert(lambda row, db=db: print(db))
+
+    db_ref = weakref.ref(db)
+
+    db.close()
+
+    assert AuthUser._db is None
+    assert AuthUser._table is None
 
     del db
     gc.collect()
