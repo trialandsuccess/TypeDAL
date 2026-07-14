@@ -178,12 +178,12 @@ def mypy_test_mixin_typed_table_argument() -> None:
 
 @pytest.mark.mypy_testing
 def mypy_test_cachefn() -> None:
-    def cache_model(key: str, fn: CacheFn, expire: int) -> Rows:
+    def cache_model(_key: str, fn: CacheFn, _expire: int) -> Rows:
         return fn()
 
-    cache_valid: CacheTuple = (cache_model, 3000)
+    _cache_valid: CacheTuple = (cache_model, 3000)
 
-    def invalid_cache_model(key: str, fn: typing.Callable[..., list[str]], _: int = None) -> list[str]:
+    def invalid_cache_model(_key: str, fn: typing.Callable[..., list[str]], _expire: int = None) -> list[str]:
         return fn()
 
-    cache_invalid: CacheTuple = (invalid_cache_model, 3000)  # E: [assignment]
+    _cache_invalid: CacheTuple = (invalid_cache_model, 3000)  # E: [assignment]
