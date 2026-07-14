@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.9.8 (2026-07-14)
+
+### Fix
+
+* **core:** Clear table hooks and field validators on close ([`3a3fe7b`](https://github.com/trialandsuccess/TypeDAL/commit/3a3fe7b3387476a9ee50f85d492dea067f218069))
+
 ## v4.9.8-beta.2 (2026-07-14)
 
 ### Fix
