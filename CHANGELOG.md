@@ -6,19 +6,8 @@
 
 ### Fix
 
-* **core:** Clear table hooks and field validators on close ([`3a3fe7b`](https://github.com/trialandsuccess/TypeDAL/commit/3a3fe7b3387476a9ee50f85d492dea067f218069))
+* **core:** Properly clean up all TypeDAL tables, fields, hooks, validators, and dialect expressions when closing the database ([`3a3fe7b`](https://github.com/trialandsuccess/TypeDAL/commit/3a3fe7b3387476a9ee50f85d492dea067f218069), [`469e0cb`](https://github.com/trialandsuccess/TypeDAL/commit/469e0cbc5b4f1584849040735ced0232adc18b65), [`d848cf7`](https://github.com/trialandsuccess/TypeDAL/commit/d848cf72ca0ecee24ba857d6b5e03d3cacce7693))
 
-## v4.9.8-beta.2 (2026-07-14)
-
-### Fix
-
-* **core:** Fully detach tables and fields when closing TypeDAL ([`469e0cb`](https://github.com/trialandsuccess/TypeDAL/commit/469e0cbc5b4f1584849040735ced0232adc18b65))
-
-## v4.9.8-beta.1 (2026-07-14)
-
-### Fix
-
-* **core:** Purge dialect expressions when closing TypeDAL ([`d848cf7`](https://github.com/trialandsuccess/TypeDAL/commit/d848cf72ca0ecee24ba857d6b5e03d3cacce7693))
 
 ## v4.9.7 (2026-07-14)
 
