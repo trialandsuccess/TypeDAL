@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.9.8-beta.1 (2026-07-14)
+
+### Fix
+
+* **core:** Purge dialect expressions when closing TypeDAL ([`d848cf7`](https://github.com/trialandsuccess/TypeDAL/commit/d848cf72ca0ecee24ba857d6b5e03d3cacce7693))
+
 ## v4.9.7 (2026-07-14)
 
 ### Fix
