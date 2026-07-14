@@ -341,6 +341,28 @@ class TypeDAL(_TypeDALBase):
                 adapter.db = None
                 _purge_dialect_expressions(adapter)
 
+            for table_name in tuple(getattr(self, "tables", ())):
+                table = getattr(self, table_name, None)
+                if table is None:
+                    continue
+
+                if hasattr(table, "_db"):
+                    table._db = None
+
+                for field_name in getattr(table, "fields", ()):
+                    field: Field = getattr(table, field_name, None)
+                    if field is None:
+                        continue
+
+                    if hasattr(field, "_db"):
+                        field._db = None
+                    if hasattr(field, "db"):
+                        field.db = None
+                    if hasattr(field, "table"):
+                        field.table = None
+                    if hasattr(field, "_table"):
+                        field._table = None
+
     def try_define[T: t.Any](self, model: t.Type[T], verbose: bool = False) -> t.Type[T]:
         """
         Try to define a model with migrate or fall back to fake migrate.

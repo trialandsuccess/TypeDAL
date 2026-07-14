@@ -206,6 +206,7 @@ class TypedField[T_Value](Expression):  # pragma: no cover
                 self.requires = []
 
         self._table = None
+        self._db = None
         self._field = None
 
     def __getattr__(self, key: str) -> t.Any:
