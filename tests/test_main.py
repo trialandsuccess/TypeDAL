@@ -1,7 +1,9 @@
 import enum
+import gc
 import re
 import sys
 import typing
+import weakref
 from copy import copy
 from sqlite3 import IntegrityError
 from typing import ForwardRef
@@ -20,6 +22,29 @@ def test_about():
 
 
 db = TypeDAL("sqlite:memory")
+
+
+def test_database_is_garbage_collected_after_close():
+    db = TypeDAL("sqlite:memory", enable_typedal_caching=False)
+
+    @db.define
+    class TemporaryTable(TypedTable):
+        value = TypedField(str)
+
+    field = TemporaryTable.__dict__["value"]
+    db_ref = weakref.ref(db)
+
+    db.close()
+
+    assert TemporaryTable._db is None
+    assert TemporaryTable._table is None
+    assert field._table is None
+    assert field._field is None
+
+    del db
+    gc.collect()
+
+    assert db_ref() is None
 
 
 def test_mixed_defines(capsys):

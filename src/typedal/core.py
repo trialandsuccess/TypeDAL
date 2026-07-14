@@ -280,6 +280,15 @@ class TypeDAL(_TypeDALBase):
             self.try_define(_TypedalCache)
             self.try_define(_TypedalCacheDependency)
 
+    def close(self) -> None:
+        """Close the database connection and unbind all defined TypedTable models."""
+        try:
+            super().close()
+        finally:
+            for model in set(self._builder.class_map.values()):
+                model.unbind()
+            self._builder.class_map.clear()
+
     def try_define[T: t.Any](self, model: t.Type[T], verbose: bool = False) -> t.Type[T]:
         """
         Try to define a model with migrate or fall back to fake migrate.
