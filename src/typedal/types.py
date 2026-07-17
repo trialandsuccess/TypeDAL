@@ -97,6 +97,19 @@ class TableProtocol(t.Protocol):  # pragma: no cover
 
     id: "TypedField[int]"
 
+    def __getattr__(self, name: str) -> t.Any:
+        """
+        Allow model-specific fields in relationship callbacks.
+
+        Type checkers cannot infer the owning table from a relationship's
+        class-body assignment, and forward references can also obscure the
+        related table. PyDAL exposes table fields dynamically, so arbitrary
+        field access must remain permissive here. Because ``__getattr__``
+        returns ``Any``, type checkers do not validate field names in
+        relationship callbacks; for example, ``self.fakefield`` is accepted
+        even when no such field exists.
+        """
+
     def __getitem__(self, item: str) -> "Field":
         """
         Tables have table[field] syntax.
@@ -399,9 +412,9 @@ type T_Query = t.Union[
 
 type T_Field = t.Union["TypedField[t.Any]", "Table", t.Type["TypedTable"]]
 
-# table-ish parameter:
-# Use protocol typing so checkers know `.id` exists in relationship callbacks.
-type P_Table = t.Union[t.Type["_TypedTable"], TableProtocol]
+# Table-like callback parameter. The protocol keeps common table operations
+# checked while its dynamic attribute fallback covers model-specific fields.
+type P_Table = TableProtocol
 
 type QueryLike = Query | _Query | bool
 
