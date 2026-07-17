@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.9.9 (2026-07-17)
+
+### Fix
+
+* **typing:** Support dynamic fields in relationship callbacks ([`60c3921`](https://github.com/trialandsuccess/TypeDAL/commit/60c39214ba448d6a4b96fde21055a1f7a08263be))
+
 ## v4.9.8 (2026-07-14)
 
 ### Fix
