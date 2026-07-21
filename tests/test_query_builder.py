@@ -711,6 +711,51 @@ def test_paginate_inner_joins_with_raw_orderby_nulls_last_psql(dal_psql: TypeDAL
     assert len(page) == 1
 
 
+def test_paginate_inner_joins_with_raw_selected_rank_psql(dal_psql: TypeDAL):
+    """Preserve raw selected rank columns through joined pagination and row parsing."""
+    db = dal_psql
+
+    @db.define()
+    class RankedSupplier(TypedTable):
+        gid = TypedField(str)
+        name = TypedField(str)
+
+    @db.define()
+    class RankedMethod(TypedTable):
+        name = TypedField(str)
+        supplier: RankedSupplier
+
+        products = relationship(
+            list["RankedProduct"],
+            condition=lambda method, product: method.id == product.method,
+            join="left",
+        )
+
+    @db.define()
+    class RankedProduct(TypedTable):
+        method: RankedMethod
+
+    supplier = RankedSupplier.insert(gid="supplier", name="Supplier")
+    first_method = RankedMethod.insert(name="First", supplier=supplier)
+    second_method = RankedMethod.insert(name="Second", supplier=supplier)
+    RankedProduct.insert(method=first_method)
+    RankedProduct.insert(method=second_method)
+    db.commit()
+
+    rank_expression = "CASE WHEN COALESCE(NULL, 1) = 1 THEN 1 ELSE 0 END"
+    page = (
+        RankedMethod.select(RankedMethod.ALL)
+        .select(f"({rank_expression}) AS search_rank", orderby=f"({rank_expression}) DESC")
+        .join("supplier", method="inner")
+        .select(RankedSupplier.gid, RankedSupplier.name)
+        .join("products", method="inner")
+        .select(RankedProduct.id)
+        .paginate(page=1, limit=1)
+    )
+
+    assert len(page) == 1
+
+
 def test_execute():
     _setup_data()
 

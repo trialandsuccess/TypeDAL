@@ -994,9 +994,13 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         post_alias = str(other).split(" AS ")[-1]
 
         if pre_alias != post_alias:
-            select_fields = ", ".join([str(_) for _ in select_args])
-            select_fields = select_fields.replace(f"{pre_alias}.", f"{post_alias}.")
-            select_args = select_fields.split(", ")
+            updated_args = []
+            for arg in select_args:
+                if isinstance(arg, pydal.objects.SQLALL):
+                    updated_args.extend(str(field).replace(f"{pre_alias}.", f"{post_alias}.") for field in arg._table)
+                else:
+                    updated_args.append(str(arg).replace(f"{pre_alias}.", f"{post_alias}."))
+            select_args = updated_args
 
         return select_args
 
