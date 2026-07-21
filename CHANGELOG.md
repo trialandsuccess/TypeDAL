@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.9.11 (2026-07-21)
+
+### Fix
+
+* **query-builder:** Preserve SQLALL selections across join aliases ([`4955144`](https://github.com/trialandsuccess/TypeDAL/commit/4955144091c58a7d3226d7b31a7ec3dbd32b6df6))
+
 ## v4.9.10 (2026-07-21)
 
 ### Fix
