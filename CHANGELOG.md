@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.9.12 (2026-07-21)
+
+### Fix
+
+* **rname:** Also support `pydal.objects.Field)` in rname signature ([`c94a22d`](https://github.com/trialandsuccess/TypeDAL/commit/c94a22d905d8a57c50cf32cf6c3da44801c0438b))
+
 ## v4.9.11 (2026-07-21)
 
 ### Fix
