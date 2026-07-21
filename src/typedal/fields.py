@@ -280,7 +280,7 @@ class TypedField[T_Value](Expression):  # pragma: no cover
         return t.cast(Expression, self._field.lower())
 
 
-def rname(field: TypedField[t.Any] | Field) -> str:
+def rname(field: TypedField[t.Any] | Field | pydal.objects.Field) -> str:
     """
     Return the full rname (table and field).
     """
