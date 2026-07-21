@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v4.9.10 (2026-07-21)
+
+### Fix
+
+* **query:** Support raw pagination ordering ([`df4cdde`](https://github.com/trialandsuccess/TypeDAL/commit/df4cdde53ae41325310423818af22bd96972d44e))
+
 ## v4.9.9 (2026-07-17)
 
 ### Fix
