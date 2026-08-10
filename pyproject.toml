@@ -7,7 +7,6 @@ allow-direct-references = true
 
 [project]
 name = "TypeDAL"
-dynamic = ["version"]
 description = 'Typing support for PyDAL'
 readme = "README.md"
 requires-python = ">=3.12"
@@ -34,6 +33,7 @@ dependencies = [
     "legacy-cgi; python_version >= '3.13'",
     "python-dateutil < 3",
 ]
+version = "4.9.12"
 
 [project.optional-dependencies]
 py4web = [
@@ -90,7 +90,6 @@ dev = [
     "ewok",
     # test:
     "su6[all]>=1.9.0",
-    "python-semantic-release < 8",
     # "pytest-mypy-testing",
     "pytest-typing",
     "pyright < 1.1.400",
@@ -123,18 +122,51 @@ Documentation = "https://typedal.readthedocs.io/"
 Issues = "https://github.com/trialandsuccess/TypeDAL/issues"
 Source = "https://github.com/trialandsuccess/TypeDAL"
 
-[tool.hatch.version]
-path = "src/typedal/__about__.py"
+[tool.vommit]
+allow_breaking_bang = true
+allow_breaking_footer = true
+prerelease_token = "beta"
+confirm = true
 
-[tool.semantic_release]
+[tool.vommit.git]
+enabled = true
+origin = "origin"
 branch = "master"
-version_variable = "src/typedal/__about__.py:__version__"
-change_log = "CHANGELOG.md"
-upload_to_repository = false
-upload_to_release = false
-build_command = "hatch build"
+on_wrong_branch = "error"
+tag_format = "v{version}"
+commit_format = "{version}"
 
-### required in every su6 pyproject: ###
+[tool.vommit.changelog]
+enabled = true
+file = "CHANGELOG.md"
+include_prereleases = false
+placeholder = "<!--next-version-placeholder-->"
+placeholder_regex = "^<!\\-\\-next\\-version\\-placeholder\\-\\->$"
+entry_title_format = "## v{version} ({date:%Y-%m-%d})"
+
+[tool.vommit.changelog.levels]
+feat = "Feature{s}"
+fix = "Fix{es}"
+break = "Breaking Change{s}"
+docs = "Documentation"
+perf = "Performance"
+
+[tool.vommit.pypi]
+enabled = true
+use_keyring = true
+
+[tool.vommit.commands]
+clean = "rm -rf ./dist"
+build = "hatch build"
+publish = "uv publish"
+post_publish = ""
+
+[tool.vommit.version_bump_map]
+break = "major"
+feat = "minor"
+fix = "patch"
+perf = "patch"
+
 [tool.su6]
 directory = "src"
 stop-after-first-failure = true
