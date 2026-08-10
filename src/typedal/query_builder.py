@@ -819,12 +819,22 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         return joins
 
     def _selectable_orderby_fields(self, orderby: OrderBy | t.Iterable[OrderBy] | None) -> list[OrderBy]:
-        """Extract field values from pydal orderby expressions."""
+        """Extract expressions that must be selected for a DISTINCT order by."""
         if not orderby:
             return []
 
         if isinstance(orderby, (list, tuple, set)):
             return [field for item in orderby for field in self._selectable_orderby_fields(item)]
+
+        if isinstance(orderby, str):
+            expression = orderby.rstrip()
+            for nulls_order in (" NULLS FIRST", " NULLS LAST"):
+                if expression.upper().endswith(nulls_order):
+                    expression = expression[: -len(nulls_order)].rstrip()
+                    break
+
+            expression_without_direction, _, direction = expression.rpartition(" ")
+            return [expression_without_direction if direction.upper() in {"ASC", "DESC"} else orderby]
 
         if isinstance(orderby, pydal.objects.Field):
             return [orderby]
@@ -984,9 +994,13 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         post_alias = str(other).split(" AS ")[-1]
 
         if pre_alias != post_alias:
-            select_fields = ", ".join([str(_) for _ in select_args])
-            select_fields = select_fields.replace(f"{pre_alias}.", f"{post_alias}.")
-            select_args = select_fields.split(", ")
+            updated_args = []
+            for arg in select_args:
+                if isinstance(arg, pydal.objects.SQLALL):
+                    updated_args.extend(str(field).replace(f"{pre_alias}.", f"{post_alias}.") for field in arg._table)
+                else:
+                    updated_args.append(str(arg).replace(f"{pre_alias}.", f"{post_alias}."))
+            select_args = updated_args
 
         return select_args
 

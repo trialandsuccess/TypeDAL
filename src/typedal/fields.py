@@ -197,6 +197,18 @@ class TypedField[T_Value](Expression):  # pragma: no cover
         self._table = table
         self._field = field
 
+    def unbind(self) -> None:
+        """Remove references to the pydal objects created during ``bind``."""
+        if getattr(self, "requires", None):
+            if isinstance(self.requires, list):
+                self.requires.clear()
+            else:
+                self.requires = []
+
+        self._table = None
+        self._db = None
+        self._field = None
+
     def __getattr__(self, key: str) -> t.Any:
         """
         If the regular getattribute does not work, try to get info from the related Field.
@@ -268,7 +280,7 @@ class TypedField[T_Value](Expression):  # pragma: no cover
         return t.cast(Expression, self._field.lower())
 
 
-def rname(field: TypedField[t.Any] | Field) -> str:
+def rname(field: TypedField[t.Any] | Field | pydal.objects.Field) -> str:
     """
     Return the full rname (table and field).
     """

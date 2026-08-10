@@ -645,6 +645,117 @@ def test_paginate_inner_joins_with_related_orderby_psql(dal_psql: TypeDAL):
     assert page.first().method.name == "Fast"
 
 
+def test_paginate_inner_joins_with_raw_orderby_psql(dal_psql: TypeDAL):
+    """Support raw ordering expressions with joined PostgreSQL pagination."""
+    db = dal_psql
+
+    @db.define()
+    class RankedParent(TypedTable):
+        name = TypedField(str)
+
+        children = relationship(
+            list["RankedChild"],
+            condition=lambda parent, child: parent.id == child.parent,
+            join="inner",
+        )
+
+    @db.define()
+    class RankedChild(TypedTable):
+        parent: RankedParent
+
+    first_parent = RankedParent.insert(name="First")
+    second_parent = RankedParent.insert(name="Second")
+    RankedChild.insert(parent=first_parent)
+    RankedChild.insert(parent=second_parent)
+    db.commit()
+
+    rank_expression = "CASE WHEN 1 = 1 THEN 1 ELSE 0 END"
+    page = RankedParent.join("children", method="inner").select(
+        f"({rank_expression}) AS search_rank",
+        orderby=f"({rank_expression}) DESC",
+    ).paginate(page=1, limit=1)
+
+    assert len(page) == 1
+
+
+def test_paginate_inner_joins_with_raw_orderby_nulls_last_psql(dal_psql: TypeDAL):
+    """Support NULLS LAST in raw ordering expressions with joined pagination."""
+    db = dal_psql
+
+    @db.define()
+    class NullRankedParent(TypedTable):
+        name = TypedField(str)
+
+        children = relationship(
+            list["NullRankedChild"],
+            condition=lambda parent, child: parent.id == child.parent,
+            join="inner",
+        )
+
+    @db.define()
+    class NullRankedChild(TypedTable):
+        parent: NullRankedParent
+
+    first_parent = NullRankedParent.insert(name="First")
+    second_parent = NullRankedParent.insert(name="Second")
+    NullRankedChild.insert(parent=first_parent)
+    NullRankedChild.insert(parent=second_parent)
+    db.commit()
+
+    rank_expression = "CASE WHEN 1 = 1 THEN NULL ELSE 0 END"
+    page = NullRankedParent.join("children", method="inner").select(
+        f"({rank_expression}) AS search_rank",
+        orderby=f"({rank_expression}) DESC NULLS LAST",
+    ).paginate(page=1, limit=1)
+
+    assert len(page) == 1
+
+
+def test_paginate_inner_joins_with_raw_selected_rank_psql(dal_psql: TypeDAL):
+    """Preserve raw selected rank columns through joined pagination and row parsing."""
+    db = dal_psql
+
+    @db.define()
+    class RankedSupplier(TypedTable):
+        gid = TypedField(str)
+        name = TypedField(str)
+
+    @db.define()
+    class RankedMethod(TypedTable):
+        name = TypedField(str)
+        supplier: RankedSupplier
+
+        products = relationship(
+            list["RankedProduct"],
+            condition=lambda method, product: method.id == product.method,
+            join="left",
+        )
+
+    @db.define()
+    class RankedProduct(TypedTable):
+        method: RankedMethod
+
+    supplier = RankedSupplier.insert(gid="supplier", name="Supplier")
+    first_method = RankedMethod.insert(name="First", supplier=supplier)
+    second_method = RankedMethod.insert(name="Second", supplier=supplier)
+    RankedProduct.insert(method=first_method)
+    RankedProduct.insert(method=second_method)
+    db.commit()
+
+    rank_expression = "CASE WHEN COALESCE(NULL, 1) = 1 THEN 1 ELSE 0 END"
+    page = (
+        RankedMethod.select(RankedMethod.ALL)
+        .select(f"({rank_expression}) AS search_rank", orderby=f"({rank_expression}) DESC")
+        .join("supplier", method="inner")
+        .select(RankedSupplier.gid, RankedSupplier.name)
+        .join("products", method="inner")
+        .select(RankedProduct.id)
+        .paginate(page=1, limit=1)
+    )
+
+    assert len(page) == 1
+
+
 def test_execute():
     _setup_data()
 

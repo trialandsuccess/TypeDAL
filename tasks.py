@@ -33,7 +33,7 @@ def generate_nav_entries() -> list[str]:
 
 
 @task
-def update_docs_nav(ctx: Context) -> None:
+def update_docs_nav(_: Context) -> None:
     """Update mkdocs.yml nav section from actual markdown files to prevent sync issues."""
     mkdocs_file = Path(__file__).parent / "mkdocs.yml"
 

@@ -121,6 +121,17 @@ class TableMeta(type):
         self._relationships = relationships
         self._permissions = merge_permissions(permissions)
 
+    def unbind(self) -> None:
+        """Remove the database bindings created by ``db.define``."""
+        for value in self.__dict__.values():
+            if isinstance(value, TypedField):
+                value.unbind()
+
+        self._db = None
+        self._table = None
+        self._relationships = None
+        self._permissions = None
+
     def __getattr__(self, col: str) -> t.Optional[Field]:
         """
         Magic method used by TypedTableMeta to get a database field with dot notation on a class.

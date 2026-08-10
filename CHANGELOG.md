@@ -2,6 +2,49 @@
 
 <!--next-version-placeholder-->
 
+## v4.9.12 (2026-07-21)
+
+### Fix
+
+* **rname:** Also support `pydal.objects.Field)` in rname signature ([`c94a22d`](https://github.com/trialandsuccess/TypeDAL/commit/c94a22d905d8a57c50cf32cf6c3da44801c0438b))
+
+## v4.9.11 (2026-07-21)
+
+### Fix
+
+* **query-builder:** Preserve SQLALL selections across join aliases ([`4955144`](https://github.com/trialandsuccess/TypeDAL/commit/4955144091c58a7d3226d7b31a7ec3dbd32b6df6))
+
+## v4.9.10 (2026-07-21)
+
+### Fix
+
+* **query:** Support raw pagination ordering ([`df4cdde`](https://github.com/trialandsuccess/TypeDAL/commit/df4cdde53ae41325310423818af22bd96972d44e))
+
+## v4.9.9 (2026-07-17)
+
+### Fix
+
+* **typing:** Support dynamic fields in relationship callbacks ([`60c3921`](https://github.com/trialandsuccess/TypeDAL/commit/60c39214ba448d6a4b96fde21055a1f7a08263be))
+
+## v4.9.8 (2026-07-14)
+
+### Fix
+
+* **core:** Properly clean up all TypeDAL tables, fields, hooks, validators, and dialect expressions when closing the database ([`3a3fe7b`](https://github.com/trialandsuccess/TypeDAL/commit/3a3fe7b3387476a9ee50f85d492dea067f218069), [`469e0cb`](https://github.com/trialandsuccess/TypeDAL/commit/469e0cbc5b4f1584849040735ced0232adc18b65), [`d848cf7`](https://github.com/trialandsuccess/TypeDAL/commit/d848cf72ca0ecee24ba857d6b5e03d3cacce7693))
+
+
+## v4.9.7 (2026-07-14)
+
+### Fix
+
+* **fields:** Clear field requirements during unbind ([`7e054f9`](https://github.com/trialandsuccess/TypeDAL/commit/7e054f947358a3fbb491db0d777410433da43d44))
+
+## v4.9.6 (2026-07-14)
+
+### Fix
+
+* **core:** Unbind models when closing database ([`e025d0c`](https://github.com/trialandsuccess/TypeDAL/commit/e025d0c13cdb95943ad22430d9822171834c3092))
+
 ## v4.9.5 (2026-07-05)
 
 ### Fix

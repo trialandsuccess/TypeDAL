@@ -129,8 +129,8 @@ def _setup_data():
 
     # no relationships:
     new_author = User.insert(name="Untagged Author", roles=[], main_role=writer, extra_roles=[])
-    untagged1 = Article.insert(title="Untagged Article 1", author=new_author)
-    untagged2 = Article.insert(title="Untagged Article 2", author=new_author)
+    _untagged1 = Article.insert(title="Untagged Article 1", author=new_author)
+    _untagged2 = Article.insert(title="Untagged Article 2", author=new_author)
 
     # articles
 
@@ -355,10 +355,9 @@ def test_reprs():
 
     assert "AND" not in repr(relation)
 
-    relation = Article.join("author", condition_and=lambda article, author: author.name != "Hank").relationships[
+    relation = Article.join("author", condition_and=lambda _article, author: author.name != "Hank").relationships[
         "author"
     ]
-
     assert "AND" in repr(relation) and "Hank" in repr(relation)
 
 
@@ -436,7 +435,7 @@ def test_join_with_different_condition():
     role_with_users = Role.join(
         "users",
         method="inner",
-        condition_and=lambda role, user: ~user.name.like("Reader%"),
+        condition_and=lambda _role, user: ~user.name.like("Reader%"),
     ).first()
 
     assert role_with_users.users
@@ -446,7 +445,7 @@ def test_join_with_different_condition():
     role_with_users = Role.join(
         "users",
         method="left",
-        condition_and=lambda role, user: ~user.name.like("Reader%"),
+        condition_and=lambda _role, user: ~user.name.like("Reader%"),
     ).first()
 
     assert role_with_users.users
@@ -729,11 +728,11 @@ def test_memoize_nested_dependencies():
     assert len(users) > 0
 
     # First memoize - should be fresh
-    result1, status = db.memoize(process_users, users)
+    _result1, status = db.memoize(process_users, users)
     assert status == "fresh"
 
     # Second call - should be cached
-    result2, status = db.memoize(process_users, users)
+    _result2, status = db.memoize(process_users, users)
     assert status == "cached"
 
     # Update a Role that was accessed inside process_users
@@ -742,7 +741,7 @@ def test_memoize_nested_dependencies():
 
     # Third call - should be fresh (invalidated by Role change)
     # but currently will still be "cached" because we only tracked User deps
-    result3, status = db.memoize(process_users, users)
+    _result3, status = db.memoize(process_users, users)
     assert status == "fresh"
 
 
@@ -755,25 +754,25 @@ def test_memoize_nested_dependencies2():
         # (which happens when using _determine_dependencies_auto)
         return list(User.join())
 
-    bogus, status = db.memoize(something_slow)
+    _bogus, status = db.memoize(something_slow)
     assert status == "fresh"
 
     # no change
-    bogus, status = db.memoize(something_slow)
+    _bogus, status = db.memoize(something_slow)
     assert status == "cached"
 
     # user change
     User.first().update_record(name="New Name :)")
-    bogus, status = db.memoize(something_slow)
+    _bogus, status = db.memoize(something_slow)
     assert status == "fresh"
 
     # role change
     Role.first().update_record(name="New Role Name :)")
-    bogus, status = db.memoize(something_slow)
+    _bogus, status = db.memoize(something_slow)
     assert status == "fresh"
 
     # no change
-    bogus, status = db.memoize(something_slow)
+    _bogus, status = db.memoize(something_slow)
     assert status == "cached"
 
 
@@ -931,7 +930,8 @@ def test_accessing_raw_data():
 
     user = User.where(id=4).join("articles").first()
 
-    # <User({"id": 4, "name": "Untagged Author", "roles": [], "gid": "967da807-eb13-46dc-a0f3-d5c04751edf4", "main_role": 2, "extra_roles": []}) + ['articles']>
+    # <User({"id": 4, "name": "Untagged Author", "roles": [],
+    #        "gid": "967da807-eb13-46dc-a0f3-d5c04751edf4", "main_role": 2, "extra_roles": []}) + ['articles']>
     assert user._row
 
     # one row per user+article combination like how postgres returns it:
@@ -1031,9 +1031,9 @@ def test_nested_join_with_shared_foreign_key():
     tech_corp = Company.insert(name="Tech Corp")
 
     # Create multiple offices in the same city for the same company
-    office1 = Office.insert(address="123 Market St", city_id=san_francisco.id, company=tech_corp.id)
-    office2 = Office.insert(address="456 Mission St", city_id=san_francisco.id, company=tech_corp.id)
-    office3 = Office.insert(address="789 Howard St", city_id=san_francisco.id, company=tech_corp.id)
+    _office1 = Office.insert(address="123 Market St", city_id=san_francisco.id, company=tech_corp.id)
+    _office2 = Office.insert(address="456 Mission St", city_id=san_francisco.id, company=tech_corp.id)
+    _office3 = Office.insert(address="789 Howard St", city_id=san_francisco.id, company=tech_corp.id)
 
     db.commit()
 
@@ -1072,7 +1072,8 @@ def test_nested_join_with_shared_foreign_key():
             f"Office {idx} ('{office.address}'): city relationship is None (BUG!)"
         )
         assert isinstance(office.city_alternative, City), (
-            f"Office {idx}: city ({office.city_alternative}) is not a City instance but a {type(office.city_alternative)}"
+            f"Office {idx}: city ({office.city_alternative}) "
+            f"is not a City instance but a {type(office.city_alternative)}"
         )
         assert office.city_alternative.name == "San Francisco", (
             f"Office {idx}: expected 'San Francisco', got '{office.city_alternative.name}'"

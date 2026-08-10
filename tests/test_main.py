@@ -1,17 +1,23 @@
 import enum
+import gc
 import re
 import sys
 import typing
+import types
+import weakref
+from contextlib import contextmanager
 from copy import copy
 from sqlite3 import IntegrityError
 from typing import ForwardRef
 
 import pytest
+from pydal.validators import IS_NOT_IN_DB
 
-from src.typedal import TypedRows
+from src.typedal import TypeDAL, TypedRows
 from src.typedal.__about__ import __version__
 from src.typedal.enum_helpers import InvalidEnumValue
 from src.typedal.fields import *
+from src.typedal.web2py_py4web_shared import AuthUser
 
 
 def test_about():
@@ -20,6 +26,120 @@ def test_about():
 
 
 db = TypeDAL("sqlite:memory")
+
+
+def test_database_is_garbage_collected_after_close():
+    db = TypeDAL("sqlite:memory", enable_typedal_caching=False)
+
+    @db.define
+    class TemporaryTable(TypedTable):
+        value = TypedField(str)
+
+    field = TemporaryTable.__dict__["value"]
+    db_ref = weakref.ref(db)
+
+    db.close()
+
+    assert TemporaryTable._db is None
+    assert TemporaryTable._table is None
+    assert field._table is None
+    assert field._field is None
+
+    del db
+    gc.collect()
+
+    assert db_ref() is None
+
+
+def test_database_is_garbage_collected_after_context_manager():
+
+    @contextmanager
+    def typedal_context():
+        db = TypeDAL("sqlite:memory", enable_typedal_caching=False)
+        try:
+            yield db
+            db.commit()
+        except:
+            db.rollback()
+        finally:
+            db.close()
+
+    def in_scope():
+        with typedal_context() as db:
+            @db.define
+            class RelatedTable(TypedTable):
+                value = TypedField(str)
+
+            @db.define
+            class TemporaryTable(TypedTable):
+                related: RelatedTable
+                value = TypedField(str)
+
+                @classmethod
+                def __on_define__(cls, db):
+                    cls.id.requires = IS_NOT_IN_DB(db, cls.id)
+                    cls.after_insert(lambda _row, _id, db=db: None)
+
+            query = TemporaryTable.where(id=0)
+            assert not query.paginate(limit=1)
+
+            return weakref.ref(db)
+
+    db_ref = in_scope()
+
+    gc.collect()
+
+    assert db_ref() is None
+
+
+def test_database_with_auth_user_is_garbage_collected_after_close():
+    db = TypeDAL("sqlite:memory", enable_typedal_caching=False)
+    db.define(AuthUser, redefine=True)
+
+    AuthUser.after_insert(lambda row, db=db: print(db))
+
+    db_ref = weakref.ref(db)
+
+    db.close()
+
+    assert AuthUser._db is None
+    assert AuthUser._table is None
+
+    del db
+    gc.collect()
+
+    assert db_ref() is None
+
+
+def test_database_is_garbage_collected_after_close_postgres(dal_psql_uri, tmp_path):
+    # Postgres (and Snowflake) dialects register extra Expression methods (e.g. `.dow`) in the
+    # process-wide, class-level `Expression._dialect_expressions_` dict. That's a permanent
+    # reference living outside of any db-specific object graph, so unlike the sqlite case above,
+    # gc.collect() alone can't free it - close() has to explicitly undo the registration.
+    # (built directly from the conftest `postgres` container, not the `dal_psql` fixture: a
+    # suspended fixture generator would itself keep `db` alive for the duration of the test)
+
+    db = TypeDAL(dal_psql_uri, attempts=1, migrate=True, enable_typedal_caching=False, folder=str(tmp_path))
+
+    @db.define
+    class TemporaryPsqlTable(TypedTable):
+        value = TypedField(str)
+
+    db_ref = weakref.ref(db)
+    adapter_ref = weakref.ref(db._adapter)
+
+    db.close()
+
+    assert TemporaryPsqlTable._db is None
+    assert TemporaryPsqlTable._table is None
+
+    del db
+    gc.collect()
+
+    assert db_ref() is None
+    # the adapter itself is allowed to leak (pydal has no public API to fully undo the global
+    # dialect registration) as long as it no longer drags the rest of the db graph with it:
+    assert adapter_ref() is None or adapter_ref().db is None
 
 
 def test_mixed_defines(capsys):
