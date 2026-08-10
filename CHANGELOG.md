@@ -2,6 +2,11 @@
 
 <!--next-version-placeholder-->
 
+## v4.9.13 (2026-08-10)
+
+### Fix
+* **sql:** render None placeholders as SQL NULL
+
 ## v4.9.12 (2026-07-21)
 
 ### Fix
