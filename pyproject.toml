@@ -157,9 +157,9 @@ use_keyring = true
 
 [tool.vommit.commands]
 clean = "rm -rf ./dist"
-build = "hatch build"
+build = "uv build"
 publish = "uv publish"
-post_publish = ""
+post_publish = "rm -rf ./dist"
 
 [tool.vommit.version_bump_map]
 break = "major"
