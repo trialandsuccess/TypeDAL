@@ -364,6 +364,9 @@ def smarter_adapt(db: TypeDAL, placeholder: t.Any) -> str:
         Quoted placeholder if needed, except for numbers (smart_adapt logic)
             or fields/tables (use already quoted rname).
     """
+    if placeholder is None:
+        return "NULL"
+
     return t.cast(
         str,
         getattr(placeholder, "sql_shortref", None)  # for tables

@@ -52,6 +52,15 @@ def test_sql_escape_template_example(database: TypeDAL):
     assert safe_sql == "SELECT * FROM users WHERE id = 456"
 
 
+def test_t_string_none_renders_as_sql_null(database: TypeDAL) -> None:
+    value = None
+
+    sql = sql_escape(database, t"SELECT {value} IS NULL")
+
+    assert "NULL IS NULL" in sql
+    assert "'None' IS NULL" not in sql
+
+
 def test_sql_expression_complex_where(database: TypeDAL):
     """Test the complex WHERE clause example from sql_expression docstring."""
     expr = sql_expression(database, "age > %s AND status = %s", 18, "active", output_type="boolean")
@@ -136,6 +145,7 @@ def test_sql_expression_314(database: TypeDAL):
     test_sql_escape_positional_example(database)
     test_sql_escape_keyword_example(database)
     test_sql_escape_template_example(database)
+    test_t_string_none_renders_as_sql_null(database)
     test_sql_expression_complex_where(database)
     test_sql_expression_keyword_extract(database)
     test_sql_expression_template_age(database)
