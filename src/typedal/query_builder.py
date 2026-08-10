@@ -45,7 +45,7 @@ from .types import (
 )
 
 
-class QueryBuilder[T_MetaInstance: _TypedTable]:
+class QueryBuilder[T_MetaInstance: _TypedTable](pydal.objects.Select):
     """
     Abstration on top of pydal's query system.
     """
@@ -57,6 +57,25 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
     relationships: dict[str, Relationship[t.Any]]
     metadata: Metadata
     _permissions: Permissions
+
+    def __setattr__(self, key: str, value: t.Any) -> None:
+        """Keep QueryBuilder state independent from Select's table-like storage."""
+        object.__setattr__(self, key, value)
+
+    @property
+    def _qfields(self) -> list[t.Any]:
+        """Expose selected fields for pyDAL's subquery validation."""
+        _, select_args, _ = self._before_query({}, add_id=False)
+        return select_args
+
+    def _compile(
+        self,
+        outer_scoped: list[t.Any] = None,  # noqa ARG002 - inherit from Select
+        with_alias: bool = False,  # noqa ARG002 - inherit from Select
+        cte_collector: t.Any = None,  # noqa ARG002 - inherit from Select
+    ) -> tuple[list[t.Any], str]:
+        """Provide pyDAL's Select protocol without changing QueryBuilder rendering."""
+        return [], self.to_sql()
 
     def __init__(
         self,

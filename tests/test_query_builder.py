@@ -564,6 +564,15 @@ def test_orderby():
     )
 
 
+def test_belongs_accepts_querybuilder_subquery():
+    _setup_data()
+
+    related_querytables = TestRelationship.select(TestRelationship.querytable).where(TestRelationship.value == 33)
+    results = TestQueryTable.where(TestQueryTable.id.belongs(related_querytables)).orderby(TestQueryTable.id).collect()
+
+    assert [row.number for row in results] == [1]
+
+
 def test_select_kwargs_use_rname_psql(dal_psql: TypeDAL):
     db = dal_psql
 
