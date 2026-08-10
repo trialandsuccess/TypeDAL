@@ -7,13 +7,16 @@ db = TypeDAL()
 
 reveal_type(db)  # revealed: TypeDAL
 
+
 @db.define()
 class WithBraces(TypedTable):
     gid = TypedField(str)
 
+
 with_braces = WithBraces.first_or_fail()
 
-reveal_type(with_braces) # revealed: WithBraces
+reveal_type(with_braces)  # revealed: WithBraces
+
 
 @db.define
 class WithoutBraces(TypedTable):
@@ -21,39 +24,39 @@ class WithoutBraces(TypedTable):
     deferred = relationship(Ref["DeferredDefine"], on=lambda self, other: [other.on(other.id == self.id)], join="left")
     multiple = relationship(list["WithoutBraces"], condition=lambda self, other: self.id != other.id)
 
+
 without_braces = WithoutBraces.where().first()
 
-reveal_type(without_braces) # revealed: WithoutBraces | None
+reveal_type(without_braces)  # revealed: WithoutBraces | None
 
 
-class DeferredDefine(TypedTable):
-    ...
+class DeferredDefine(TypedTable): ...
+
 
 db.define(DeferredDefine)
 
 for deferred_define in DeferredDefine.paginate(limit=1):
-    reveal_type(deferred_define) # revealed: DeferredDefine
+    reveal_type(deferred_define)  # revealed: DeferredDefine
 
 new_row = WithBraces.insert()
 
-reveal_type(new_row) # revealed: WithBraces
-reveal_type(new_row.id) # revealed: int
+reveal_type(new_row)  # revealed: WithBraces
+reveal_type(new_row.id)  # revealed: int
 
-reveal_type(WithBraces.gid) # revealed: TypedField[str]
-reveal_type(new_row.gid) # revealed: str
+reveal_type(WithBraces.gid)  # revealed: TypedField[str]
+reveal_type(new_row.gid)  # revealed: str
 
 db.commit()
 
 joined = WithoutBraces.join().first_or_fail()
 
-reveal_type(WithoutBraces.with_braces) # revealed: Relationship[WithBraces]
-reveal_type(WithoutBraces.deferred) # revealed: Relationship[DeferredDefine | None]
-reveal_type(WithoutBraces.multiple) # revealed: Relationship[list[WithoutBraces]]
+reveal_type(WithoutBraces.with_braces)  # revealed: Relationship[WithBraces]
+reveal_type(WithoutBraces.deferred)  # revealed: Relationship[DeferredDefine | None]
+reveal_type(WithoutBraces.multiple)  # revealed: Relationship[list[WithoutBraces]]
 
-reveal_type(joined.with_braces) # revealed: WithBraces
-reveal_type(joined.deferred) # revealed: DeferredDefine | None
-reveal_type(joined.multiple) # revealed: list[WithoutBraces]
-
+reveal_type(joined.with_braces)  # revealed: WithBraces
+reveal_type(joined.deferred)  # revealed: DeferredDefine | None
+reveal_type(joined.multiple)  # revealed: list[WithoutBraces]
 ```
 
 
@@ -64,9 +67,11 @@ from typedal import TypeDAL, TypedTable, TypedField
 
 db = TypeDAL()
 
+
 @db.define
 class MyTable(TypedTable):
     fancy = TypedField(str)
+
 
 reveal_type(MyTable.fancy.lower())  # revealed: Expression
 reveal_type(MyTable().fancy.lower())  # revealed: str
@@ -79,9 +84,10 @@ from typedal import TypeDAL, TypedTable
 
 db = TypeDAL()
 
+
 @db.define
-class MyTable(TypedTable):
-    ...
+class MyTable(TypedTable): ...
+
 
 aliased_cls = MyTable.with_alias("---")
 reveal_type(aliased_cls)  # revealed: type[MyTable]
@@ -97,16 +103,17 @@ from typedal import TypeDAL, TypedTable
 
 db = TypeDAL()
 
+
 @db.define
-class MyTable(TypedTable):
-    ...
+class MyTable(TypedTable): ...
+
 
 my_query = MyTable.id > 3
 reveal_type(my_query)  # revealed: Query
 
 query = MyTable.id == 3
 
-reveal_type(query) # revealed: Query
+reveal_type(query)  # revealed: Query
 
 new = MyTable.update(query)
 reveal_type(new)  # revealed: MyTable | None
@@ -123,9 +130,10 @@ from typedal import TypeDAL, TypedRows, TypedTable
 
 db = TypeDAL()
 
+
 @db.define
-class MyTable(TypedTable):
-    ...
+class MyTable(TypedTable): ...
+
 
 select1 = db(MyTable).select()
 select2: TypedRows[MyTable] = db(MyTable).select()
@@ -154,10 +162,12 @@ from typedal import TypeDAL, TypedField, TypedTable
 
 db = TypeDAL()
 
+
 @db.define
 class MyTable(TypedTable):
     normal: str
     fancy = TypedField(str)
+
 
 SomeField: typing.Any = ...
 
@@ -173,9 +183,10 @@ from typedal import TypeDAL, TypedTable
 
 db = TypeDAL()
 
+
 @db.define
-class MyTable(TypedTable):
-    ...
+class MyTable(TypedTable): ...
+
 
 rows = MyTable.where().collect()
 reveal_type(rows.render())  # revealed: Generator[MyTable, None, None]
@@ -190,15 +201,18 @@ from typedal.mixins import Mixin
 
 db = TypeDAL()
 
-class SearchMixin(Mixin):
-    ...
+
+class SearchMixin(Mixin): ...
+
 
 @db.define
 class SearchableTable(TypedTable, SearchMixin):
     title: str
 
+
 def using_mixin(table: type[SearchMixin]) -> None:
     reveal_type(table.where())  # revealed: QueryBuilder[SearchMixin]
+
 
 using_mixin(SearchableTable)
 ```
@@ -209,15 +223,19 @@ using_mixin(SearchableTable)
 import typing
 from typedal.types import CacheFn, CacheTuple, Rows
 
+
 def cache_model(key: str, fn: CacheFn, expire: int) -> Rows:
     return fn()
 
+
 cache_valid: CacheTuple = (cache_model, 3000)
+
 
 def invalid_cache_model(key: str, fn: typing.Callable[..., list[str]], _: typing.Optional[int] = None) -> list[str]:
     return fn()
 
-cache_invalid: CacheTuple = (invalid_cache_model, 3000) # error: [reportAssignmentType]
+
+cache_invalid: CacheTuple = (invalid_cache_model, 3000)  # error: [reportAssignmentType]
 ```
 
 # Parity with test_mypy.py

@@ -8,10 +8,7 @@ This library also has some py4web/web2py-specific enhancements.
 # common.py
 from typedal.for_py4web import DAL
 
-db = DAL(
-    settings.DB_URI,
-    ...
-)
+db = DAL(settings.DB_URI, ...)
 ```
 
 This version of the `DAL` is also a py4web Fixture that manages database connections `on_request`, just as py4web's own
@@ -27,6 +24,7 @@ from .common import db
 
 # you can now customize auth user:
 
+
 class AuthUser(_AuthUser):
     bookmarks = relationship(list["Bookmark"], ...)
 
@@ -35,7 +33,6 @@ db.define(AuthUser, redefine=True)
 
 # or if you don't want to customize auth user:
 setup_py4web_tables(db)
-
 ```
 
 TypeDAL also provides an `AuthUser` class based on `db.auth_user`.
@@ -52,6 +49,7 @@ from .common import db
 
 
 # you can now customize auth user:
+
 
 class AuthUser(_AuthUser):
     bookmarks = relationship(list["Bookmark"], ...)

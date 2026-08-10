@@ -20,8 +20,10 @@ class Post(TypedTable):
     author: Author
 
 
-authors_with_roles = Author.join('roles').collect()
-posts_with_author = Post.join().collect()  # join can be called without arguments to join all relationships (in this case only 'author')
+authors_with_roles = Author.join("roles").collect()
+posts_with_author = (
+    Post.join().collect()
+)  # join can be called without arguments to join all relationships (in this case only 'author')
 post_deep = Post.join("author.roles").collect()  # nested relationship, accessible via post.author.roles
 ```
 
@@ -127,32 +129,39 @@ owner: "User"
 Setting up a relationship that uses a junction/pivot table is slightly harder.
 
 ```python
-
 # with `unique_alias()` which is better if you have multiple joins:
+
 
 @db.define()
 class Post(TypedTable):
     title: str
     author: Author
 
-    tags = relationship(list["Tag"], on=lambda post, tag: [
-        # post and tag already have a unique alias, create one for tagged here:
-        tagged := Tagged.unique_alias(),
-        tagged.on(tagged.post == post.id),
-        tag.on(tag.id == tagged.tag),
-    ])
+    tags = relationship(
+        list["Tag"],
+        on=lambda post, tag: [
+            # post and tag already have a unique alias, create one for tagged here:
+            tagged := Tagged.unique_alias(),
+            tagged.on(tagged.post == post.id),
+            tag.on(tag.id == tagged.tag),
+        ],
+    )
 
 
 # without unique alias:
+
 
 @db.define()
 class Tag(TypedTable):
     name: str
 
-    posts = relationship(list["Post"], on=lambda tag, posts: [
-        Tagged.on(Tagged.tag == tag.id),
-        posts.on(posts.id == Tagged.post),
-    ])
+    posts = relationship(
+        list["Post"],
+        on=lambda tag, posts: [
+            Tagged.on(Tagged.tag == tag.id),
+            posts.on(posts.id == Tagged.post),
+        ],
+    )
 
 
 @db.define()
