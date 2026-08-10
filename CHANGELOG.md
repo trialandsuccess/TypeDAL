@@ -2,6 +2,11 @@
 
 <!--next-version-placeholder-->
 
+## v4.9.14 (2026-08-10)
+
+### Fix
+* **query-builder:** enable QueryBuilder instances as pyDAL subqueries
+
 ## v4.9.13 (2026-08-10)
 
 ### Fix
