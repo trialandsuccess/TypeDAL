@@ -27,7 +27,7 @@ from pydal.validators import Validator as _Validator
 try:
     from string.templatelib import Template as TemplateAlias
 except ImportError:
-    TemplateAlias: t.TypeAlias = str  # type: ignore
+    TemplateAlias: t.TypeAlias = str
 
 # Internal references
 if t.TYPE_CHECKING:
@@ -71,7 +71,7 @@ def merge_permissions(*permission_sets: Permissions | None) -> Permissions:
 
         for key in permission_types:
             if key in permission_set:
-                merged[key] = merged[key] and bool(permission_set[key])  # type: ignore
+                merged[key] = merged[key] and bool(permission_set[key])
 
     return t.cast(Permissions, merged)
 
@@ -404,10 +404,10 @@ type T_Query = t.Union[
     "Table",
     Query,
     bool,
-    None,
     "TypedTable",
     t.Type["TypedTable"],
     Expression,
+    None,
 ]
 
 type T_Field = t.Union["TypedField[t.Any]", "Table", t.Type["TypedTable"]]

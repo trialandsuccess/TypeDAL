@@ -226,6 +226,14 @@ target-version = "py314"
 line-length = 120
 
 extend-exclude = ["*.bak/", "venv*/", "tests/", "example_*.py"]
+
+[tool.ty.src]
+include = ["src"]
+
+[tool.ty.environment]
+python = "./venv"
+python-version = "3.14"
+
 [tool.ruff.lint]
 
 select = [

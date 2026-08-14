@@ -5,13 +5,12 @@ Contains base functionality related to Relationships.
 import inspect
 import typing as t
 import warnings
-from typing import ForwardRef
 
 import pydal.objects
 
 from .config import LazyPolicy
 from .constants import JOIN_OPTIONS
-from .core import TypeDAL, evaluate_forward_reference
+from .core import ForwardRef, TypeDAL, evaluate_forward_reference
 from .fields import TypedField
 from .helpers import extract_type_optional, looks_like, unwrap_type
 from .types import Condition, OnQuery, T_Field
@@ -48,7 +47,7 @@ class Relationship[To_Type]:
         join: JOIN_OPTIONS = None,
         on: OnQuery = None,
         condition_and: Condition = None,
-        nested: dict[str, t.Self] = None,
+        nested: dict[str, t.Self] | None = None,
         lazy: LazyPolicy | None = None,
         explicit: bool = False,
     ):
@@ -150,7 +149,7 @@ class Relationship[To_Type]:
             # boo, fall back to untyped table but pretend it is typed:
             return t.cast(t.Type["TypedTable"], db[table])  # eh close enough!
 
-        return table
+        return t.cast(t.Type["TypedTable"], table)
 
     def get_db(self) -> TypeDAL | None:
         """
@@ -552,7 +551,7 @@ def resolve_relationship_type(
         if any(a is None for a in resolved_args):
             return None
         if origin is list:
-            return list[resolved_args[0]]  # type: ignore[valid-type]
+            return list[resolved_args[0]]  # type: ignore[valid-type]  # ty: ignore[invalid-type-form]
         # Other generics: return as-is (already resolvable)
         return relationship_type
 
