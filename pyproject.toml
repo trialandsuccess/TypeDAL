@@ -70,6 +70,14 @@ typescript = [
     "pydal2sql>=1.3.5",
 ]
 
+postgres-async = [
+    "psycopg[binary,pool]",
+]
+
+sqlite-async = [
+    "aiosqlite",
+]
+
 all = [
     "py4web",
     "typtyp < 1",
@@ -82,6 +90,9 @@ all = [
     "questionary",
     "tomlkit",
     "pydal2sql[all]>=1.3.5",
+    # async:
+    "psycopg[binary,pool]",
+    "aiosqlite",
 ]
 
 dev = [
@@ -93,11 +104,14 @@ dev = [
     "python-semantic-release < 8",
     # "pytest-mypy-testing",
     "pytest-typing",
+    "pytest-asyncio",
     "pyright < 1.1.400",
     "contextlib-chdir",
     "testcontainers",
     "pydantic < 3",
+    "psycopg[binary,pool]",
     "psycopg2-binary",
+    "aiosqlite",
     # depends on ->
     "requests<2.32",
     # mypy:

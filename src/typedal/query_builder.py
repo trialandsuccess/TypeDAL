@@ -505,6 +505,12 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         db = self._get_db()
         return str(db(self.query)._delete())
 
+    async def delete_async(self) -> list[int]:
+        """
+        Async twin of `delete()`.
+        """
+        raise NotImplementedError
+
     def update(self, **fields: t.Any) -> list[int]:
         """
         Based on the current query, update `fields` and return a list of updated IDs.
@@ -522,6 +528,12 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
     def _update(self, **fields: t.Any) -> str:
         db = self._get_db()
         return str(db(self.query)._update(**fields))
+
+    async def update_async(self, **fields: t.Any) -> list[int]:
+        """
+        Async twin of `update(**fields)`.
+        """
+        raise NotImplementedError
 
     def _before_query(self, mut_metadata: Metadata, add_id: bool = True) -> tuple[Query, list[t.Any], SelectKwargs]:
         select_args = [self._select_arg_convert(_) for _ in self.select_args] or [self.model.ALL]
@@ -608,6 +620,12 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
 
         return rows
 
+    async def execute_async(self, add_id: bool = False) -> Rows:
+        """
+        Async twin of `execute()`.
+        """
+        raise NotImplementedError
+
     def collect(
         self,
         verbose: bool = False,
@@ -673,6 +691,20 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         # only saves if requested in metadata:
         return save_to_cache(typed_rows, rows)
 
+    async def collect_async(
+        self,
+        verbose: bool = False,
+        _to: t.Type["TypedRows[t.Any]"] = None,
+        add_id: bool = True,
+        _into: t.Type[_TypedTable] | None = None,
+        _init: t.Callable[[_TypedTable, Row], None] | None = None,
+    ) -> TypedRows[T_MetaInstance]:
+        """
+        Async twin of `collect()`. Primary target of the RFC's PoC (docs/rfc-async-execution.md):
+        same shape as `collect()`, only the execute step in the middle is async.
+        """
+        raise NotImplementedError
+
     def collect_into[T_Into: _TypedTable](
         self,
         into: t.Type[T_Into],
@@ -690,6 +722,18 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         _init = t.cast(t.Callable[[_TypedTable, Row], None] | None, init)
         rows = query.collect(verbose=verbose, add_id=add_id, _into=into, _init=_init)
         return t.cast(TypedRows[T_Into], rows)
+
+    async def collect_into_async[T_Into: _TypedTable](
+        self,
+        into: t.Type[T_Into],
+        verbose: bool = False,
+        add_id: bool = True,
+        init: t.Callable[[T_Into, Row], None] | None = None,
+    ) -> TypedRows[T_Into]:
+        """
+        Async twin of `collect_into()`. Thin wrapper: builds on `collect_async()`.
+        """
+        raise NotImplementedError
 
     def _validate_collect_into_model(self, into: t.Type[t.Any]) -> None:
         if not isinstance(into, TableMeta):
@@ -733,6 +777,12 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         Shortcut for `.select(field).execute().column(field)`.
         """
         return self.select(field, **options).execute().column(field)
+
+    async def column_async[T: t.Any](self, field: TypedField[T] | T, **options: t.Unpack[SelectKwargs]) -> list[T]:
+        """
+        Async twin of `column()`. Thin wrapper: `.select(field).execute_async()` then `.column(field)`.
+        """
+        raise NotImplementedError
 
     def _handle_relationships_pre_select(
         self,
@@ -1181,6 +1231,12 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         """
         return self.collect() or throw(exception or ValueError("Nothing found!"))
 
+    async def collect_or_fail_async(self, exception: t.Optional[Exception] = None) -> TypedRows[T_MetaInstance]:
+        """
+        Async twin of `collect_or_fail()`. Thin wrapper: builds on `collect_async()`.
+        """
+        raise NotImplementedError
+
     def __iter__(self) -> t.Generator[T_MetaInstance, None, None]:
         """
         You can start iterating a Query Builder object before calling collect, for ease of use.
@@ -1225,6 +1281,12 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
 
         return db(query).count(distinct)
 
+    async def count_async(self, distinct: t.Optional[bool] = None) -> int:
+        """
+        Async twin of `count()`.
+        """
+        raise NotImplementedError
+
     def _count(self, distinct: t.Optional[bool] = None) -> str:
         """
         Return the SQL for .count().
@@ -1245,6 +1307,12 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         """
         require_permission(self._permissions, "read")
         return bool(self.count())
+
+    async def exists_async(self) -> bool:
+        """
+        Async twin of `exists()`. Thin wrapper: builds on `count_async()`.
+        """
+        raise NotImplementedError
 
     def __pagination_count(self) -> int:
         if not self.relationships:
@@ -1291,6 +1359,15 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         rows._query_builder = builder
         return rows
 
+    async def paginate_async(self, limit: int, page: int = 1, verbose: bool = False) -> "PaginatedRows[T_MetaInstance]":
+        """
+        Async twin of `paginate()`. Thin wrapper: builds on `collect_async()`.
+
+        Note: `__pagination_count()` (the row-count step done before paginating) also hits the
+        DB and needs its own async path internally - not exposed as a separate public method.
+        """
+        raise NotImplementedError
+
     def _paginate(
         self,
         limit: int,
@@ -1321,6 +1398,13 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
             yield rows
             page += 1
 
+    async def chunk_async(self, chunk_size: int) -> t.AsyncGenerator[TypedRows[T_MetaInstance], None]:
+        """
+        Async twin of `chunk()`. An async generator (`async for`), built on `collect_async()`.
+        """
+        raise NotImplementedError
+        yield  # pragma: no cover  # makes this an async generator for type-checking purposes
+
     def first(self, verbose: bool = False) -> T_MetaInstance | None:
         """
         Get the first row matching the currently built query.
@@ -1338,6 +1422,12 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
 
         return self.model.from_row(row)
 
+    async def first_async(self, verbose: bool = False) -> T_MetaInstance | None:
+        """
+        Async twin of `first()`. Thin wrapper: builds on `paginate_async()`.
+        """
+        raise NotImplementedError
+
     def _first(self) -> str:
         return self._paginate(page=1, limit=1)
 
@@ -1349,6 +1439,14 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         """
         require_permission(self._permissions, "read")
         return self.first(verbose=verbose) or throw(exception or ValueError("Nothing found!"))
+
+    async def first_or_fail_async(
+        self, exception: t.Optional[BaseException] = None, verbose: bool = False
+    ) -> T_MetaInstance:
+        """
+        Async twin of `first_or_fail()`. Thin wrapper: builds on `first_async()`.
+        """
+        raise NotImplementedError
 
 
 # note: these imports exist at the bottom of this file to prevent circular import issues:

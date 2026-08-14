@@ -582,6 +582,110 @@ class TypeDAL(_TypeDALBase):
 
         return rows
 
+    # ------------------------------------------------------------------
+    # Async execution path (not implemented yet).
+    # See docs/rfc-async-execution.md for the feasibility spike this is
+    # scaffolding. These are the low-level primitives QueryBuilder's and
+    # TypedTable's `_async` methods build on, mirroring pydal's own split
+    # of `db(query).select(...)` / `.count(...)` / `.update(...)` /
+    # `.delete(...)` and `table.insert(...)`, since `db(query)` returns a
+    # plain pydal `Set` at runtime (TypedSet is a typing-only stub, see
+    # rows.py:521-546) rather than something we can attach methods to
+    # directly.
+    # ------------------------------------------------------------------
+
+    async def select_async(
+        self,
+        query: pydal.objects.Query,
+        *fields: t.Any,
+        **attributes: t.Any,
+    ) -> pydal.objects.Rows:
+        """
+        Async twin of `db(query).select(*fields, **attributes)`.
+        """
+        raise NotImplementedError
+
+    async def count_async(
+        self,
+        query: pydal.objects.Query,
+        distinct: t.Optional[bool] = None,
+    ) -> int:
+        """
+        Async twin of `db(query).count(distinct)`.
+        """
+        raise NotImplementedError
+
+    async def update_async(
+        self,
+        query: pydal.objects.Query,
+        **fields: t.Any,
+    ) -> int:
+        """
+        Async twin of `db(query).update(**fields)`.
+        """
+        raise NotImplementedError
+
+    async def delete_async(
+        self,
+        query: pydal.objects.Query,
+    ) -> int:
+        """
+        Async twin of `db(query).delete()`.
+
+        On SQLite, `SQLite.delete()` (pydal adapters/sqlite.py:93-104) is not a plain
+        build/execute/parse call: it selects affected ids first and recurses for
+        ON DELETE CASCADE. This has to replicate that cascade, not just wrap one
+        execute call.
+        """
+        raise NotImplementedError
+
+    async def insert_async(
+        self,
+        table: pydal.objects.Table,
+        **fields: t.Any,
+    ) -> pydal.helpers.classes.Reference:
+        """
+        Async twin of `table.insert(**fields)`.
+        """
+        raise NotImplementedError
+
+    async def executesql_async(
+        self,
+        query: str | Template,
+        placeholders: t.Iterable[str] | dict[str, str] | None = None,
+        as_dict: bool = False,
+        fields: t.Iterable[Field | TypedField[t.Any]] | None = None,
+        colnames: t.Iterable[str] | None = None,
+        as_ordered_dict: bool = False,
+    ) -> list[t.Any]:
+        """
+        Async twin of `executesql(...)`.
+        """
+        raise NotImplementedError
+
+    async def commit_async(self) -> None:
+        """
+        Commit the transaction on the async connection.
+
+        Deliberately does not touch `commit()`/the sync connection: queries executed via
+        `select_async`/`insert_async`/etc. run on a separate connection (see RFC secondary
+        finding 1 - two connections per request), so committing one says nothing about the
+        other.
+        """
+        raise NotImplementedError
+
+    async def rollback_async(self) -> None:
+        """
+        Roll back the transaction on the async connection. See `commit_async`.
+        """
+        raise NotImplementedError
+
+    async def close_async(self) -> None:
+        """
+        Close/release the async connection (or return it to the pool).
+        """
+        raise NotImplementedError
+
     def sql_expression(
         self,
         sql_fragment: str | Template,

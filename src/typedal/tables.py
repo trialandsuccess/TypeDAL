@@ -185,6 +185,12 @@ class TableMeta(type):
         """
         return self.collect()
 
+    async def all_async(self: t.Type[T_MetaInstance]) -> "TypedRows[T_MetaInstance]":
+        """
+        Async twin of `all()`. Thin wrapper: builds on `collect_async()`.
+        """
+        raise NotImplementedError
+
     def get_relationships(self) -> dict[str, Relationship[t.Any]]:
         """
         Return the registered relationships of the current model.
@@ -214,6 +220,12 @@ class TableMeta(type):
         # it already is an int but mypy doesn't understand that
         return self(result)
 
+    async def insert_async(self: t.Type[T_MetaInstance], **fields: t.Any) -> T_MetaInstance:
+        """
+        Async twin of `insert()`.
+        """
+        raise NotImplementedError
+
     def _insert(self, **fields: t.Any) -> str:
         table = self._ensure_table_defined()
 
@@ -227,6 +239,12 @@ class TableMeta(type):
         require_permission(self._permissions, "insert")
         result = table.bulk_insert(items)
         return self.where(lambda row: row.id.belongs(result)).collect()
+
+    async def bulk_insert_async(self: t.Type[T_MetaInstance], items: list[AnyDict]) -> "TypedRows[T_MetaInstance]":
+        """
+        Async twin of `bulk_insert()`.
+        """
+        raise NotImplementedError
 
     def update_or_insert(
         self: t.Type[T_MetaInstance],
@@ -253,6 +271,16 @@ class TableMeta(type):
         record.update_record(**values)
         return self(record)
 
+    async def update_or_insert_async(
+        self: t.Type[T_MetaInstance],
+        query: T_Query | AnyDict = DEFAULT,
+        **values: t.Any,
+    ) -> T_MetaInstance:
+        """
+        Async twin of `update_or_insert()`.
+        """
+        raise NotImplementedError
+
     def validate_and_insert(
         self: t.Type[T_MetaInstance],
         **fields: t.Any,
@@ -269,6 +297,15 @@ class TableMeta(type):
             return self(row_id), None
         else:
             return None, result.get("errors")
+
+    async def validate_and_insert_async(
+        self: t.Type[T_MetaInstance],
+        **fields: t.Any,
+    ) -> tuple[t.Optional[T_MetaInstance], t.Optional[dict[str, str]]]:
+        """
+        Async twin of `validate_and_insert()`.
+        """
+        raise NotImplementedError
 
     def validate_and_update(
         self: t.Type[T_MetaInstance],
@@ -292,6 +329,16 @@ class TableMeta(type):
         else:  # pragma: no cover
             # update on query without result (shouldnt happen)
             return None, None
+
+    async def validate_and_update_async(
+        self: t.Type[T_MetaInstance],
+        query: Query,
+        **fields: t.Any,
+    ) -> tuple[t.Optional[T_MetaInstance], t.Optional[dict[str, str]]]:
+        """
+        Async twin of `validate_and_update()`.
+        """
+        raise NotImplementedError
 
     def validate_and_update_or_insert(
         self: t.Type[T_MetaInstance],
@@ -321,6 +368,16 @@ class TableMeta(type):
             # update on query without result (shouldnt happen)
             return None, None
 
+    async def validate_and_update_or_insert_async(
+        self: t.Type[T_MetaInstance],
+        query: Query,
+        **fields: t.Any,
+    ) -> tuple[t.Optional[T_MetaInstance], t.Optional[dict[str, str]]]:
+        """
+        Async twin of `validate_and_update_or_insert()`.
+        """
+        raise NotImplementedError
+
     def select(self: t.Type[T_MetaInstance], *a: t.Any, **kw: t.Any) -> "QueryBuilder[T_MetaInstance]":
         """
         See QueryBuilder.select!
@@ -339,17 +396,44 @@ class TableMeta(type):
         """
         return QueryBuilder(self).select(field, **options).execute().column(field)
 
+    async def column_async[T: t.Any, T_MetaInstance: _TypedTable](
+        self: t.Type[T_MetaInstance],
+        field: T | TypedField[T],
+        **options: t.Unpack[SelectKwargs],
+    ) -> list[T]:
+        """
+        See QueryBuilder.column_async!
+        """
+        raise NotImplementedError
+
     def paginate(self: t.Type[T_MetaInstance], limit: int, page: int = 1) -> "PaginatedRows[T_MetaInstance]":
         """
         See QueryBuilder.paginate!
         """
         return QueryBuilder(self).paginate(limit=limit, page=page)
 
+    async def paginate_async(
+        self: t.Type[T_MetaInstance], limit: int, page: int = 1
+    ) -> "PaginatedRows[T_MetaInstance]":
+        """
+        See QueryBuilder.paginate_async!
+        """
+        raise NotImplementedError
+
     def chunk(self: t.Type[T_MetaInstance], chunk_size: int) -> t.Generator["TypedRows[T_MetaInstance]", t.Any, None]:
         """
         See QueryBuilder.chunk!
         """
         return QueryBuilder(self).chunk(chunk_size)
+
+    async def chunk_async(
+        self: t.Type[T_MetaInstance], chunk_size: int
+    ) -> t.AsyncGenerator["TypedRows[T_MetaInstance]", None]:
+        """
+        See QueryBuilder.chunk_async!
+        """
+        raise NotImplementedError
+        yield  # pragma: no cover  # makes this an async generator for type-checking purposes
 
     def where(self: t.Type[T_MetaInstance], *a: t.Any, **kw: t.Any) -> "QueryBuilder[T_MetaInstance]":
         """
@@ -395,11 +479,23 @@ class TableMeta(type):
         """
         return QueryBuilder(self).count()
 
+    async def count_async(self: t.Type[T_MetaInstance]) -> int:
+        """
+        See QueryBuilder.count_async!
+        """
+        raise NotImplementedError
+
     def exists(self: t.Type[T_MetaInstance]) -> bool:
         """
         See QueryBuilder.exists!
         """
         return QueryBuilder(self).exists()
+
+    async def exists_async(self: t.Type[T_MetaInstance]) -> bool:
+        """
+        See QueryBuilder.exists_async!
+        """
+        raise NotImplementedError
 
     def first(self: t.Type[T_MetaInstance]) -> T_MetaInstance | None:
         """
@@ -407,11 +503,23 @@ class TableMeta(type):
         """
         return QueryBuilder(self).first()
 
+    async def first_async(self: t.Type[T_MetaInstance]) -> T_MetaInstance | None:
+        """
+        See QueryBuilder.first_async!
+        """
+        raise NotImplementedError
+
     def first_or_fail(self: t.Type[T_MetaInstance]) -> T_MetaInstance:
         """
         See QueryBuilder.first_or_fail!
         """
         return QueryBuilder(self).first_or_fail()
+
+    async def first_or_fail_async(self: t.Type[T_MetaInstance]) -> T_MetaInstance:
+        """
+        See QueryBuilder.first_or_fail_async!
+        """
+        raise NotImplementedError
 
     def join(
         self: t.Type[T_MetaInstance],
@@ -432,6 +540,12 @@ class TableMeta(type):
         """
         return QueryBuilder(self).collect(verbose=verbose)
 
+    async def collect_async(self: t.Type[T_MetaInstance], verbose: bool = False) -> "TypedRows[T_MetaInstance]":
+        """
+        See QueryBuilder.collect_async!
+        """
+        raise NotImplementedError
+
     def collect_into[T_Into: _TypedTable](
         self: t.Type[_TypedTable],
         into: t.Type[T_Into],
@@ -442,6 +556,17 @@ class TableMeta(type):
         See QueryBuilder.collect_into!
         """
         return QueryBuilder(self).collect_into(into=into, verbose=verbose, init=init)
+
+    async def collect_into_async[T_Into: _TypedTable](
+        self: t.Type[_TypedTable],
+        into: t.Type[T_Into],
+        verbose: bool = False,
+        init: t.Callable[[T_Into, Row], None] | None = None,
+    ) -> "TypedRows[T_Into]":
+        """
+        See QueryBuilder.collect_into_async!
+        """
+        raise NotImplementedError
 
     @property
     def ALL(cls) -> pydal.objects.SQLALL:
@@ -1294,6 +1419,13 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
         else:
             return None
 
+    @classmethod
+    async def update_async(cls: t.Type[T_MetaInstance], query: Query, **fields: t.Any) -> T_MetaInstance | None:
+        """
+        Async twin of `update()`. Thin wrapper: builds on `update_record_async()`.
+        """
+        raise NotImplementedError
+
     def _update(self: T_MetaInstance, **fields: t.Any) -> T_MetaInstance:
         require_permission(getattr(self, "_permissions", None), "update")
         row = self._ensure_matching_row()
@@ -1316,6 +1448,12 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
         """
         return self._update_record(**fields)
 
+    async def update_record_async(self: T_MetaInstance, **fields: t.Any) -> T_MetaInstance:
+        """
+        Async twin of `update_record()`.
+        """
+        raise NotImplementedError
+
     def _delete_record(self) -> int:
         """
         Actual logic in `pydal.helpers.classes.RecordDeleter`.
@@ -1337,6 +1475,12 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
         Will be replaced on instance creation!
         """
         return self._delete_record()
+
+    async def delete_record_async(self) -> int:
+        """
+        Async twin of `delete_record()`.
+        """
+        raise NotImplementedError
 
     # __del__ is also called on the end of a scope so don't remove records on every del!!
 
