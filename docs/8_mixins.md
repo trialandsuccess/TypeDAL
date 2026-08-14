@@ -23,6 +23,7 @@ class MyTable(TypedTable, TimestampsMixin):
     # Define your table fields here
     pass
 
+
 # Now, whenever you create or update a record in MyTable, the 'created_at' and 'updated_at' timestamps will be automatically managed.
 ```
 
@@ -43,6 +44,7 @@ from typedal.mixins import SlugMixin
 class MyTable(TypedTable, SlugMixin, slug_field="title"):
     title: str  # Assuming 'title' is a field in your table
     # Define other fields here
+
 
 # Now, whenever you insert a record into MyTable, the 'slug' field will be automatically generated based on the 'title' field.
 ```
@@ -101,6 +103,7 @@ from fastapi import FastAPI
 
 app = FastAPI()
 
+
 @app.get("/books/{book_id}")
 def get_book(book_id: int) -> Book:
     return Book.where(id=book_id).join("author").first()
@@ -154,9 +157,10 @@ class HasImageMixin(Mixin):
 
 # Now you can use HasImageMixin in your table definitions along with other mixins or base classes.
 
+
 class Article(TypedTable, TimestampsMixin, HasImageMixin):
     title: str
-    
+
     # this could also be a class method of Timestamps Mixin:
     @classmethod
     def recently_updated(cls, hours: int = 24) -> QueryBuilder[t.Self]:
@@ -164,16 +168,13 @@ class Article(TypedTable, TimestampsMixin, HasImageMixin):
         cutoff = dt.datetime.now() - dt.timedelta(hours=hours)
         return QueryBuilder(cls).where(cls.updated_at >= cutoff)
 
+
 # Retrieve a record and use the custom method
 article = Article(id=1)
 article.img()  # -> <img src=... />
 
 # Use the classmethod to get recently updated articles
-recent_articles = (
-    Article.recently_updated(hours=12)
-    .where(published=True)
-    .collect()
-)
+recent_articles = Article.recently_updated(hours=12).where(published=True).collect()
 ```
 
 > **Note:** The `img()` example uses py4web utilities (URL, IMG), but the mixin itself works identically in any setup.

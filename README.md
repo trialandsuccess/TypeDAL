@@ -47,6 +47,7 @@ db = TypeDAL("sqlite:memory")
 # db = TypeDAL("mysql://user:password@localhost:3306/mydb")
 # ...
 
+
 @db.define()
 class User(TypedTable):
     name: str
@@ -143,11 +144,12 @@ db = TypeDAL(...)
 <td>
 
 ```python
-db.define_table("table_name",
-                Field("fieldname", "string", required=True),
-                Field("otherfield", "float"),
-                Field("yet_another", "text", default="Something")
-                )
+db.define_table(
+    "table_name",
+    Field("fieldname", "string", required=True),
+    Field("otherfield", "float"),
+    Field("yet_another", "text", default="Something"),
+)
 ```
 
 </td>
@@ -236,7 +238,6 @@ all_rows = TableName.collect()  # or .all()
 rows = TableName.select(Tablename.id).where(TableName.id > 5).where(TableName.id < 50).collect()
 # one:
 row = TableName(id=1)  # or .where(...).first()
-
 ```
 
 <td>
@@ -301,11 +302,11 @@ These helpers are useful for scenarios where direct access to the PyDAL objects 
 An example of this is when you need to do a `db.commit()` but you can't import `db` directly:
 
 ```python
-from typedal.helpers import get_db #, get_table, get_field
+from typedal.helpers import get_db  # , get_table, get_field
 
 MyTable.insert(...)
 db = get_db(MyTable)
-db.commit() # this is usually done automatically but sometimes you want to manually commit.
+db.commit()  # this is usually done automatically but sometimes you want to manually commit.
 ```
 
 ## Caveats

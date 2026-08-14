@@ -6,7 +6,7 @@ The syntax for creating a table is very different, but built on the same princip
 from pydal import Field
 
 # pydal:
-db.define_table('my_table', Field('my_field'))
+db.define_table("my_table", Field("my_field"))
 ```
 
 ```python
@@ -121,8 +121,7 @@ from typedal import TypedTable
 from typedal.types import OpRow, Reference, Set
 
 
-class MyTable(TypedTable):
-    ...
+class MyTable(TypedTable): ...
 
 
 def my_before_insert(row: MyTable):

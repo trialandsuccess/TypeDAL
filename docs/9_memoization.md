@@ -18,8 +18,9 @@ def process_articles(articles: TypedRows[Article]) -> dict:
     # dummy example, normally you'd use .join() of course
     for article in articles:
         comments = Comment.where(article=article).collect()
-        result[article.id] = comments  
+        result[article.id] = comments
     return result
+
 
 articles = Article.where(published=True).collect()
 
@@ -52,6 +53,7 @@ When any tracked row is updated, inserted, or deleted, the cached result is inva
 ```python
 def something_slow():
     return list(User.join())
+
 
 result, status = db.memoize(something_slow)
 assert status == "fresh"
@@ -114,8 +116,10 @@ TypeDAL provides `before_collect`/`before_execute` and `after_collect`/`after_ex
 def print_query(qb: QueryBuilder):
     print("going to run", qb.to_sql())
 
+
 def print_duration(_qb: QueryBuilder, rows, _raw):
     print("took", rows.metadata["select_duration"])
+
 
 db.before_collect.append(print_query)
 db.after_collect.append(print_duration)
@@ -143,8 +147,7 @@ If you need to disable cache invalidation hooks for a specific table:
 
 ```python
 @db.define(cache_dependency=False)
-class SpecialTable(TypedTable):
-    ...
+class SpecialTable(TypedTable): ...
 ```
 
 **Warning:** Disabling this may break caching functionality for queries involving this table.

@@ -20,6 +20,7 @@ pip install typedal[py4web]
 
 ```python
 from typedal import TypeDAL
+
 # or, if in py4web:
 from typedal.for_py4web import TypeDAL
 
@@ -55,15 +56,11 @@ Or use the `placeholders` argument with positional or named parameters:
 
 ```python
 # Positional
-rows = db.executesql(
-    "SELECT * FROM some_table WHERE name = %s AND age > %s",
-    placeholders=[name, 18]
-)
+rows = db.executesql("SELECT * FROM some_table WHERE name = %s AND age > %s", placeholders=[name, 18])
 
 # Named
 rows = db.executesql(
-    "SELECT * FROM some_table WHERE name = %(name)s AND age > %(age)s",
-    placeholders={"name": name, "age": 18}
+    "SELECT * FROM some_table WHERE name = %(name)s AND age > %(age)s", placeholders={"name": name, "age": 18}
 )
 ```
 
@@ -73,14 +70,11 @@ By default, `executesql()` returns rows as tuples. To map results to specific fi
 Field/TypedField objects) or `colnames` (takes column name strings):
 
 ```python
-rows = db.executesql(
-    "SELECT id, name FROM some_table",
-    colnames=["id", "name"]
-)
+rows = db.executesql("SELECT id, name FROM some_table", colnames=["id", "name"])
 
 rows = db.executesql(
     "SELECT id, name FROM some_table",
-    fields=[some_table.id, some_table.name]  # Requires table definition
+    fields=[some_table.id, some_table.name],  # Requires table definition
 )
 ```
 

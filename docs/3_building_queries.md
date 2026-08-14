@@ -84,7 +84,7 @@ Here you can enter any number of fields as arguments: database columns by name (
 other (e.g. Table.ALL), or Expression objects.
 
 ```python
-Person.select('id', Person.name, Person.ALL)  # defaults to Person.ALL if select is omitted.
+Person.select("id", Person.name, Person.ALL)  # defaults to Person.ALL if select is omitted.
 ```
 
 You can also specify extra options as keyword arguments. Supported options are: `orderby`, `groupby`, `limitby`,
@@ -131,10 +131,7 @@ Person.where(expr).select()
 
 # Named arguments
 expr = db.sql_expression(
-    "EXTRACT(year FROM %(date_col)s) = %(year)s",
-    date_col="created_at",
-    year=2023,
-    output_type="boolean"
+    "EXTRACT(year FROM %(date_col)s) = %(year)s", date_col="created_at", year=2023, output_type="boolean"
 )
 Person.where(expr).select()
 ```
@@ -152,7 +149,7 @@ By default, the `method` defined in the relationship is used.
 This can be overwritten with the `method` keyword argument (left or inner)
 
 ```python
-Person.join('articles', method='inner')  # will only yield persons that have related articles
+Person.join("articles", method="inner")  # will only yield persons that have related articles
 ```
 
 For more details about relationships and joins, see [4. Relationships](./4_relationships.md).
@@ -277,14 +274,17 @@ class User(TypedTable):
     password_hash: str
     is_active: bool
 
+
 class PublicUser(TypedTable):
     id: int
     email: str
     is_active: bool
     profile_url: str | None = None
 
+
 def enrich_profile_url(row: PublicUser, _raw):
     row.profile_url = f"/users/{row.id}"
+
 
 rows = User.where(is_active=True).collect_into(
     PublicUser,
