@@ -37,8 +37,8 @@ class TypedDictRegistry(Singleton):
     @property
     def world(self) -> "typtyp.World | None":
         """Return the shared typtyp world instance, if typtyp is installed."""
-        if typtyp is None:
-            return None
+        # no `typtyp is None` check: __init__ already stores None in that case, so re-testing
+        # the import here would only duplicate it - and leave a branch nothing can reach.
         return self._world
 
     def get(self, model: type) -> type[dict[str, t.Any]] | None:
