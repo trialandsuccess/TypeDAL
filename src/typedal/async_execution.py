@@ -239,10 +239,94 @@ async def open_sqlite_async_connection(db: "TypeDAL") -> AsyncConnectionPool:
     return SqliteAsyncConnection(conn)
 
 
-ASYNC_POOL_FACTORIES: dict[str, t.Callable[["TypeDAL"], t.Awaitable[AsyncConnectionPool]]] = {
+type PoolFactory = t.Callable[["TypeDAL"], t.Awaitable[AsyncConnectionPool]]
+
+ASYNC_POOL_FACTORIES: dict[str, PoolFactory] = {
     "postgres": open_postgres_async_pool,
     "sqlite": open_sqlite_async_connection,
 }
+
+
+class AsyncPoolManager:
+    """
+    Owns the lazily-opened async connection for one `TypeDAL`: picking the factory for its
+    backend, keeping creation single, and closing/reopening.
+
+    Its own object rather than three attributes and two methods on `TypeDAL`, because the
+    lifecycle has behaviour worth exercising on its own - "opened exactly once even when two
+    coroutines race for the first use", "an unknown backend fails loudly" - and `factories` as
+    a constructor argument makes that reachable directly, instead of only through a patched
+    module global.
+    """
+
+    def __init__(self, db: "TypeDAL", factories: dict[str, PoolFactory] | None = None) -> None:
+        self._db = db
+        self._factories = ASYNC_POOL_FACTORIES if factories is None else factories
+        self._pool: AsyncConnectionPool | None = None
+        self._lock: asyncio.Lock | None = None
+        self._lock_loop: asyncio.AbstractEventLoop | None = None
+
+    @property
+    def pool(self) -> AsyncConnectionPool | None:
+        """
+        The connection if one is currently open, else None. Never opens one - use `get()`.
+        """
+        return self._pool
+
+    def _get_lock(self) -> asyncio.Lock:
+        """
+        The lock guarding creation, bound to the loop currently running.
+
+        Not created once in `__init__`: an `asyncio.Lock` binds to the loop it is first used on
+        and refuses use from another one, while a `TypeDAL` can outlive a loop (every
+        pytest-asyncio test gets a fresh one, and `close()` explicitly supports reopening).
+        Re-created when the loop changed - safe to decide here because this method never
+        awaits, so two coroutines on one loop cannot interleave inside it and always come away
+        with the same lock.
+        """
+        loop = asyncio.get_running_loop()
+        if self._lock is None or self._lock_loop is not loop:
+            self._lock = asyncio.Lock()
+            self._lock_loop = loop
+
+        return self._lock
+
+    async def get(self) -> AsyncConnectionPool:
+        """
+        The async connection for this db, opening it on first use.
+
+        Creation happens under the lock with the check repeated inside it: the factories await,
+        so a plain `if self._pool is None: self._pool = await factory(...)` lets two coroutines
+        whose first use overlaps both pass the check and both open one. Only one could be
+        stored, and the other would be dropped without `close()` - a leaked pool, or on SQLite
+        a leaked connection and its background thread.
+        """
+        if self._pool is not None:
+            # fast path: already open, no need to take the lock at all
+            return self._pool
+
+        async with self._get_lock():
+            if self._pool is None:
+                dbengine = self._db._adapter.dbengine
+                try:
+                    factory = self._factories[dbengine]
+                except KeyError:
+                    raise NotImplementedError(
+                        f"The async execution path is only implemented for "
+                        f"{', '.join(self._factories)}, not {dbengine!r}.",
+                    ) from None
+
+                self._pool = await factory(self._db)
+
+        return self._pool
+
+    async def close(self) -> None:
+        """
+        Close the connection if one was ever opened, leaving this manager reusable.
+        """
+        if self._pool is not None:
+            await self._pool.close()
+            self._pool = None
 
 
 async def postgres_lastrowid_async(

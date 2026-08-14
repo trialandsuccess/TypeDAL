@@ -5,7 +5,6 @@ Core functionality of TypeDAL.
 from __future__ import annotations
 
 # noinspection PyUnusedImports
-import asyncio
 import collections
 import datetime as dt
 import sys
@@ -15,7 +14,7 @@ from pathlib import Path
 
 import pydal
 
-from .async_execution import ASYNC_POOL_FACTORIES, DELETE_STRATEGIES, LASTROWID_STRATEGIES, AsyncConnectionPool
+from .async_execution import DELETE_STRATEGIES, LASTROWID_STRATEGIES, AsyncConnectionPool, AsyncPoolManager
 from .config import LazyPolicy, TypeDALConfig, load_config
 from .helpers import (
     SYSTEM_SUPPORTS_TEMPLATES,
@@ -295,9 +294,7 @@ class TypeDAL(_TypeDALBase):
         self._after_collect = []
         self._before_execute = []
         self._after_execute = []
-        self._async_pool: AsyncConnectionPool | None = None  # lazily-created; see _get_async_pool
-        self._async_pool_lock: asyncio.Lock | None = None  # guards that creation; see _get_async_lock
-        self._async_pool_lock_loop: asyncio.AbstractEventLoop | None = None
+        self._async_pools = AsyncPoolManager(self)  # lazily-opened async connection; see _get_async_pool
 
         if config.folder:
             Path(config.folder).mkdir(exist_ok=True)
@@ -591,58 +588,18 @@ class TypeDAL(_TypeDALBase):
     # Async execution path.
     # ------------------------------------------------------------------
 
-    def _get_async_pool_lock(self) -> asyncio.Lock:
-        """
-        The lock guarding lazy pool creation, bound to the loop currently running.
-
-        Not created once in `__init__`: an `asyncio.Lock` binds to the loop it is first used on
-        and refuses use from another one, while a `TypeDAL` instance can outlive a loop (every
-        pytest-asyncio test gets a fresh one, and `close_async()` explicitly supports reopening).
-        Re-created when the loop changed - which is safe to decide here because this method
-        never awaits, so two coroutines on the same loop cannot interleave inside it and always
-        come away with the same lock object.
-        """
-        loop = asyncio.get_running_loop()
-        if self._async_pool_lock is None or self._async_pool_lock_loop is not loop:
-            self._async_pool_lock = asyncio.Lock()
-            self._async_pool_lock_loop = loop
-
-        return self._async_pool_lock
-
     async def _get_async_pool(self) -> AsyncConnectionPool:
         """
-        Lazily create the async connection (a real pool for Postgres, a single wrapped
-        connection for SQLite) for this instance, via `ASYNC_POOL_FACTORIES`.
+        The async connection (a real pool for Postgres, a single wrapped connection for SQLite)
+        for this instance, opened on first use.
 
-        One per `TypeDAL` instance, opened on first use. Deliberately a separate connection
-        from pydal's own thread-local sync connection: they are two independent transactions,
-        so a write on one is invisible to a read on the other until committed, and
-        commit()/rollback() on one says nothing about the other.
+        Deliberately a separate connection from pydal's own thread-local sync connection: they
+        are two independent transactions, so a write on one is invisible to a read on the other
+        until committed, and commit()/rollback() on one says nothing about the other.
 
-        Creation is done under a lock with the check repeated inside it: the factories await,
-        so a plain `if self._async_pool is None: ... = await factory(self)` lets two coroutines
-        whose first use overlaps both pass the check and both open one. Only one could be
-        stored, and the other would be dropped without `close()` - a leaked pool, or on SQLite
-        a leaked connection and its background thread.
+        The lifecycle itself lives in `AsyncPoolManager` (async_execution.py).
         """
-        if self._async_pool is not None:
-            # fast path: already open, no need to take the lock at all
-            return self._async_pool
-
-        async with self._get_async_pool_lock():
-            if self._async_pool is None:
-                dbengine = self._adapter.dbengine
-                try:
-                    factory = ASYNC_POOL_FACTORIES[dbengine]
-                except KeyError:
-                    raise NotImplementedError(
-                        f"The async execution path is only implemented for "
-                        f"{', '.join(ASYNC_POOL_FACTORIES)}, not {dbengine!r}.",
-                    ) from None
-
-                self._async_pool = await factory(self)
-
-        return self._async_pool
+        return await self._async_pools.get()
 
     async def select_async(
         self,
@@ -923,9 +880,7 @@ class TypeDAL(_TypeDALBase):
         """
         Close the async connection pool, if one was ever opened.
         """
-        if self._async_pool is not None:
-            await self._async_pool.close()
-            self._async_pool = None
+        await self._async_pools.close()
 
     def sql_expression(
         self,

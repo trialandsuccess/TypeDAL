@@ -24,7 +24,12 @@ import pytest
 import pytest_asyncio
 
 from src.typedal import TypeDAL, TypedField, TypedTable
-from src.typedal.async_execution import ASYNC_POOL_FACTORIES
+from src.typedal.async_execution import (
+    ASYNC_POOL_FACTORIES,
+    AsyncPoolManager,
+    open_sqlite_async_connection,
+    postgres_lastrowid_async,
+)
 from src.typedal.fields import DecimalField, JSONField
 from src.typedal.query_builder import QueryBuilder
 
@@ -711,29 +716,20 @@ async def test_insert_async_honors_on_insert_error_hook(db_async: TypeDAL):
 
 
 @pytest.mark.asyncio
-async def test_get_async_pool_is_opened_once_under_concurrency(
-    db_async: TypeDAL,
-    monkeypatch: pytest.MonkeyPatch,
-):
+async def test_async_pool_manager_opens_once_under_concurrency(db_async: TypeDAL):
     """
-    `_get_async_pool()` checks `self._async_pool is None`, awaits the factory, then assigns
-    (core.py:602-612). Two coroutines whose first DB use overlaps both pass the check and both
-    open one: a second psycopg pool, or on SQLite a second aiosqlite connection. Only one is
-    stored; the other is dropped without `close()`, leaking the connection (and, for aiosqlite,
-    its background thread).
+    Creating the pool is check-then-assign around an `await`, so two coroutines whose first use
+    overlaps can both pass the check and both open one: a second psycopg pool, or on SQLite a
+    second aiosqlite connection. Only one can be stored; the other would be dropped without
+    `close()`, leaking the connection (and, for aiosqlite, its background thread).
 
-    The stand-in factory suspends before doing the real work. Both real factories contain
-    awaits, but *whether* a given one actually yields to the loop is a driver detail rather
-    than a guarantee - `aiosqlite.connect()` does, `psycopg_pool`'s `open()` currently does
-    not - and this is a test of `_get_async_pool()`'s check-then-assign, not of which drivers
-    happen to make it observable today.
+    Driven through a manager of its own with a counting `factories` entry - a constructor
+    argument, so nothing global is swapped out. The stand-in suspends before doing the real
+    work: both real factories contain awaits, but whether a given one actually yields is a
+    driver detail (`aiosqlite.connect()` does, `psycopg_pool.open()` currently does not) and
+    this is a test of the manager, not of which drivers make the race observable today.
     """
-    db = db_async
-
-    # start from "never opened", whatever earlier tests on this session-scoped DAL did:
-    await db.close_async()
-
-    dbengine = db._adapter.dbengine
+    dbengine = db_async._adapter.dbengine
     real_factory = ASYNC_POOL_FACTORIES[dbengine]
     opened = []
 
@@ -743,17 +739,20 @@ async def test_get_async_pool_is_opened_once_under_concurrency(
         opened.append(pool)
         return pool
 
-
+    manager = AsyncPoolManager(db_async, factories={dbengine: counting_factory})
     try:
-        first, second = await asyncio.gather(db._get_async_pool(), db._get_async_pool())
+        first, second = await asyncio.gather(manager.get(), manager.get())
 
         assert first is second, "concurrent first use handed out two different pools"
         assert len(opened) == 1, f"opened {len(opened)}, so {len(opened) - 1} was leaked unclosed"
     finally:
-        # don't let this test's own leak poison the rest of the session:
+        kept = manager.pool
+        await manager.close()
+        # whatever a leak left behind is no longer the manager's to close:
         for pool in opened:
-            if pool is not db._async_pool:
-                await pool.close()
+            if pool is not kept:
+                with contextlib.suppress(Exception):
+                    await pool.close()
 
 
 @pytest.mark.asyncio
@@ -802,27 +801,22 @@ async def test_update_record_async_ignores_common_filters_like_sync(db_async: Ty
 
 
 @pytest.mark.asyncio
-async def test_insert_async_lastrowid_does_not_read_shared_last_insert(
-    dal_psql: TypeDAL,
-    monkeypatch: pytest.MonkeyPatch,
-):
+async def test_postgres_lastrowid_async_uses_only_the_value_it_was_given(dal_psql: TypeDAL):
     """
-    `postgres_lastrowid_async()` decides whether the INSERT it just ran carried a RETURNING
-    clause by reading `adapter._last_insert` (async_execution.py:176) - a property over
-    `THREAD_LOCAL._pydal_last_insert_` (pydal adapters/postgres.py:128-133). Coroutines share
-    one thread, so that thread-local provides no isolation whatsoever here: for the async path
-    it is effectively a global.
+    `postgres_lastrowid_async()` must decide whether the statement it just ran carried a
+    RETURNING clause from its `last_insert` argument alone - never by reading
+    `adapter._last_insert` back. That attribute is a property over
+    `THREAD_LOCAL._pydal_last_insert_` (pydal adapters/postgres.py:128-133), and coroutines
+    share one thread, so for the async path it is effectively a global: any other insert
+    running between `_insert()` and here overwrites it.
 
-    `insert_async()` sets it via `adapter._insert()` (core.py:734) and reads it several awaits
-    later (core.py:745); any other insert landing in that window overwrites it. The window is
-    made deterministic here rather than raced: the statement built is a `DEFAULT VALUES` insert
-    (no fields -> no RETURNING, pydal postgres.py:149-162), while a concurrent normal insert
-    leaves the flag truthy - so lastrowid tries to `fetchone()` a result that does not exist.
+    Proven by executing a `DEFAULT VALUES` insert - no fields, therefore no RETURNING
+    (postgres.py:149-162) - while the thread-local says the opposite. Reading the attribute
+    would take the `fetchone()` branch and raise on a statement that produced no rows.
 
-    Takes the Postgres fixture directly instead of the parametrized `db_async`: SQLite has
-    no equivalent flag at all - `sqlite_lastrowid_async` ignores `last_insert` and returns
-    `cursor.lastrowid` - so a SQLite run would race against something nothing reads and
-    pass for reasons unrelated to the defect.
+    Takes the Postgres fixture directly instead of the parametrized `db_async`: SQLite has no
+    equivalent flag - `sqlite_lastrowid_async` ignores `last_insert` entirely and returns
+    `cursor.lastrowid` - so there would be nothing for a SQLite run to assert.
     """
     async with _postgres_db(dal_psql) as db:
 
@@ -832,19 +826,21 @@ async def test_insert_async_lastrowid_does_not_read_shared_last_insert(
 
         table = AsyncThingLastInsert._ensure_table_defined()
         adapter = db._adapter
-        real_get_pool = db._get_async_pool
 
-        async def racing_get_pool():
-            pool = await real_get_pool()
-            # stand-in for a concurrent insert_async() finishing its own adapter._insert():
-            adapter._last_insert = (table._id, 1)
-            return pool
+        sql = adapter._insert(table, [])
+        captured = adapter._last_insert  # what *this* statement produced: None
+        assert captured is None
 
+        # stand-in for a concurrent insert_async() landing between the build and the read:
+        adapter._last_insert = (table._id, 1)
 
-        # no fields -> INSERT INTO ... DEFAULT VALUES, which has no RETURNING clause
-        result = await db.insert_async(table, [])
+        pool = await db._get_async_pool()
+        async with pool.connection() as conn, conn.cursor() as cur:
+            await cur.execute(sql)
+            row_id = await postgres_lastrowid_async(adapter, table, cur, captured)
 
-        assert int(result) > 0
+        assert isinstance(row_id, int)
+        assert row_id > 0
 
 
 @pytest.mark.asyncio
@@ -995,17 +991,18 @@ async def test_update_async_honors_on_update_error_hook(db_async: TypeDAL):
 
 
 @pytest.mark.asyncio
-async def test_get_async_pool_rejects_unsupported_backend(db_async: TypeDAL, monkeypatch: pytest.MonkeyPatch):
+async def test_async_pool_manager_rejects_unsupported_backend(db_async: TypeDAL):
     """
-    A dbengine with no entry in `ASYNC_POOL_FACTORIES` must fail loudly and name what is
-    supported, rather than KeyError-ing out of `_get_async_pool()`.
+    A dbengine with no registered factory must fail loudly and name what *is* supported, rather
+    than KeyError-ing out. Expressed by handing the manager a registry that does not cover this
+    backend - again a constructor argument, not a patched global or a faked adapter.
     """
-    db = db_async
-    await db.close_async()
+    manager = AsyncPoolManager(db_async, factories={"nosuchengine": open_sqlite_async_connection})
 
+    with pytest.raises(NotImplementedError, match="only implemented for nosuchengine"):
+        await manager.get()
 
-    with pytest.raises(NotImplementedError, match="only implemented for"):
-        await db._get_async_pool()
+    assert manager.pool is None
 
 
 @pytest.mark.asyncio
