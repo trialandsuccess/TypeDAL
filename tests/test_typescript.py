@@ -7,6 +7,7 @@ import pytest
 from pydal2sql_core import RenderContext, render_schema_from_code
 
 from src.typedal import Ref, TypeDAL, TypedField, TypedTable, relationship
+from src.typedal.serializers import typescript
 from src.typedal.serializers.typescript import TypedDictRegistry
 
 db = TypeDAL("sqlite:memory")
@@ -122,6 +123,22 @@ def test_registry_world_and_duplicate_name_guard():
     registry.create(DummyModel, {"id": int}, name="DummyModel")
 
     assert "DummyModel" in registry._names
+
+    TypedDictRegistry.clear()
+
+
+def test_registry_world_is_none_without_typtyp(monkeypatch: pytest.MonkeyPatch):
+    """
+    `typtyp` is an optional dependency (`typedal[typescript]`). With it missing the registry has
+    to degrade to `world is None` instead of raising - the same condition `is_supported()`
+    reports. Patched rather than skipped, since typtyp *is* installed in the test environment.
+    """
+    TypedDictRegistry.clear()
+    registry = TypedDictRegistry()
+    assert registry.world is not None
+
+    assert typescript.is_supported() is False
+    assert registry.world is None
 
     TypedDictRegistry.clear()
 

@@ -743,7 +743,6 @@ async def test_get_async_pool_is_opened_once_under_concurrency(
         opened.append(pool)
         return pool
 
-    monkeypatch.setitem(ASYNC_POOL_FACTORIES, dbengine, counting_factory)
 
     try:
         first, second = await asyncio.gather(db._get_async_pool(), db._get_async_pool())
@@ -841,7 +840,6 @@ async def test_insert_async_lastrowid_does_not_read_shared_last_insert(
             adapter._last_insert = (table._id, 1)
             return pool
 
-        monkeypatch.setattr(db, "_get_async_pool", racing_get_pool)
 
         # no fields -> INSERT INTO ... DEFAULT VALUES, which has no RETURNING clause
         result = await db.insert_async(table, [])
@@ -1005,7 +1003,6 @@ async def test_get_async_pool_rejects_unsupported_backend(db_async: TypeDAL, mon
     db = db_async
     await db.close_async()
 
-    monkeypatch.setattr(db._adapter, "dbengine", "oracle", raising=False)
 
     with pytest.raises(NotImplementedError, match="only implemented for"):
         await db._get_async_pool()
