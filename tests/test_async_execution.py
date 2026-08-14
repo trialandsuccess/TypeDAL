@@ -230,6 +230,392 @@ async def test_executesql_async_matches_sync_executesql(db_async: TypeDAL):
 
 
 @pytest.mark.asyncio
+async def test_collect_async_raises_on_relationships(db_async: TypeDAL):
+    """
+    Deliberate, documented limitation, not a forgotten stub: collect_async() with
+    relationships/joins raises, because _collect_with_relationships() would need further
+    synchronous sub-queries reimplemented async first. This locks that behavior in as tested.
+    """
+    db = db_async
+
+    @db.define()
+    class AsyncThingRelOther(TypedTable):
+        name: TypedField[str]
+
+    @db.define()
+    class AsyncThingRelMain(TypedTable):
+        name: TypedField[str]
+        other: AsyncThingRelOther
+
+    other_id = AsyncThingRelOther.insert(name="parent")
+    AsyncThingRelMain.insert(name="child", other=other_id)
+    db.commit()
+
+    with pytest.raises(NotImplementedError):
+        await AsyncThingRelMain.join("other").collect_async()
+
+
+@pytest.mark.asyncio
+async def test_all_async_matches_sync_all(db_async: TypeDAL):
+    """all_async must return the same rows as the sync all()."""
+    db = db_async
+
+    @db.define()
+    class AsyncThingAll(TypedTable):
+        qty: TypedField[int]
+
+    AsyncThingAll.insert(qty=1)
+    AsyncThingAll.insert(qty=2)
+    db.commit()
+
+    sync_rows = AsyncThingAll.all()
+    async_rows = await AsyncThingAll.all_async()
+
+    assert len(async_rows) == len(sync_rows) == 2
+
+
+@pytest.mark.asyncio
+async def test_exists_async_matches_sync_exists(db_async: TypeDAL):
+    """exists_async (QueryBuilder and the TypedTable shortcut) must match the sync exists()."""
+    db = db_async
+
+    @db.define()
+    class AsyncThingExists(TypedTable):
+        qty: TypedField[int]
+
+    assert not await AsyncThingExists.where(AsyncThingExists.qty > 0).exists_async()
+    assert not await AsyncThingExists.exists_async()
+
+    AsyncThingExists.insert(qty=1)
+    db.commit()
+
+    assert AsyncThingExists.where(AsyncThingExists.qty > 0).exists() is True
+    assert await AsyncThingExists.where(AsyncThingExists.qty > 0).exists_async() is True
+    assert await AsyncThingExists.exists_async() is True
+
+
+@pytest.mark.asyncio
+async def test_first_async_and_first_or_fail_async_match_sync(db_async: TypeDAL):
+    """first_async/first_or_fail_async (QueryBuilder and TypedTable shortcuts) must match sync."""
+    db = db_async
+
+    @db.define()
+    class AsyncThingFirst(TypedTable):
+        qty: TypedField[int]
+
+    assert await AsyncThingFirst.where(AsyncThingFirst.qty > 0).first_async() is None
+    with pytest.raises(ValueError):
+        await AsyncThingFirst.where(AsyncThingFirst.qty > 0).first_or_fail_async()
+
+    AsyncThingFirst.insert(qty=5)
+    db.commit()
+
+    sync_row = AsyncThingFirst.where(AsyncThingFirst.qty > 0).first()
+    async_row = await AsyncThingFirst.where(AsyncThingFirst.qty > 0).first_async()
+    assert async_row is not None and sync_row is not None
+    assert async_row.qty == sync_row.qty == 5
+
+    async_row_2 = await AsyncThingFirst.where(AsyncThingFirst.qty > 0).first_or_fail_async()
+    assert async_row_2.qty == 5
+
+    # TypedTable-level shortcuts (no explicit .where(...)):
+    async_row_3 = await AsyncThingFirst.first_async()
+    assert async_row_3 is not None
+    assert async_row_3.qty == 5
+    async_row_4 = await AsyncThingFirst.first_or_fail_async()
+    assert async_row_4.qty == 5
+
+
+@pytest.mark.asyncio
+async def test_paginate_async_matches_sync_paginate(db_async: TypeDAL):
+    """paginate_async (QueryBuilder and the TypedTable shortcut) must match sync paginate()."""
+    db = db_async
+
+    @db.define()
+    class AsyncThingPaginate(TypedTable):
+        qty: TypedField[int]
+
+    for i in range(5):
+        AsyncThingPaginate.insert(qty=i)
+    db.commit()
+
+    sync_page = AsyncThingPaginate.where(AsyncThingPaginate.qty >= 0).paginate(limit=2, page=2)
+    async_page = await AsyncThingPaginate.where(AsyncThingPaginate.qty >= 0).paginate_async(limit=2, page=2)
+
+    assert len(async_page) == len(sync_page) == 2
+    assert async_page.pagination["current_page"] == sync_page.pagination["current_page"] == 2
+    assert async_page.pagination["rows"] == sync_page.pagination["rows"] == 5
+
+    async_page_2 = await AsyncThingPaginate.paginate_async(limit=2, page=1)
+    assert len(async_page_2) == 2
+
+
+@pytest.mark.asyncio
+async def test_chunk_async_matches_sync_chunk(db_async: TypeDAL):
+    """chunk_async (QueryBuilder and the TypedTable shortcut) must yield the same chunks as sync chunk()."""
+    db = db_async
+
+    @db.define()
+    class AsyncThingChunk(TypedTable):
+        qty: TypedField[int]
+
+    for i in range(5):
+        AsyncThingChunk.insert(qty=i)
+    db.commit()
+
+    sync_chunks = [len(chunk) for chunk in AsyncThingChunk.where(AsyncThingChunk.qty >= 0).chunk(2)]
+
+    async_chunks = []
+    async for chunk in AsyncThingChunk.where(AsyncThingChunk.qty >= 0).chunk_async(2):
+        async_chunks.append(len(chunk))
+
+    assert async_chunks == sync_chunks == [2, 2, 1]
+
+    async_chunks_2 = [len(chunk) async for chunk in AsyncThingChunk.chunk_async(2)]
+    assert async_chunks_2 == [2, 2, 1]
+
+
+@pytest.mark.asyncio
+async def test_column_async_matches_sync_column(db_async: TypeDAL):
+    """column_async (QueryBuilder and the TypedTable shortcut) must match sync column()."""
+    db = db_async
+
+    @db.define()
+    class AsyncThingColumn(TypedTable):
+        qty: TypedField[int]
+
+    AsyncThingColumn.insert(qty=1)
+    AsyncThingColumn.insert(qty=2)
+    db.commit()
+
+    sync_values = AsyncThingColumn.where(AsyncThingColumn.qty > 0).column(AsyncThingColumn.qty)
+    async_values = await AsyncThingColumn.where(AsyncThingColumn.qty > 0).column_async(AsyncThingColumn.qty)
+
+    assert sorted(async_values) == sorted(sync_values) == [1, 2]
+
+    async_values_2 = await AsyncThingColumn.column_async(AsyncThingColumn.qty)
+    assert sorted(async_values_2) == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_collect_into_async_matches_sync_collect_into(db_async: TypeDAL):
+    """collect_into_async (QueryBuilder and the TypedTable shortcut) must match sync collect_into()."""
+    db = db_async
+
+    @db.define()
+    class AsyncThingIntoSource(TypedTable):
+        name: TypedField[str]
+        qty: TypedField[int]
+
+    # collect_into reshapes rows from the SAME table into a different Python representation -
+    # it is not for copying between two distinct tables. These stay undefined (no @db.define()):
+    # _validate_collect_into_model binds each one to the source's table on first use.
+    class AsyncThingIntoTargetSync(TypedTable):
+        name: TypedField[str]
+        qty: TypedField[int]
+
+    class AsyncThingIntoTargetAsync(TypedTable):
+        name: TypedField[str]
+        qty: TypedField[int]
+
+    class AsyncThingIntoTargetAsyncBare(TypedTable):
+        name: TypedField[str]
+        qty: TypedField[int]
+
+    AsyncThingIntoSource.insert(name="widget", qty=1)
+    db.commit()
+
+    sync_rows = AsyncThingIntoSource.where(AsyncThingIntoSource.qty > 0).collect_into(AsyncThingIntoTargetSync)
+    async_rows = await AsyncThingIntoSource.where(AsyncThingIntoSource.qty > 0).collect_into_async(
+        AsyncThingIntoTargetAsync,
+    )
+
+    assert len(async_rows) == len(sync_rows) == 1
+    assert isinstance(async_rows.first(), AsyncThingIntoTargetAsync)
+
+    async_rows_2 = await AsyncThingIntoSource.collect_into_async(AsyncThingIntoTargetAsyncBare)
+    assert len(async_rows_2) == 1
+
+
+@pytest.mark.asyncio
+async def test_collect_or_fail_async_matches_sync_collect_or_fail(db_async: TypeDAL):
+    """collect_or_fail_async must match sync collect_or_fail(): rows when present, raise when empty."""
+    db = db_async
+
+    @db.define()
+    class AsyncThingCollectOrFail(TypedTable):
+        qty: TypedField[int]
+
+    with pytest.raises(ValueError):
+        await AsyncThingCollectOrFail.where(AsyncThingCollectOrFail.qty > 0).collect_or_fail_async()
+
+    AsyncThingCollectOrFail.insert(qty=1)
+    db.commit()
+
+    sync_rows = AsyncThingCollectOrFail.where(AsyncThingCollectOrFail.qty > 0).collect_or_fail()
+    async_rows = await AsyncThingCollectOrFail.where(AsyncThingCollectOrFail.qty > 0).collect_or_fail_async()
+
+    assert len(async_rows) == len(sync_rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_bulk_insert_async_matches_sync_bulk_insert(db_async: TypeDAL):
+    """bulk_insert_async must insert the same rows as the sync bulk_insert()."""
+    db = db_async
+
+    @db.define()
+    class AsyncThingBulkInsert(TypedTable):
+        qty: TypedField[int]
+
+    rows = await AsyncThingBulkInsert.bulk_insert_async([{"qty": 1}, {"qty": 2}, {"qty": 3}])
+    await db.commit_async()
+
+    assert len(rows) == 3
+    assert sorted(r.qty for r in rows) == [1, 2, 3]
+    assert AsyncThingBulkInsert.count() == 3
+
+
+@pytest.mark.asyncio
+async def test_update_or_insert_async_matches_sync(db_async: TypeDAL):
+    """update_or_insert_async must insert when no match exists, and update when one does."""
+    db = db_async
+
+    @db.define()
+    class AsyncThingUpsert(TypedTable):
+        name: TypedField[str]
+        qty: TypedField[int]
+
+    # insert branch: no matching row yet
+    inserted = await AsyncThingUpsert.update_or_insert_async({"name": "widget"}, name="widget", qty=1)
+    await db.commit_async()
+    assert inserted.qty == 1
+    assert AsyncThingUpsert.count() == 1
+
+    # update branch: matching row exists
+    updated = await AsyncThingUpsert.update_or_insert_async({"name": "widget"}, name="widget", qty=2)
+    await db.commit_async()
+    assert updated.qty == 2
+    assert AsyncThingUpsert.count() == 1
+
+
+@pytest.mark.asyncio
+async def test_validate_and_insert_async_matches_sync(db_async: TypeDAL):
+    """validate_and_insert_async must match sync validate_and_insert(): row on success, errors on failure."""
+    db = db_async
+
+    @db.define()
+    class AsyncThingValidateInsert(TypedTable):
+        qty: TypedField[int]
+
+    row, errors = await AsyncThingValidateInsert.validate_and_insert_async(qty=5)
+    await db.commit_async()
+    assert errors is None
+    assert row is not None
+    assert row.qty == 5
+
+    _row, errors = await AsyncThingValidateInsert.validate_and_insert_async(qty="not-a-number")
+    assert errors is not None
+
+
+@pytest.mark.asyncio
+async def test_validate_and_update_async_matches_sync(db_async: TypeDAL):
+    """validate_and_update_async must match sync validate_and_update(): row on success, errors on failure."""
+    db = db_async
+
+    @db.define()
+    class AsyncThingValidateUpdate(TypedTable):
+        qty: TypedField[int]
+
+    existing_id = AsyncThingValidateUpdate.insert(qty=1)
+    db.commit()
+
+    row, errors = await AsyncThingValidateUpdate.validate_and_update_async(
+        AsyncThingValidateUpdate.id == int(existing_id), qty=9,
+    )
+    await db.commit_async()
+    assert errors is None
+    assert row is not None
+    assert row.qty == 9
+
+    _row, errors = await AsyncThingValidateUpdate.validate_and_update_async(
+        AsyncThingValidateUpdate.id == int(existing_id), qty="not-a-number",
+    )
+    assert errors is not None
+
+
+@pytest.mark.asyncio
+async def test_validate_and_update_or_insert_async_matches_sync(db_async: TypeDAL):
+    """validate_and_update_or_insert_async must insert when no match exists, update when one does."""
+    db = db_async
+
+    @db.define()
+    class AsyncThingValidateUpsert(TypedTable):
+        name: TypedField[str]
+        qty: TypedField[int]
+
+    inserted, errors = await AsyncThingValidateUpsert.validate_and_update_or_insert_async(
+        AsyncThingValidateUpsert.name == "widget", name="widget", qty=1,
+    )
+    await db.commit_async()
+    assert errors is None
+    assert inserted.qty == 1
+    assert AsyncThingValidateUpsert.count() == 1
+
+    updated, errors = await AsyncThingValidateUpsert.validate_and_update_or_insert_async(
+        AsyncThingValidateUpsert.name == "widget", name="widget", qty=2,
+    )
+    await db.commit_async()
+    assert errors is None
+    assert updated.qty == 2
+    assert AsyncThingValidateUpsert.count() == 1
+
+
+@pytest.mark.asyncio
+async def test_classmethod_update_async_matches_sync(db_async: TypeDAL):
+    """The classmethod update_async(query, **fields) shortcut must match sync update()."""
+    db = db_async
+
+    @db.define()
+    class AsyncThingClsUpdate(TypedTable):
+        qty: TypedField[int]
+
+    existing_id = AsyncThingClsUpdate.insert(qty=1)
+    db.commit()
+
+    updated = await AsyncThingClsUpdate.update_async(AsyncThingClsUpdate.id == int(existing_id), qty=42)
+    await db.commit_async()
+
+    assert updated is not None
+    assert updated.qty == 42
+
+
+@pytest.mark.asyncio
+async def test_update_record_async_and_delete_record_async_match_sync(db_async: TypeDAL):
+    """Instance-level update_record_async/delete_record_async must match their sync twins."""
+    db = db_async
+
+    @db.define()
+    class AsyncThingRecord(TypedTable):
+        qty: TypedField[int]
+
+    row_id = AsyncThingRecord.insert(qty=1)
+    db.commit()
+
+    row = AsyncThingRecord.where(AsyncThingRecord.id == int(row_id)).first()
+    updated_row = await row.update_record_async(qty=7)
+    await db.commit_async()
+    assert updated_row.qty == 7
+
+    fresh = AsyncThingRecord.where(AsyncThingRecord.id == int(row_id)).first()
+    assert fresh.qty == 7
+
+    deleted_count = await fresh.delete_record_async()
+    await db.commit_async()
+    assert deleted_count == 1
+    assert AsyncThingRecord.count() == 0
+
+
+@pytest.mark.asyncio
 async def test_collect_async_does_not_block_event_loop(db_async: TypeDAL):
     """
     The actual point of building this: a query in flight must not stall other coroutines.
