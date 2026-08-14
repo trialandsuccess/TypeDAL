@@ -5,13 +5,13 @@ Core functionality of TypeDAL.
 from __future__ import annotations
 
 # noinspection PyUnusedImports
+import asyncio
 import collections
 import datetime as dt
 import sys
 import typing as t
 import warnings
 from pathlib import Path
-from typing import Optional
 
 import pydal
 
@@ -34,7 +34,7 @@ try:
     from annotationlib import ForwardRef
 except ImportError:  # pragma: no cover
     # python 3.13-
-    from typing import ForwardRef
+    from typing import ForwardRef  # special case, keep `from typing`
 
 if t.TYPE_CHECKING:
     from .fields import TypedField
@@ -101,7 +101,7 @@ def evaluate_forward_reference_312(fw_ref: ForwardRef, namespace: dict[str, type
     """
     return t.cast(
         type,
-        fw_ref._evaluate(
+        fw_ref._evaluate(  # ty: ignore[deprecated]
             localns=locals(),
             globalns=globals() | namespace,
             recursive_guard=frozenset(),
@@ -117,7 +117,7 @@ def evaluate_forward_reference_313(fw_ref: ForwardRef, namespace: dict[str, type
     """
     return t.cast(
         type,
-        fw_ref._evaluate(
+        fw_ref._evaluate(  # ty: ignore[deprecated]
             localns=locals(),
             globalns=globals() | namespace,
             recursive_guard=frozenset(),
@@ -165,7 +165,7 @@ def resolve_annotation_313(ftype: str, namespace: dict[str, type] | None = None)
 
     Variant for Python 3.13
     """
-    fw_ref: ForwardRef = t.get_args(t.Type[ftype])[0]
+    fw_ref: ForwardRef = t.get_args(t.Type[ftype])[0]  # ty: ignore[invalid-type-form]
     return evaluate_forward_reference(fw_ref, namespace=namespace)
 
 
@@ -240,34 +240,34 @@ class TypeDAL(_TypeDALBase):
 
     def __init__(
         self,
-        uri: Optional[str] = None,  # default from config or 'sqlite:memory'
-        pool_size: int = None,  # default 1 if sqlite else 3
-        folder: Optional[str | Path] = None,  # default 'databases' in config
+        uri: str | None = None,  # default from config or 'sqlite:memory'
+        pool_size: int | None = None,  # default 1 if sqlite else 3
+        folder: str | Path | None = None,  # default 'databases' in config
         db_codec: str = "UTF-8",
-        check_reserved: Optional[list[str]] = None,
-        migrate: Optional[bool] = None,  # default True by config
-        fake_migrate: Optional[bool] = None,  # default False by config
+        check_reserved: list[str] | None = None,
+        migrate: bool | None = None,  # default True by config
+        fake_migrate: bool | None = None,  # default False by config
         migrate_enabled: bool = True,
         fake_migrate_all: bool = False,
         decode_credentials: bool = False,
-        driver_args: Optional[AnyDict] = None,
-        adapter_args: Optional[AnyDict] = None,
+        driver_args: AnyDict | None = None,
+        adapter_args: AnyDict | None = None,
         attempts: int = 5,
         auto_import: bool = False,
         bigint_id: bool = False,
         debug: bool = False,
         lazy_tables: bool = False,
-        db_uid: Optional[str] = None,
-        after_connection: t.Callable[..., t.Any] = None,
-        tables: Optional[list[str]] = None,
+        db_uid: str | None = None,
+        after_connection: t.Callable[..., t.Any] | None = None,
+        tables: list[str] | None = None,
         ignore_field_case: bool = True,
         entity_quoting: bool = True,
-        table_hash: Optional[str] = None,
-        enable_typedal_caching: bool = None,
+        table_hash: str | None = None,
+        enable_typedal_caching: bool | None = None,
         use_pyproject: bool | str = True,
         use_env: bool | str = True,
-        connection: Optional[str] = None,
-        config: Optional[TypeDALConfig] = None,
+        connection: str | None = None,
+        config: TypeDALConfig | None = None,
         lazy_policy: LazyPolicy | None = None,
     ) -> None:
         """
@@ -296,6 +296,8 @@ class TypeDAL(_TypeDALBase):
         self._before_execute = []
         self._after_execute = []
         self._async_pool: AsyncConnectionPool | None = None  # lazily-created; see _get_async_pool
+        self._async_pool_lock: asyncio.Lock | None = None  # guards that creation; see _get_async_lock
+        self._async_pool_lock_loop: asyncio.AbstractEventLoop | None = None
 
         if config.folder:
             Path(config.folder).mkdir(exist_ok=True)
@@ -334,7 +336,7 @@ class TypeDAL(_TypeDALBase):
         """Close the database connection and unbind all defined TypedTable models."""
         adapter = self._adapter
         try:
-            super().close()
+            super().close()  # ty: ignore[unresolved-attribute]
         finally:
             for model in set(self._builder.class_map.values()):
                 model.unbind()
@@ -461,7 +463,7 @@ class TypeDAL(_TypeDALBase):
 
         return wrapper
 
-    def __call__(self, *_args: T_Query, **kwargs: t.Any) -> "TypedSet":
+    def __call__(self, *_args: T_Query, **kwargs: t.Any) -> "TypedSet":  # ty: ignore[invalid-method-override]
         """
         A db instance can be called directly to perform a query.
 
@@ -494,7 +496,7 @@ class TypeDAL(_TypeDALBase):
         Example:
             db['users'] -> user
         """
-        return t.cast(Table, super().__getitem__(str(key)))
+        return t.cast(Table, super().__getitem__(str(key)))  # ty: ignore[unresolved-attribute]
 
     def find_model(self, table_name: str) -> t.Type["TypedTable"] | None:
         """
@@ -541,7 +543,7 @@ class TypeDAL(_TypeDALBase):
         fields: t.Iterable[Field | TypedField[t.Any]] | None = None,
         colnames: t.Iterable[str] | None = None,
         as_ordered_dict: bool = False,
-    ) -> list[t.Any]:
+    ) -> list[t.Any] | None:
         """
         Executes a raw SQL statement or a TypeDAL template query.
 
@@ -574,7 +576,7 @@ class TypeDAL(_TypeDALBase):
         if SYSTEM_SUPPORTS_TEMPLATES and isinstance(query, Template):  # pragma: no cover
             query = sql_escape_template(self, query)
 
-        rows: list[t.Any] = super().executesql(
+        rows: list[t.Any] = super().executesql(  # ty: ignore[unresolved-attribute]
             query,
             placeholders=placeholders,
             as_dict=as_dict,
@@ -589,6 +591,24 @@ class TypeDAL(_TypeDALBase):
     # Async execution path.
     # ------------------------------------------------------------------
 
+    def _get_async_pool_lock(self) -> asyncio.Lock:
+        """
+        The lock guarding lazy pool creation, bound to the loop currently running.
+
+        Not created once in `__init__`: an `asyncio.Lock` binds to the loop it is first used on
+        and refuses use from another one, while a `TypeDAL` instance can outlive a loop (every
+        pytest-asyncio test gets a fresh one, and `close_async()` explicitly supports reopening).
+        Re-created when the loop changed - which is safe to decide here because this method
+        never awaits, so two coroutines on the same loop cannot interleave inside it and always
+        come away with the same lock object.
+        """
+        loop = asyncio.get_running_loop()
+        if self._async_pool_lock is None or self._async_pool_lock_loop is not loop:
+            self._async_pool_lock = asyncio.Lock()
+            self._async_pool_lock_loop = loop
+
+        return self._async_pool_lock
+
     async def _get_async_pool(self) -> AsyncConnectionPool:
         """
         Lazily create the async connection (a real pool for Postgres, a single wrapped
@@ -598,18 +618,29 @@ class TypeDAL(_TypeDALBase):
         from pydal's own thread-local sync connection: they are two independent transactions,
         so a write on one is invisible to a read on the other until committed, and
         commit()/rollback() on one says nothing about the other.
-        """
-        if self._async_pool is None:
-            dbengine = self._adapter.dbengine
-            try:
-                factory = ASYNC_POOL_FACTORIES[dbengine]
-            except KeyError:
-                raise NotImplementedError(
-                    f"The async execution path is only implemented for "
-                    f"{', '.join(ASYNC_POOL_FACTORIES)}, not {dbengine!r}.",
-                ) from None
 
-            self._async_pool = await factory(self)
+        Creation is done under a lock with the check repeated inside it: the factories await,
+        so a plain `if self._async_pool is None: ... = await factory(self)` lets two coroutines
+        whose first use overlaps both pass the check and both open one. Only one could be
+        stored, and the other would be dropped without `close()` - a leaked pool, or on SQLite
+        a leaked connection and its background thread.
+        """
+        if self._async_pool is not None:
+            # fast path: already open, no need to take the lock at all
+            return self._async_pool
+
+        async with self._get_async_pool_lock():
+            if self._async_pool is None:
+                dbengine = self._adapter.dbengine
+                try:
+                    factory = ASYNC_POOL_FACTORIES[dbengine]
+                except KeyError:
+                    raise NotImplementedError(
+                        f"The async execution path is only implemented for "
+                        f"{', '.join(ASYNC_POOL_FACTORIES)}, not {dbengine!r}.",
+                    ) from None
+
+                self._async_pool = await factory(self)
 
         return self._async_pool
 
@@ -695,11 +726,13 @@ class TypeDAL(_TypeDALBase):
                 await cur.execute(sql)
             except Exception as e:
                 if hasattr(table, "_on_update_error"):
-                    return t.cast(t.Optional[int], table._on_update_error(table, query, fields, e))
+                    return t.cast(t.Optional[int], table._on_update_error(table, query, fields, e))  # ty: ignore[call-non-callable]
                 raise
             try:
-                return t.cast(int, cur.rowcount)
-            except Exception:  # noqa: BLE001
+                return cur.rowcount
+            except Exception:  # pragma: no cover
+                # defensive, mirroring `adapter.update()` (adapters/base.py:590-593):
+                # neither driver's `rowcount` actually raises, it is a plain property.
                 return None
 
     async def delete_async(
@@ -733,25 +766,48 @@ class TypeDAL(_TypeDALBase):
         adapter = self._adapter
         query = adapter._insert(table, fields)
 
+        # Capture `_last_insert` here, synchronously, right after the `_insert()` that set it:
+        # on Postgres it is a property over `THREAD_LOCAL._pydal_last_insert_` (pydal
+        # adapters/postgres.py:128-133), and coroutines share one thread, so that thread-local
+        # provides no isolation at all on this path. Reading it after the awaits below would
+        # read whichever concurrent insert_async() touched it last, not our own.
+        last_insert = getattr(adapter, "_last_insert", None)
+
         pool = await self._get_async_pool()
         async with pool.connection() as conn, conn.cursor() as cur:
-            await cur.execute(query)
+            try:
+                await cur.execute(query)
+            except Exception as e:
+                # mirrors `adapter.insert()` (adapters/base.py:544-549), same as `update_async`:
+                if hasattr(table, "_on_insert_error"):
+                    return table._on_insert_error(table, fields, e)  # ty: ignore[call-non-callable]
+                raise
 
             if hasattr(table, "_primarykey"):
-                pkdict = {k[0].name: k[1] for k in fields if k[0].name in table._primarykey}
+                pkdict = {k[0].name: k[1] for k in fields if k[0].name in table._primarykey}  # ty: ignore[unsupported-operator]
                 if pkdict:
                     return pkdict
 
-            id_ = await LASTROWID_STRATEGIES[adapter.dbengine](adapter, table, cur)
+            row_id = await LASTROWID_STRATEGIES[adapter.dbengine](adapter, table, cur, last_insert)
 
-        if hasattr(table, "_primarykey") and len(table._primarykey) == 1:
-            id_ = {table._primarykey[0]: id_}
-        if not isinstance(id_, int):
-            return id_
+        # a table with a single custom primarykey reports its id as a `{name: value}` dict
+        # instead of a bare int, matching `adapter.insert()` (adapters/base.py:556-563):
+        primarykey = getattr(table, "_primarykey", None)
+        if primarykey is not None and len(primarykey) == 1:  # pragma: no cover
+            # unreachable on both supported backends: pydal makes `_primarykey` columns NOT
+            # NULL, so an insert omitting the pk fails in the database before the id it would
+            # have filled in here could ever be read back. Kept to match `adapter.insert()`
+            # (adapters/base.py:556-559) for backends that can generate one.
+            return {table._primarykey[0]: row_id}  # ty: ignore[not-subscriptable]
 
-        rid = pydal.helpers.classes.Reference(id_)
-        rid._table, rid._record = table, None
-        return rid
+        if not isinstance(row_id, int):  # pragma: no cover
+            # a driver reporting no lastrowid at all; neither supported backend does.
+            return row_id
+
+        reference = pydal.helpers.classes.Reference(row_id)  # ty: ignore[possibly-missing-submodule]
+        reference._table = table
+        reference._record = None
+        return reference
 
     async def executesql_async(
         self,
@@ -761,7 +817,7 @@ class TypeDAL(_TypeDALBase):
         fields: t.Iterable[Field | TypedField[t.Any]] | None = None,
         colnames: t.Iterable[str] | None = None,
         as_ordered_dict: bool = False,
-    ) -> list[t.Any]:
+    ) -> list[t.Any] | None:
         """
         Async twin of `executesql(...)`.
 
@@ -783,7 +839,9 @@ class TypeDAL(_TypeDALBase):
                 await cur.execute(query)
 
             if as_dict or as_ordered_dict:
-                if not hasattr(cur, "description"):
+                if not hasattr(cur, "description"):  # pragma: no cover
+                    # both supported drivers always expose it; guard kept for parity with
+                    # pydal's own `executesql`.
                     raise RuntimeError("database does not support executesql_async(...,as_dict=True)")
 
                 columns = cur.description
@@ -795,8 +853,10 @@ class TypeDAL(_TypeDALBase):
                     )
                 if columns:
                     for i in range(len(result_fields)):
-                        if isinstance(result_fields[i], bytes):
-                            result_fields[i] = result_fields[i].decode("utf8")
+                        if isinstance(result_fields[i], bytes):  # pragma: no cover
+                            # psycopg and aiosqlite both report column names as str; this is
+                            # for drivers that hand back bytes, as pydal's `executesql` allows.
+                            result_fields[i] = result_fields[i].decode("utf8")  # ty: ignore[unresolved-attribute]
 
                 data = await cur.fetchall()
                 _dict = collections.OrderedDict if as_ordered_dict else dict
@@ -804,7 +864,7 @@ class TypeDAL(_TypeDALBase):
 
             try:
                 data = await cur.fetchall()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 return None
 
         if fields or colnames:
@@ -915,7 +975,7 @@ class TypeDAL(_TypeDALBase):
         Returns:
             Cached result or fresh computation
         """
-        return memoize(self, func, *args, key=key, ttl=ttl, **kwargs)
+        return memoize(self, func, *args, key=key, ttl=ttl, **kwargs)  # ty: ignore[invalid-argument-type]
 
     def as_typescript(self, *tables: str | type[TypedTable]) -> str:
         """

@@ -13,11 +13,75 @@ adding a function + a registry entry here, not editing branching logic in `TypeD
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import typing as t
 
+import pydal.objects
+
 if t.TYPE_CHECKING:
+    from pydal.adapters.base import SQLAdapter
+
     from .core import TypeDAL
+
+
+# What pydal's `adapter._insert()` leaves behind to record whether the statement it just built
+# carries a RETURNING clause: `(table._id, 1)` when it does, `None` when it does not
+# (adapters/postgres.py:149-158). Backends without the concept never set it at all, hence None.
+type LastInsert = tuple[pydal.objects.Field, int] | None
+
+
+class AsyncCursor(t.Protocol):
+    """
+    The slice of a psycopg / aiosqlite cursor that the async execution path actually uses.
+
+    A Protocol rather than the real driver cursor types, because both drivers are *optional*
+    dependencies (`typedal[postgres-async]` / `typedal[sqlite-async]`): naming either one in a
+    signature would make type-checking TypeDAL require it to be installed. Structural typing
+    gets the checking without the dependency.
+
+    Read-only properties rather than plain attributes so that both drivers match - psycopg and
+    aiosqlite both expose `rowcount`/`lastrowid`/`description` as properties, and a Protocol
+    declaring them as mutable attributes would reject exactly that.
+    """
+
+    @property
+    def rowcount(self) -> int: ...
+
+    @property
+    def lastrowid(self) -> int | None: ...
+
+    @property
+    def description(self) -> t.Any: ...
+
+    async def execute(self, sql: str, parameters: t.Any = ..., /) -> t.Any: ...
+
+    async def fetchone(self) -> t.Any: ...
+
+    # `Iterable`, not `Sequence`: aiosqlite declares `fetchall() -> Iterable[sqlite3.Row]`
+    # (aiosqlite/cursor.py:66), so requiring a Sequence here would reject it.
+    async def fetchall(self) -> t.Iterable[t.Any]: ...
+
+
+class AsyncConnection(t.Protocol):
+    """
+    The slice of a psycopg / aiosqlite connection the async execution path uses. Same reasoning
+    as `AsyncCursor`.
+
+    `cursor()` is typed as returning a context manager, not a cursor or an awaitable, because
+    that is the one shape both drivers share: psycopg's `cursor()` returns an `AsyncCursor`
+    that doubles as an async context manager, while aiosqlite's is decorated to return a
+    `Result[Cursor]` (aiosqlite/context.py) which is both awaitable *and* an async context
+    manager. `async with conn.cursor() as cur` is what works for both.
+    """
+
+    def cursor(self) -> t.AsyncContextManager[AsyncCursor]: ...
+
+    async def commit(self) -> None: ...
+
+    async def rollback(self) -> None: ...
+
+    async def close(self) -> None: ...
 
 
 class AsyncConnectionPool(t.Protocol):
@@ -33,7 +97,7 @@ class AsyncConnectionPool(t.Protocol):
     to do. Keeping both behind the same two methods keeps that difference out of core.py.
     """
 
-    def connection(self) -> t.AsyncContextManager[t.Any]: ...
+    def connection(self) -> t.AsyncContextManager[AsyncConnection]: ...
 
     async def commit(self) -> None: ...
 
@@ -60,8 +124,8 @@ class PostgresAsyncPool:
     def __init__(self, pool: t.Any) -> None:
         self._pool = pool
 
-    def connection(self) -> t.AsyncContextManager[t.Any]:
-        return t.cast(t.AsyncContextManager[t.Any], self._pool.connection())
+    def connection(self) -> t.AsyncContextManager[AsyncConnection]:
+        return t.cast(t.AsyncContextManager[AsyncConnection], self._pool.connection())
 
     async def commit(self) -> None:
         pass
@@ -87,26 +151,44 @@ class SqliteAsyncConnection:
     table still locked for other readers/writers, including pydal's own sync connection) by
     the time an `_async` method returns. This makes every `_async` call its own committed
     transaction, matching what `PostgresAsyncPool` already gets for free from psycopg_pool.
+
+    That promise only holds if calls do not overlap, hence `_lock`: a transaction belongs to
+    the *connection*, and there is only one, so two coroutines inside `connection()` at the
+    same time would share one transaction and the first to exit would decide for both -
+    committing the other's half-finished write, or rolling back a write that had succeeded.
+    psycopg_pool avoids this by handing out a different connection per caller; that is not an
+    option here (pydal itself runs SQLite at `pool_size = 0`, adapters/sqlite.py:26), and for
+    `sqlite:memory` it would actively break, since shared-cache mode answers a second
+    concurrent writer with SQLITE_LOCKED, which no busy-timeout retries. Serializing costs
+    concurrency SQLite does not have for writes anyway - it allows exactly one writer.
     """
 
-    def __init__(self, conn: t.Any) -> None:
+    def __init__(self, conn: AsyncConnection) -> None:
         self._conn = conn
+        # created here rather than bound eagerly: asyncio.Lock() only attaches to a loop on
+        # first acquire, and this object is built inside `open_sqlite_async_connection()`.
+        self._lock = asyncio.Lock()
 
     @contextlib.asynccontextmanager
-    async def connection(self) -> t.AsyncIterator[t.Any]:
-        try:
-            yield self._conn
-        except BaseException:
-            await self._conn.rollback()
-            raise
-        else:
-            await self._conn.commit()
+    async def connection(self) -> t.AsyncIterator[AsyncConnection]:
+        async with self._lock:
+            try:
+                yield self._conn
+            except BaseException:
+                await self._conn.rollback()
+                raise
+            else:
+                await self._conn.commit()
 
     async def commit(self) -> None:
-        await self._conn.commit()
+        # also under the lock: committing mid-way through another coroutine's `connection()`
+        # block would commit its partial work, the same bug from the other direction.
+        async with self._lock:
+            await self._conn.commit()
 
     async def rollback(self) -> None:
-        await self._conn.rollback()
+        async with self._lock:
+            await self._conn.rollback()
 
     async def close(self) -> None:
         await self._conn.close()
@@ -163,17 +245,28 @@ ASYNC_POOL_FACTORIES: dict[str, t.Callable[["TypeDAL"], t.Awaitable[AsyncConnect
 }
 
 
-async def postgres_lastrowid_async(adapter: t.Any, table: t.Any, cursor: t.Any) -> t.Any:
+async def postgres_lastrowid_async(
+    adapter: SQLAdapter,
+    table: pydal.objects.Table,
+    cursor: AsyncCursor,
+    last_insert: LastInsert,
+) -> int | None:
     """
     Async twin of `Postgre.lastrowid()` (pydal adapters/postgres.py:142-147).
 
-    `adapter._last_insert` was already set as a side effect of the `_insert()` call that built
-    the INSERT statement (postgres.py:149-162, sets it whenever the table has a standard `_id`
-    column) - if so, the id is already in the RETURNING result of the statement just executed,
-    read here with a plain `fetchone()`, no extra round trip. Otherwise (tables with a custom
-    `_primarykey` not covered by RETURNING), fall back to `currval()`, a real second query.
+    `last_insert` is the value `adapter._insert()` set as a side effect of building the INSERT
+    statement (postgres.py:149-162, set whenever the table has a standard `_id` column), passed
+    in by `insert_async()` rather than read back off the adapter here. It has to be passed:
+    `adapter._last_insert` is a property over `THREAD_LOCAL._pydal_last_insert_`
+    (postgres.py:128-133), and every coroutine on this path shares one thread, so reading it
+    after the intervening awaits would see whichever insert touched it last.
+
+    Truthy means the id is already in the RETURNING result of the statement just executed, read
+    here with a plain `fetchone()`, no extra round trip. Otherwise (a custom `_primarykey` not
+    covered by RETURNING, or a `DEFAULT VALUES` insert) fall back to `currval()`, a real second
+    query - on this same connection, so it sees this insert's sequence value.
     """
-    if getattr(adapter, "_last_insert", None):
+    if last_insert:
         row = await cursor.fetchone()
         return int(row[0])
 
@@ -183,23 +276,32 @@ async def postgres_lastrowid_async(adapter: t.Any, table: t.Any, cursor: t.Any) 
     return int(row[0])
 
 
-async def sqlite_lastrowid_async(adapter: t.Any, table: t.Any, cursor: t.Any) -> t.Any:
+async def sqlite_lastrowid_async(
+    _adapter: SQLAdapter,
+    _table: pydal.objects.Table,
+    cursor: AsyncCursor,
+    _last_insert: LastInsert,
+) -> int | None:
     """
     Async twin of the base `SQLAdapter.lastrowid()` (pydal adapters/base.py:529-530), used by
-    SQLite (no override there). `cursor.lastrowid` is a plain attribute, not awaitable.
+    SQLite (no override there). `cursor.lastrowid` is a plain attribute, not awaitable, and
+    needs no `last_insert` - it takes the argument only to share one strategy signature.
     """
     return cursor.lastrowid
 
 
 # One lastrowid strategy per backend, mirroring `ASYNC_POOL_FACTORIES` - `insert_async()` looks
 # this up by `adapter.dbengine` rather than branching, same reasoning as the pool factories above.
-LASTROWID_STRATEGIES: dict[str, t.Callable[[t.Any, t.Any, t.Any], t.Awaitable[t.Any]]] = {
+LASTROWID_STRATEGIES: dict[
+    str,
+    t.Callable[[SQLAdapter, pydal.objects.Table, AsyncCursor, LastInsert], t.Awaitable[int | None]],
+] = {
     "postgres": postgres_lastrowid_async,
     "sqlite": sqlite_lastrowid_async,
 }
 
 
-async def base_delete_async(db: "TypeDAL", table: t.Any, query: t.Any) -> t.Any:
+async def base_delete_async(db: "TypeDAL", table: pydal.objects.Table, query: pydal.objects.Query) -> int | None:
     """
     Async twin of the base `SQLAdapter.delete()` (pydal adapters/base.py:604-610): plain
     build/execute sandwich, no cascade handling. Used directly for Postgres (no override
@@ -214,11 +316,13 @@ async def base_delete_async(db: "TypeDAL", table: t.Any, query: t.Any) -> t.Any:
         await cur.execute(sql)
         try:
             return cur.rowcount
-        except Exception:  # noqa: BLE001
+        except Exception:  # pragma: no cover
+            # defensive, mirroring `adapter.delete()` (adapters/base.py:607-610):
+            # neither driver's `rowcount` actually raises, it is a plain property.
             return None
 
 
-async def sqlite_delete_async(db: "TypeDAL", table: t.Any, query: t.Any) -> t.Any:
+async def sqlite_delete_async(db: "TypeDAL", table: pydal.objects.Table, query: pydal.objects.Query) -> int | None:
     """
     Async twin of `SQLite.delete()` (pydal adapters/sqlite.py:93-104) - NOT a plain sandwich:
     selects affected ids first, deletes, then recurses per cascaded FK with
@@ -243,7 +347,10 @@ async def sqlite_delete_async(db: "TypeDAL", table: t.Any, query: t.Any) -> t.An
 
 # One delete strategy per backend, same reasoning as `ASYNC_POOL_FACTORIES`/`LASTROWID_STRATEGIES`
 # - SQLite's isn't a plain sandwich (see `sqlite_delete_async`), Postgres's is.
-DELETE_STRATEGIES: dict[str, t.Callable[["TypeDAL", t.Any, t.Any], t.Awaitable[t.Any]]] = {
+DELETE_STRATEGIES: dict[
+    str,
+    t.Callable[["TypeDAL", pydal.objects.Table, pydal.objects.Query], t.Awaitable[int | None]],
+] = {
     "postgres": base_delete_async,
     "sqlite": sqlite_delete_async,
 }

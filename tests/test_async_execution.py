@@ -10,19 +10,23 @@ Covers two concrete Postgres divergence points found while building this:
   - decimal(10,2) -> Decimal
 and the actual point of the exercise: the event loop is not blocked while the query runs.
 """
+
 import asyncio
+import collections
 import contextlib
 import tempfile
 import time
 import typing as t
 from decimal import Decimal
 
+import pydal.objects
 import pytest
 import pytest_asyncio
 
 from src.typedal import TypeDAL, TypedField, TypedTable
 from src.typedal.async_execution import ASYNC_POOL_FACTORIES
 from src.typedal.fields import DecimalField, JSONField
+from src.typedal.query_builder import QueryBuilder
 
 
 @contextlib.asynccontextmanager
@@ -543,7 +547,8 @@ async def test_validate_and_update_async_matches_sync(db_async: TypeDAL):
     db.commit()
 
     row, errors = await AsyncThingValidateUpdate.validate_and_update_async(
-        AsyncThingValidateUpdate.id == int(existing_id), qty=9,
+        AsyncThingValidateUpdate.id == int(existing_id),
+        qty=9,
     )
     await db.commit_async()
     assert errors is None
@@ -551,7 +556,8 @@ async def test_validate_and_update_async_matches_sync(db_async: TypeDAL):
     assert row.qty == 9
 
     _row, errors = await AsyncThingValidateUpdate.validate_and_update_async(
-        AsyncThingValidateUpdate.id == int(existing_id), qty="not-a-number",
+        AsyncThingValidateUpdate.id == int(existing_id),
+        qty="not-a-number",
     )
     assert errors is not None
 
@@ -567,7 +573,9 @@ async def test_validate_and_update_or_insert_async_matches_sync(db_async: TypeDA
         qty: TypedField[int]
 
     inserted, errors = await AsyncThingValidateUpsert.validate_and_update_or_insert_async(
-        AsyncThingValidateUpsert.name == "widget", name="widget", qty=1,
+        AsyncThingValidateUpsert.name == "widget",
+        name="widget",
+        qty=1,
     )
     await db.commit_async()
     assert errors is None
@@ -575,7 +583,9 @@ async def test_validate_and_update_or_insert_async_matches_sync(db_async: TypeDA
     assert AsyncThingValidateUpsert.count() == 1
 
     updated, errors = await AsyncThingValidateUpsert.validate_and_update_or_insert_async(
-        AsyncThingValidateUpsert.name == "widget", name="widget", qty=2,
+        AsyncThingValidateUpsert.name == "widget",
+        name="widget",
+        qty=2,
     )
     await db.commit_async()
     assert errors is None
@@ -794,7 +804,7 @@ async def test_update_record_async_ignores_common_filters_like_sync(db_async: Ty
 
 @pytest.mark.asyncio
 async def test_insert_async_lastrowid_does_not_read_shared_last_insert(
-    db_async: TypeDAL,
+    dal_psql: TypeDAL,
     monkeypatch: pytest.MonkeyPatch,
 ):
     """
@@ -809,31 +819,34 @@ async def test_insert_async_lastrowid_does_not_read_shared_last_insert(
     made deterministic here rather than raced: the statement built is a `DEFAULT VALUES` insert
     (no fields -> no RETURNING, pydal postgres.py:149-162), while a concurrent normal insert
     leaves the flag truthy - so lastrowid tries to `fetchone()` a result that does not exist.
+
+    Takes the Postgres fixture directly instead of the parametrized `db_async`: SQLite has
+    no equivalent flag at all - `sqlite_lastrowid_async` ignores `last_insert` and returns
+    `cursor.lastrowid` - so a SQLite run would race against something nothing reads and
+    pass for reasons unrelated to the defect.
     """
-    db = db_async
-    if db._adapter.dbengine != "postgres":
-        pytest.skip("only the postgres lastrowid strategy consults _last_insert")
+    async with _postgres_db(dal_psql) as db:
 
-    @db.define()
-    class AsyncThingLastInsert(TypedTable):
-        name = TypedField(str, notnull=False)
+        @db.define()
+        class AsyncThingLastInsert(TypedTable):
+            name = TypedField(str, notnull=False)
 
-    table = AsyncThingLastInsert._ensure_table_defined()
-    adapter = db._adapter
-    real_get_pool = db._get_async_pool
+        table = AsyncThingLastInsert._ensure_table_defined()
+        adapter = db._adapter
+        real_get_pool = db._get_async_pool
 
-    async def racing_get_pool():
-        pool = await real_get_pool()
-        # stand-in for a concurrent insert_async() finishing its own adapter._insert():
-        adapter._last_insert = (table._id, 1)
-        return pool
+        async def racing_get_pool():
+            pool = await real_get_pool()
+            # stand-in for a concurrent insert_async() finishing its own adapter._insert():
+            adapter._last_insert = (table._id, 1)
+            return pool
 
-    monkeypatch.setattr(db, "_get_async_pool", racing_get_pool)
+        monkeypatch.setattr(db, "_get_async_pool", racing_get_pool)
 
-    # no fields -> INSERT INTO ... DEFAULT VALUES, which has no RETURNING clause
-    result = await db.insert_async(table, [])
+        # no fields -> INSERT INTO ... DEFAULT VALUES, which has no RETURNING clause
+        result = await db.insert_async(table, [])
 
-    assert int(result) > 0
+        assert int(result) > 0
 
 
 @pytest.mark.asyncio
@@ -848,6 +861,18 @@ async def test_async_connection_is_not_shared_between_concurrent_coroutines(db_a
     `SqliteAsyncConnection`'s docstring promises every `_async` call is its own committed
     transaction; that only holds while calls never overlap. Postgres passes this test, since
     psycopg_pool hands out distinct connections.
+
+    Do NOT rewrite this with an `asyncio.Barrier`: it deadlocks, and not because of a bug.
+    SQLite cannot fix this by handing each caller its own connection the way psycopg_pool does
+    - two aiosqlite connections to pydal's `sqlite:memory` (shared-cache, `uri: True`) answer
+    the second concurrent writer with `OperationalError: database table is locked`, which no
+    busy-timeout retries. So the fix has to *serialize* callers, and a barrier demands the one
+    thing the fix exists to prevent: two coroutines inside `connection()` at the same time.
+
+    Instead each writer signals that it is inside and waits a bounded time for the other. That
+    forces the overlap where one is possible (the unfixed, shared-connection code) and simply
+    times out where it is not (serialized), so the assertion below is about the transactional
+    outcome either way, on both backends.
     """
     db = db_async
 
@@ -857,22 +882,488 @@ async def test_async_connection_is_not_shared_between_concurrent_coroutines(db_a
 
     tablename = str(AsyncThingIsolation)
     pool = await db._get_async_pool()
-    both_inside = asyncio.Barrier(2)
+    keeper_inside = asyncio.Event()
+    failer_inside = asyncio.Event()
+
+    async def wait_briefly(event: asyncio.Event) -> None:
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(event.wait(), timeout=0.25)
 
     async def committing_writer():
         async with pool.connection() as conn, conn.cursor() as cur:
-            await cur.execute(f"INSERT INTO {tablename} (name) VALUES ('keep')")  # noqa: S608
-            await both_inside.wait()
+            await cur.execute(f"INSERT INTO {tablename} (name) VALUES ('keep')")
+            keeper_inside.set()
+            await wait_briefly(failer_inside)
             # clean exit -> this row must survive
 
     async def failing_writer():
         with contextlib.suppress(RuntimeError):
             async with pool.connection() as conn, conn.cursor() as cur:
-                await cur.execute(f"INSERT INTO {tablename} (name) VALUES ('discard')")  # noqa: S608
-                await both_inside.wait()
+                await cur.execute(f"INSERT INTO {tablename} (name) VALUES ('discard')")
+                failer_inside.set()
+                await wait_briefly(keeper_inside)
                 raise RuntimeError("boom")  # -> this row must be rolled back
 
     await asyncio.gather(committing_writer(), failing_writer())
 
     rows = await AsyncThingIsolation.collect_async()
     assert sorted(row.name for row in rows) == ["keep"]
+
+
+# ---------------------------------------------------------------------------
+# Coverage for async paths the parity tests above never reach: rollback, the pydal
+# hook/abort branches, error hooks, cascades and the unsupported-backend guard.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_rollback_async_is_usable_on_every_backend(db_async: TypeDAL):
+    """
+    `rollback_async()` is a no-op for Postgres (psycopg_pool already rolled back on context
+    exit) and real work for SQLite, but it must be callable and leave the connection usable
+    on both - that is the whole point of putting it on `AsyncConnectionPool`.
+    """
+    db = db_async
+
+    @db.define()
+    class AsyncThingRollback(TypedTable):
+        qty: TypedField[int]
+
+    await AsyncThingRollback.insert_async(qty=1)
+    await db.commit_async()
+
+    await db.rollback_async()
+
+    # every `_async` call is its own committed transaction, so the row survives and the
+    # connection still works afterwards:
+    assert await AsyncThingRollback.count_async() == 1
+
+
+@pytest.mark.asyncio
+async def test_delete_async_cascades_to_referencing_rows(db_async: TypeDAL):
+    """
+    `sqlite_delete_async` re-implements `SQLite.delete()`'s cascade (adapters/sqlite.py:93-104):
+    select ids, delete, then recurse per FK with `ondelete=CASCADE`. Postgres leaves that to
+    the database. Either way the children must be gone.
+    """
+    db = db_async
+
+    @db.define()
+    class AsyncCascadeParent(TypedTable):
+        name: TypedField[str]
+
+    @db.define()
+    class AsyncCascadeChild(TypedTable):
+        parent: AsyncCascadeParent
+
+    parent_id = int(AsyncCascadeParent.insert(name="parent"))
+    AsyncCascadeChild.insert(parent=parent_id)
+    AsyncCascadeChild.insert(parent=parent_id)
+    db.commit()
+
+    assert AsyncCascadeChild.count() == 2
+
+    await AsyncCascadeParent.where(AsyncCascadeParent.id == parent_id).delete_async()
+    await db.commit_async()
+
+    assert await AsyncCascadeParent.count_async() == 0
+    assert await AsyncCascadeChild.count_async() == 0
+
+
+@pytest.mark.asyncio
+async def test_update_async_honors_on_update_error_hook(db_async: TypeDAL):
+    """
+    Twin of `test_insert_async_honors_on_insert_error_hook`: `update_async` routes a failing
+    UPDATE through `table._on_update_error`, mirroring `adapter.update()` (base.py:585-589).
+    """
+    db = db_async
+
+    @db.define()
+    class AsyncThingUpdateError(TypedTable):
+        name = TypedField(str, unique=True)
+
+    table = AsyncThingUpdateError._ensure_table_defined()
+    table._on_update_error = lambda _table, _query, _fields, _e: -1
+
+    first = int(AsyncThingUpdateError.insert(name="a"))
+    AsyncThingUpdateError.insert(name="b")
+    db.commit()
+
+    # renaming 'a' to 'b' violates the unique constraint:
+    row = table._fields_and_values_for_update({"name": "b"})
+    result = await db.update_async(table, table.id == first, row.op_values())
+
+    assert result == -1
+
+
+@pytest.mark.asyncio
+async def test_get_async_pool_rejects_unsupported_backend(db_async: TypeDAL, monkeypatch: pytest.MonkeyPatch):
+    """
+    A dbengine with no entry in `ASYNC_POOL_FACTORIES` must fail loudly and name what is
+    supported, rather than KeyError-ing out of `_get_async_pool()`.
+    """
+    db = db_async
+    await db.close_async()
+
+    monkeypatch.setattr(db._adapter, "dbengine", "oracle", raising=False)
+
+    with pytest.raises(NotImplementedError, match="only implemented for"):
+        await db._get_async_pool()
+
+
+@pytest.mark.asyncio
+async def test_insert_async_runs_pydal_insert_hooks(db_async: TypeDAL):
+    """
+    `TypedTable.insert_async()` keeps pydal's `Table.insert()` hook dance (objects.py:960-968):
+    a truthy `_before_insert` aborts the insert, and `_after_insert` sees the new id.
+    """
+    db = db_async
+
+    @db.define()
+    class AsyncThingInsertHooks(TypedTable):
+        qty: TypedField[int]
+
+    table = AsyncThingInsertHooks._ensure_table_defined()
+    seen: list[t.Any] = []
+
+    table._after_insert.append(lambda _row, result: seen.append(result))
+    await AsyncThingInsertHooks.insert_async(qty=1)
+    await db.commit_async()
+    assert len(seen) == 1
+    assert await AsyncThingInsertHooks.count_async() == 1
+
+    # a truthy _before_insert aborts, so nothing is written and no id comes back:
+    table._before_insert.append(lambda _row: True)
+    await AsyncThingInsertHooks.insert_async(qty=2)
+    await db.commit_async()
+    assert await AsyncThingInsertHooks.count_async() == 1
+    assert len(seen) == 1
+
+
+@pytest.mark.asyncio
+async def test_delete_async_runs_pydal_delete_hooks(db_async: TypeDAL):
+    """
+    `QueryBuilder.delete_async()` replicates `Set.delete()`'s hooks (objects.py:3010-3017),
+    since pydal has no async version to delegate to: a truthy `_before_delete` aborts and
+    returns no ids, `_after_delete` runs on success, and a query matching nothing returns [].
+    """
+    db = db_async
+
+    @db.define()
+    class AsyncThingDeleteHooks(TypedTable):
+        qty: TypedField[int]
+
+    table = AsyncThingDeleteHooks._ensure_table_defined()
+    AsyncThingDeleteHooks.insert(qty=1)
+    db.commit()
+
+    # matches nothing -> no ids, and the after hooks must not fire
+    assert await AsyncThingDeleteHooks.where(AsyncThingDeleteHooks.qty > 99).delete_async() == []
+
+    # aborted by a truthy _before_delete
+    aborter = table._before_delete.append(lambda _set: True) or table._before_delete[-1]
+    assert await AsyncThingDeleteHooks.where(AsyncThingDeleteHooks.qty > 0).delete_async() == []
+    assert await AsyncThingDeleteHooks.count_async() == 1
+    table._before_delete.remove(aborter)
+
+    # and the success path runs _after_delete
+    after: list[t.Any] = []
+    table._after_delete.append(lambda pydal_set: after.append(pydal_set))
+    assert len(await AsyncThingDeleteHooks.where(AsyncThingDeleteHooks.qty > 0).delete_async()) == 1
+    assert len(after) == 1
+
+
+@pytest.mark.asyncio
+async def test_update_async_runs_pydal_update_hooks(db_async: TypeDAL):
+    """
+    Same as the delete twin, for `QueryBuilder.update_async()`: no fields is an error, a truthy
+    `_before_update` aborts, `_after_update` runs on success, and a no-match query returns [].
+    """
+    db = db_async
+
+    @db.define()
+    class AsyncThingUpdateHooks(TypedTable):
+        qty: TypedField[int]
+
+    table = AsyncThingUpdateHooks._ensure_table_defined()
+    AsyncThingUpdateHooks.insert(qty=1)
+    db.commit()
+
+    with pytest.raises(ValueError, match="No fields to update"):
+        await AsyncThingUpdateHooks.where(AsyncThingUpdateHooks.qty > 0).update_async()
+
+    # matches nothing -> no ids
+    assert await AsyncThingUpdateHooks.where(AsyncThingUpdateHooks.qty > 99).update_async(qty=5) == []
+
+    aborter = table._before_update.append(lambda _set, _row: True) or table._before_update[-1]
+    assert await AsyncThingUpdateHooks.where(AsyncThingUpdateHooks.qty > 0).update_async(qty=7) == []
+    assert await AsyncThingUpdateHooks.count_async() == 1
+    table._before_update.remove(aborter)
+
+    after: list[t.Any] = []
+    table._after_update.append(lambda pydal_set, _row: after.append(pydal_set))
+    assert len(await AsyncThingUpdateHooks.where(AsyncThingUpdateHooks.qty > 0).update_async(qty=7)) == 1
+    assert len(after) == 1
+
+
+@pytest.mark.asyncio
+async def test_table_level_count_and_update_or_insert_with_query(db_async: TypeDAL):
+    """
+    Two thin shortcuts the parity tests reach only through a QueryBuilder: `Table.count_async()`
+    without a `.where(...)`, and `update_or_insert_async()` given a real Query rather than the
+    DEFAULT/dict forms (`_lookup_query`'s pass-through branch).
+    """
+    db = db_async
+
+    @db.define()
+    class AsyncThingShortcuts(TypedTable):
+        name: TypedField[str]
+        qty: TypedField[int]
+
+    assert await AsyncThingShortcuts.count_async() == 0
+
+    created = await AsyncThingShortcuts.update_or_insert_async(
+        AsyncThingShortcuts.name == "widget",
+        name="widget",
+        qty=1,
+    )
+    await db.commit_async()
+    assert created.qty == 1
+    assert await AsyncThingShortcuts.count_async() == 1
+
+    updated = await AsyncThingShortcuts.update_or_insert_async(
+        AsyncThingShortcuts.name == "widget",
+        name="widget",
+        qty=2,
+    )
+    await db.commit_async()
+    assert updated.qty == 2
+    assert await AsyncThingShortcuts.count_async() == 1
+
+
+@pytest.mark.asyncio
+async def test_insert_and_update_async_reraise_without_error_hook(db_async: TypeDAL):
+    """
+    The other half of the `_on_insert_error`/`_on_update_error` branches: with no hook
+    registered the driver exception must propagate, exactly as pydal's adapter does.
+    """
+    db = db_async
+
+    @db.define()
+    class AsyncThingNoHook(TypedTable):
+        name = TypedField(str, unique=True)
+
+    table = AsyncThingNoHook._ensure_table_defined()
+    first = int(AsyncThingNoHook.insert(name="a"))
+    AsyncThingNoHook.insert(name="b")
+    db.commit()
+
+    with pytest.raises(Exception, match=r"(?i)unique"):
+        await db.insert_async(table, table._fields_and_values_for_insert({"name": "a"}).op_values())
+
+    with pytest.raises(Exception, match=r"(?i)unique"):
+        row = table._fields_and_values_for_update({"name": "b"})
+        await db.update_async(table, table.id == first, row.op_values())
+
+
+@pytest.mark.asyncio
+async def test_insert_async_with_custom_primarykey(db_async: TypeDAL):
+    """
+    Tables with a `_primarykey` instead of pydal's standard `_id` report the new row as a
+    `{name: value}` dict rather than a `Reference` (adapters/base.py:550-563).
+    """
+    db = db_async
+
+    table = db.define_table(
+        "async_pk_thing",
+        pydal.objects.Field("code", "string"),
+        pydal.objects.Field("val", "string"),
+        primarykey=["code"],
+    )
+    db.commit()
+
+    supplied = await db.insert_async(table, [(table.code, "abc"), (table.val, "x")])
+    assert supplied == {"code": "abc"}
+
+    # the sibling branch - a keyed table whose pk is *generated* - is unreachable on both
+    # backends: pydal makes `_primarykey` columns NOT NULL, so an insert that omits the pk
+    # fails in the database before it could ever be filled in from lastrowid.
+
+
+@pytest.mark.asyncio
+async def test_executesql_async_placeholders_and_dict_shapes(db_async: TypeDAL):
+    """
+    `executesql_async` mirrors pydal's `executesql` surface: bound placeholders, `as_dict` /
+    `as_ordered_dict`, `colnames` overrides, and the duplicate-column guard.
+    """
+    db = db_async
+
+    @db.define()
+    class AsyncThingSql(TypedTable):
+        name: TypedField[str]
+        qty: TypedField[int]
+
+    AsyncThingSql.insert(name="widget", qty=1)
+    AsyncThingSql.insert(name="gadget", qty=2)
+    db.commit()
+
+    tablename = str(AsyncThingSql)
+    placeholder = "%s" if db._adapter.dbengine == "postgres" else "?"
+
+    bound = await db.executesql_async(f"SELECT qty FROM {tablename} WHERE qty > {placeholder}", (1,))
+    assert [row[0] for row in bound] == [2]
+
+    as_dicts = await db.executesql_async(f"SELECT name, qty FROM {tablename} ORDER BY qty", as_dict=True)
+    assert as_dicts == [{"name": "widget", "qty": 1}, {"name": "gadget", "qty": 2}]
+
+    ordered = await db.executesql_async(f"SELECT name, qty FROM {tablename} ORDER BY qty", as_ordered_dict=True)
+    assert type(ordered[0]) is collections.OrderedDict
+    assert list(ordered[0]) == ["name", "qty"]
+
+    renamed = await db.executesql_async(
+        f"SELECT name FROM {tablename} ORDER BY qty",
+        as_dict=True,
+        colnames=["label"],
+    )
+    assert renamed[0] == {"label": "widget"}
+
+    with pytest.raises(RuntimeError, match="duplicate column names"):
+        await db.executesql_async(f"SELECT qty, qty FROM {tablename}", as_dict=True)
+
+
+@pytest.mark.asyncio
+async def test_executesql_async_with_fields_and_colnames(db_async: TypeDAL):
+    """
+    Passing `fields` (or `colnames`) routes the raw rows back through `adapter.parse()`, so
+    values come out typed rather than as driver primitives.
+    """
+    db = db_async
+
+    @db.define()
+    class AsyncThingParse(TypedTable):
+        name: TypedField[str]
+        qty: TypedField[int]
+
+    AsyncThingParse.insert(name="widget", qty=1)
+    db.commit()
+
+    table = AsyncThingParse._ensure_table_defined()
+    tablename = str(AsyncThingParse)
+
+    # a whole Table as `fields` expands to its columns...
+    parsed = await db.executesql_async(
+        f"SELECT {tablename}.id, {tablename}.name, {tablename}.qty FROM {tablename}",
+        fields=[table],
+    )
+    assert parsed[0].name == "widget"
+    assert parsed[0].qty == 1
+
+    # ...and individual Fields are taken as-is
+    per_field = await db.executesql_async(
+        f"SELECT {tablename}.name, {tablename}.qty FROM {tablename}",
+        fields=[table.name, table.qty],
+    )
+    assert per_field[0].qty == 1
+
+    # `colnames` without fields resolves the table.column names itself
+    by_colname = await db.executesql_async(
+        f"SELECT {tablename}.name FROM {tablename}",
+        fields=[],
+        colnames=[f"{tablename}.name"],
+    )
+    assert by_colname[0].name == "widget"
+
+    # a colname without a `table.` prefix is passed through unquoted
+    bare_colname = await db.executesql_async(
+        f"SELECT {tablename}.name FROM {tablename}",
+        fields=[table.name],
+        colnames=["name"],
+    )
+    assert bare_colname[0].name == "widget"
+
+
+@pytest.mark.asyncio
+async def test_executesql_async_on_statement_without_result_set(db_async: TypeDAL):
+    """
+    A statement that produces no rows: psycopg raises on `fetchall()` (caught, -> None) while
+    sqlite just yields an empty list. Both are acceptable; neither may blow up.
+    """
+    db = db_async
+
+    @db.define()
+    class AsyncThingNoResult(TypedTable):
+        qty: TypedField[int]
+
+    db.commit()
+
+    result = await db.executesql_async(f"DELETE FROM {AsyncThingNoResult} WHERE qty < 0")
+    assert result in (None, [])
+
+
+@pytest.mark.asyncio
+async def test_async_query_builder_falls_back_for_plain_pydal_tables(db_async: TypeDAL):
+    """
+    `QueryBuilder` also accepts an old-style pydal table. There is no model to instantiate from
+    the rows, so `collect_async()` degrades to `execute_async()` and `first_async()` hands back
+    the raw pydal Row - the async twins of the fallbacks `collect()`/`first()` already have.
+    """
+    db = db_async
+
+    table = db.define_table("async_plain_thing", pydal.objects.Field("qty", "integer"))
+    table.insert(qty=1)
+    db.commit()
+
+    rows = await QueryBuilder(table).collect_async()
+    assert len(rows) == 1
+
+    row = await QueryBuilder(table).first_async()
+    assert row is not None
+    assert row.qty == 1
+
+
+@pytest.mark.asyncio
+async def test_classmethod_update_async_returns_none_when_nothing_matches(db_async: TypeDAL):
+    """`Model.update_async(query, ...)` mirrors the sync `update()`: no matching row -> None."""
+    db = db_async
+
+    @db.define()
+    class AsyncThingClsUpdateMiss(TypedTable):
+        qty: TypedField[int]
+
+    db.commit()
+
+    assert await AsyncThingClsUpdateMiss.update_async(AsyncThingClsUpdateMiss.id == 404, qty=1) is None
+
+
+class AsyncThingCached(TypedTable):
+    """
+    Defined at module level, unlike every other model here: the cache pickles the rows, and a
+    class defined inside a test function is not picklable.
+    """
+
+    qty: TypedField[int]
+
+
+@pytest.mark.asyncio
+async def test_collect_async_serves_cached_rows():
+    """
+    A cache hit short-circuits `collect_async()` in `_collect_prepare()`, before it ever reaches
+    the database. Not parametrized over `db_async`: that fixture disables TypeDAL caching.
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        db = TypeDAL("sqlite:memory", folder=directory)
+        try:
+            db.define(AsyncThingCached)
+
+            AsyncThingCached.insert(qty=1)
+            db.commit()
+
+            fresh = await AsyncThingCached.where(AsyncThingCached.qty > 0).cache().collect_async()
+            cached = await AsyncThingCached.where(AsyncThingCached.qty > 0).cache().collect_async()
+
+            assert len(fresh) == len(cached) == 1
+            assert fresh.metadata["cache"]["status"] == "fresh"
+            assert cached.metadata["cache"]["status"] == "cached"
+        finally:
+            await db.close_async()
+            db.close()
