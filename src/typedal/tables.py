@@ -544,7 +544,7 @@ class TableMeta(type):
         """
         See QueryBuilder.collect_async!
         """
-        raise NotImplementedError
+        return await QueryBuilder(self).collect_async(verbose=verbose)
 
     def collect_into[T_Into: _TypedTable](
         self: t.Type[_TypedTable],

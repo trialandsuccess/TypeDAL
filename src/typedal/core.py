@@ -14,6 +14,7 @@ from typing import Optional
 
 import pydal
 
+from .async_execution import ASYNC_POOL_FACTORIES, AsyncConnectionPool
 from .config import LazyPolicy, TypeDALConfig, load_config
 from .helpers import (
     SYSTEM_SUPPORTS_TEMPLATES,
@@ -293,6 +294,7 @@ class TypeDAL(_TypeDALBase):
         self._after_collect = []
         self._before_execute = []
         self._after_execute = []
+        self._async_pool: AsyncConnectionPool | None = None  # lazily-created; see _get_async_pool
 
         if config.folder:
             Path(config.folder).mkdir(exist_ok=True)
@@ -583,16 +585,32 @@ class TypeDAL(_TypeDALBase):
         return rows
 
     # ------------------------------------------------------------------
-    # Async execution path (not implemented yet).
-    # See docs/rfc-async-execution.md for the feasibility spike this is
-    # scaffolding. These are the low-level primitives QueryBuilder's and
-    # TypedTable's `_async` methods build on, mirroring pydal's own split
-    # of `db(query).select(...)` / `.count(...)` / `.update(...)` /
-    # `.delete(...)` and `table.insert(...)`, since `db(query)` returns a
-    # plain pydal `Set` at runtime (TypedSet is a typing-only stub, see
-    # rows.py:521-546) rather than something we can attach methods to
-    # directly.
+    # Async execution path.
     # ------------------------------------------------------------------
+
+    async def _get_async_pool(self) -> AsyncConnectionPool:
+        """
+        Lazily create the async connection (a real pool for Postgres, a single wrapped
+        connection for SQLite) for this instance, via `ASYNC_POOL_FACTORIES`.
+
+        One per `TypeDAL` instance, opened on first use. Deliberately a separate connection
+        from pydal's own thread-local sync connection: they are two independent transactions,
+        so a write on one is invisible to a read on the other until committed, and
+        commit()/rollback() on one says nothing about the other.
+        """
+        if self._async_pool is None:
+            dbengine = self._adapter.dbengine
+            try:
+                factory = ASYNC_POOL_FACTORIES[dbengine]
+            except KeyError:
+                raise NotImplementedError(
+                    f"The async execution path is only implemented for "
+                    f"{', '.join(ASYNC_POOL_FACTORIES)}, not {dbengine!r}.",
+                ) from None
+
+            self._async_pool = await factory(self)
+
+        return self._async_pool
 
     async def select_async(
         self,
@@ -602,8 +620,34 @@ class TypeDAL(_TypeDALBase):
     ) -> pydal.objects.Rows:
         """
         Async twin of `db(query).select(*fields, **attributes)`.
+
+        Mirrors `Set.select()` (pydal objects.py:2961-2971) and `SQLAdapter.select()`/
+        `_select_aux()` (adapters/base.py:905-910, 864-891): build via pydal's own
+        `tables()`/`expand_all()`/`_select_wcols()` (pure, no I/O), execute via the async
+        driver for this backend (the only I/O, on our own connection, not pydal's; see
+        `ASYNC_POOL_FACTORIES`), parse via pydal's own `parse()` (pure).
         """
-        raise NotImplementedError
+        adapter = self._adapter
+
+        tablenames = adapter.tables(
+            query,
+            attributes.get("join"),
+            attributes.get("left"),
+            attributes.get("orderby"),
+            attributes.get("groupby"),
+        )
+        expanded_fields = adapter.expand_all(fields, tablenames)
+        colnames, sql = adapter._select_wcols(query, expanded_fields, **attributes)
+
+        pool = await self._get_async_pool()
+        async with pool.connection() as conn, conn.cursor() as cur:
+            await cur.execute(sql)
+            rows = await cur.fetchall()
+
+        limitby = attributes.get("limitby") or (0,)
+        rows = adapter.rowslice(rows, limitby[0], None)
+        cacheable = attributes.get("cacheable", False)
+        return t.cast(pydal.objects.Rows, adapter.parse(rows, expanded_fields, colnames, cacheable=cacheable))
 
     async def count_async(
         self,
@@ -668,9 +712,8 @@ class TypeDAL(_TypeDALBase):
         Commit the transaction on the async connection.
 
         Deliberately does not touch `commit()`/the sync connection: queries executed via
-        `select_async`/`insert_async`/etc. run on a separate connection (see RFC secondary
-        finding 1 - two connections per request), so committing one says nothing about the
-        other.
+        `select_async`/`insert_async`/etc. run on a separate connection, so committing one
+        says nothing about the other.
         """
         raise NotImplementedError
 
@@ -682,9 +725,11 @@ class TypeDAL(_TypeDALBase):
 
     async def close_async(self) -> None:
         """
-        Close/release the async connection (or return it to the pool).
+        Close the async connection pool, if one was ever opened.
         """
-        raise NotImplementedError
+        if self._async_pool is not None:
+            await self._async_pool.close()
+            self._async_pool = None
 
     def sql_expression(
         self,

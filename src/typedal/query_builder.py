@@ -600,23 +600,34 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
 
         return load_from_cache(key, self._get_db())
 
+    @staticmethod
+    def _run_hooks(hooks: t.Iterable[t.Callable[..., t.Any]], *args: t.Any) -> None:
+        """
+        Run a list of before/after hooks in order. Return values are ignored (matches existing
+        `_before_collect`/`_after_collect`/`_before_execute`/`_after_execute` semantics).
+        Shared by `execute()`/`execute_async()`/`collect()`/`collect_async()`.
+        """
+        for hook in hooks:
+            hook(*args)
+
+    def _execute_prepare(self, metadata: Metadata, add_id: bool) -> tuple[TypeDAL, Query, list[t.Any], SelectKwargs]:
+        """
+        Shared setup for `execute()`/`execute_async()`: permission check, query building.
+        """
+        require_permission(self._permissions, "read")
+        db = self._get_db()
+        query, select_args, select_kwargs = self._before_query(metadata, add_id=add_id)
+        return db, query, select_args, select_kwargs
+
     def execute(self, add_id: bool = False) -> Rows:
         """
         Raw version of .collect which only executes the SQL, without performing t.Any magic afterwards.
         """
-        require_permission(self._permissions, "read")
-        db = self._get_db()
-        metadata: Metadata = self.metadata.copy()
+        db, query, select_args, select_kwargs = self._execute_prepare(self.metadata.copy(), add_id)
 
-        query, select_args, select_kwargs = self._before_query(metadata, add_id=add_id)
-
-        for fn_before in db._before_execute:
-            fn_before(self)
-
+        self._run_hooks(db._before_execute, self)
         rows: Rows = db(query).select(*select_args, **select_kwargs)
-
-        for fn_after in db._after_execute:
-            fn_after(self, rows)
+        self._run_hooks(db._after_execute, self, rows)
 
         return rows
 
@@ -624,7 +635,66 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         """
         Async twin of `execute()`.
         """
-        raise NotImplementedError
+        db, query, select_args, select_kwargs = self._execute_prepare(self.metadata.copy(), add_id)
+
+        self._run_hooks(db._before_execute, self)
+        rows: Rows = await db.select_async(query, *select_args, **select_kwargs)
+        self._run_hooks(db._after_execute, self, rows)
+
+        return rows
+
+    def _collect_prepare(
+        self,
+        metadata: Metadata,
+        add_id: bool,
+        into: t.Type[t.Any],
+    ) -> "TypedRows[T_MetaInstance] | tuple[TypeDAL, Query, list[t.Any], SelectKwargs]":
+        """
+        Shared setup for `collect()`/`collect_async()`, up to (not including) the actual select.
+
+        Returns a `TypedRows` directly if a cache hit short-circuits everything else,
+        otherwise the `(db, query, select_args, select_kwargs)` needed to perform the fetch.
+        """
+        require_permission(self._permissions, "read")
+        db = self._get_db()
+        self._run_hooks(db._before_collect, self)
+
+        if metadata.get("cache", {}).get("enabled") and (result := self._collect_cached(metadata, into)):
+            return result
+
+        query, select_args, select_kwargs = self._before_query(metadata, add_id=add_id)
+        metadata["sql"] = db(query)._select(*select_args, **select_kwargs)
+
+        return db, query, select_args, select_kwargs
+
+    @staticmethod
+    def _record_fetch_metadata(
+        metadata: Metadata,
+        query: Query,
+        select_args: list[t.Any],
+        select_kwargs: SelectKwargs,
+        duration: float,
+    ) -> None:
+        """
+        Shared metadata bookkeeping after a fetch, for `collect()`/`collect_async()`.
+        """
+        metadata["final_query"] = str(query)
+        metadata["final_args"] = [str(_) for _ in select_args]
+        metadata["final_kwargs"] = select_kwargs
+        metadata["select_duration"] = duration
+
+    def _finalize_collect(
+        self,
+        typed_rows: TypedRows[T_MetaInstance],
+        rows: Rows,
+        db: TypeDAL,
+    ) -> TypedRows[T_MetaInstance]:
+        """
+        Shared tail of `collect()`/`collect_async()`: after_collect hooks + cache save.
+        """
+        self._run_hooks(db._after_collect, self, typed_rows, rows)
+        # only saves if requested in metadata:
+        return save_to_cache(typed_rows, rows)
 
     def collect(
         self,
@@ -637,7 +707,6 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         """
         Execute the built query and turn it into model instances, while handling relationships.
         """
-        require_permission(self._permissions, "read")
         if _to is None:
             _to = TypedRows
         into = _into or self.model
@@ -647,31 +716,18 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
             # fallback to execute:
             return self.execute(add_id=add_id)
 
-        db = self._get_db()
-
-        for fn_before in db._before_collect:
-            fn_before(self)
-
         metadata: Metadata = self.metadata.copy()
-
-        if metadata.get("cache", {}).get("enabled") and (result := self._collect_cached(metadata, into)):
-            return result
-
-        query, select_args, select_kwargs = self._before_query(metadata, add_id=add_id)
-
-        metadata["sql"] = db(query)._select(*select_args, **select_kwargs)
+        prepared = self._collect_prepare(metadata, add_id, into)
+        if not isinstance(prepared, tuple):
+            return prepared
+        db, query, select_args, select_kwargs = prepared
 
         if verbose:  # pragma: no cover
             print(metadata["sql"])
 
         start_time = time.perf_counter()
         rows: Rows = db(query).select(*select_args, **select_kwargs)
-        duration = time.perf_counter() - start_time
-
-        metadata["final_query"] = str(query)
-        metadata["final_args"] = [str(_) for _ in select_args]
-        metadata["final_kwargs"] = select_kwargs
-        metadata["select_duration"] = duration
+        self._record_fetch_metadata(metadata, query, select_args, select_kwargs, time.perf_counter() - start_time)
 
         if verbose:  # pragma: no cover
             print(rows)
@@ -685,11 +741,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
             # if that's not the case, return default behavior again
             typed_rows = self._collect_with_relationships(rows, metadata=metadata, _to=_to, _into=into, _init=_init)
 
-        for fn_after in db._after_collect:
-            fn_after(self, typed_rows, rows)
-
-        # only saves if requested in metadata:
-        return save_to_cache(typed_rows, rows)
+        return self._finalize_collect(typed_rows, rows, db)
 
     async def collect_async(
         self,
@@ -700,10 +752,46 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         _init: t.Callable[[_TypedTable, Row], None] | None = None,
     ) -> TypedRows[T_MetaInstance]:
         """
-        Async twin of `collect()`. Primary target of the RFC's PoC (docs/rfc-async-execution.md):
-        same shape as `collect()`, only the execute step in the middle is async.
+        Async twin of `collect()`: same shape, only the execute step in the middle is async.
+
+        Relationships/joins are not implemented yet: `_collect_with_relationships()` issues
+        further synchronous sub-queries that would need their own async twins first.
         """
-        raise NotImplementedError
+        if _to is None:
+            _to = TypedRows
+        into = _into or self.model
+
+        if not isinstance(self.model, TableMeta):
+            # tried to use querybuilder with a non-typedal table,
+            # fallback to execute:
+            return await self.execute_async(add_id=add_id)
+
+        metadata: Metadata = self.metadata.copy()
+        prepared = self._collect_prepare(metadata, add_id, into)
+        if not isinstance(prepared, tuple):
+            return prepared
+        db, query, select_args, select_kwargs = prepared
+
+        if self.relationships:
+            raise NotImplementedError(
+                "collect_async() with relationships/joins is not implemented yet - "
+                "_collect_with_relationships() issues further synchronous queries that "
+                "would need their own async twins first.",
+            )
+
+        if verbose:  # pragma: no cover
+            print(metadata["sql"])
+
+        start_time = time.perf_counter()
+        rows: Rows = await db.select_async(query, *select_args, **select_kwargs)
+        self._record_fetch_metadata(metadata, query, select_args, select_kwargs, time.perf_counter() - start_time)
+
+        if verbose:  # pragma: no cover
+            print(rows)
+
+        typed_rows = _to.from_rows(rows, self.model, metadata=metadata, into=into, init=_init)
+
+        return self._finalize_collect(typed_rows, rows, db)
 
     def collect_into[T_Into: _TypedTable](
         self,
