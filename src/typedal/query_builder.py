@@ -61,11 +61,11 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
     def __init__(
         self,
         model: t.Type[T_MetaInstance],
-        add_query: t.Optional[Query] = None,
-        select_args: t.Optional[list[t.Any]] = None,
-        select_kwargs: t.Optional[SelectKwargs] = None,
-        relationships: dict[str, Relationship[t.Any]] = None,
-        metadata: Metadata = None,
+        add_query: Query | None = None,
+        select_args: list[t.Any] | None = None,
+        select_kwargs: SelectKwargs | None = None,
+        relationships: dict[str, Relationship[t.Any]] | None = None,
+        metadata: Metadata | None = None,
         permissions: Permissions | None = None,
     ):
         """
@@ -76,7 +76,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         """
         self.model = model
         table = self._ensure_table_defined()
-        default_query: Query = t.cast(Query, table.id > 0)
+        default_query: Query = t.cast(Query, table.id > 0)  # ty: ignore[unresolved-attribute]
         self.query = add_query or default_query
         self.select_args = select_args or []
         self.select_kwargs = select_kwargs or {}
@@ -117,7 +117,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         Querybuilder is truthy if it has t.Any conditions.
         """
         table = self._ensure_table_defined()
-        default_query: Query = t.cast(Query, table.id > 0)
+        default_query: Query = t.cast(Query, table.id > 0)  # ty: ignore[unresolved-attribute]
         return any(
             [
                 self.query != default_query,
@@ -130,12 +130,12 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
 
     def _extend(
         self,
-        add_query: t.Optional[Query] = None,
-        overwrite_query: t.Optional[Query] = None,
-        select_args: t.Optional[list[t.Any]] = None,
-        select_kwargs: t.Optional[SelectKwargs] = None,
-        relationships: dict[str, Relationship[t.Any]] = None,
-        metadata: Metadata = None,
+        add_query: Query | None = None,
+        overwrite_query: Query | None = None,
+        select_args: list[t.Any] | None = None,
+        select_kwargs: SelectKwargs | None = None,
+        relationships: dict[str, Relationship[t.Any]] | None = None,
+        metadata: Metadata | None = None,
         permissions: Permissions | None = None,
     ) -> "QueryBuilder[T_MetaInstance]":
         return QueryBuilder(
@@ -144,7 +144,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
             (self.select_args + select_args) if select_args else self.select_args,
             (self.select_kwargs | select_kwargs) if select_kwargs else self.select_kwargs,
             (self.relationships | relationships) if relationships else self.relationships,
-            (self.metadata | (metadata or {})) if metadata else self.metadata,
+            (self.metadata | (metadata or {})) if metadata else self.metadata,  # ty: ignore[invalid-argument-type]
             permissions=merge_permissions(self._permissions, permissions),
         )
 
@@ -162,7 +162,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
             return value
 
         if isinstance(value, (list, tuple, set)):
-            return list(self._normalize_select_option(val) for val in value)
+            return t.cast(list[str], [self._normalize_select_option(val) for val in value])
 
         if rname := getattr(value, "_rname", None):
             return str(rname)
@@ -275,7 +275,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
             elif isinstance(query_part, (pydal.objects.Query, Expression, pydal.objects.Expression)):
                 subquery |= t.cast(Query, query_part)
             elif callable(query_part):
-                if result := query_part(self.model):
+                if result := query_part(self.model):  # ty: ignore[call-top-callable]
                     subquery |= result
             elif isinstance(query_part, dict):
                 subsubquery = DummyQuery()
@@ -399,10 +399,10 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
                 raise ValueError("join(field, on=...) can only be used with exactly one field!")
 
             if isinstance(on, pydal.objects.Expression):
-                on = [on]
+                on = t.cast(list[Expression], [on])
 
             if isinstance(on, list):
-                on = as_lambda(on)
+                on = t.cast(OnQuery, as_lambda(on))
 
             field = fields[0]
             if isinstance(field, Relationship) and field.name:
@@ -748,12 +748,12 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         """
         self._run_hooks(db._after_collect, self, typed_rows, rows)
         # only saves if requested in metadata:
-        return save_to_cache(typed_rows, rows)
+        return save_to_cache(typed_rows, rows)  # ty: ignore[invalid-argument-type]
 
     def collect(
         self,
         verbose: bool = False,
-        _to: t.Type["TypedRows[t.Any]"] = None,
+        _to: t.Type["TypedRows[t.Any]"] | None = None,
         add_id: bool = True,
         _into: t.Type[_TypedTable] | None = None,
         _init: t.Callable[[_TypedTable, Row], None] | None = None,
@@ -768,7 +768,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         if not isinstance(self.model, TableMeta):
             # tried to use querybuilder with a non-typedal table,
             # fallback to execute:
-            return self.execute(add_id=add_id)
+            return t.cast(TypedRows[T_MetaInstance], self.execute(add_id=add_id))
 
         metadata: Metadata = self.metadata.copy()
         prepared = self._collect_prepare(metadata, add_id, into)
@@ -800,7 +800,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
     async def collect_async(
         self,
         verbose: bool = False,
-        _to: t.Type["TypedRows[t.Any]"] = None,
+        _to: t.Type["TypedRows[t.Any]"] | None = None,
         add_id: bool = True,
         _into: t.Type[_TypedTable] | None = None,
         _init: t.Callable[[_TypedTable, Row], None] | None = None,
@@ -821,7 +821,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         if not isinstance(self.model, TableMeta):
             # tried to use querybuilder with a non-typedal table,
             # fallback to execute:
-            return await self.execute_async(add_id=add_id)
+            return t.cast(TypedRows[T_MetaInstance], await self.execute_async(add_id=add_id))
 
         metadata: Metadata = self.metadata.copy()
         prepared = self._collect_prepare(metadata, add_id, into)
@@ -1003,10 +1003,10 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         if relation.condition and relation.join == "inner":
             other = relation.get_table(db)
             other = other.with_alias(f"{key}_{hash(relation)}")
-            condition = relation.condition(parent_table, other)
+            condition = relation.condition(parent_table, other)  # ty: ignore[invalid-argument-type]
 
             if callable(relation.condition_and):
-                condition &= relation.condition_and(parent_table, other)
+                condition &= relation.condition_and(parent_table, other)  # ty: ignore[invalid-argument-type]
 
             joins.append(other.on(condition))
 
@@ -1037,7 +1037,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
             return [expression_without_direction if direction.upper() in {"ASC", "DESC"} else orderby]
 
         if isinstance(orderby, pydal.objects.Field):
-            return [orderby]
+            return t.cast(list[OrderBy], [orderby])
 
         fields = []
         first = getattr(orderby, "first", None)
@@ -1131,19 +1131,19 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         # Build join condition
         if relation.on:
             # Custom .on condition - always left join
-            on = relation.on(parent_table, other)
+            on = relation.on(parent_table, other)  # ty: ignore[invalid-argument-type]
             if not isinstance(on, list):
                 on = [on]
 
             on = [_ for _ in on if isinstance(_, pydal.objects.Expression)]
-            left_joins.extend(on)
+            left_joins.extend(on)  # ty: ignore[invalid-argument-type]
         elif method == "left":
             # Generate left join condition
             other = other.with_alias(f"{key}_{hash(relation)}")
-            condition = t.cast(Query, relation.condition(parent_table, other))
+            condition = t.cast(Query, relation.condition(parent_table, other))  # ty: ignore[call-non-callable, invalid-argument-type]
 
             if callable(relation.condition_and):
-                condition &= relation.condition_and(parent_table, other)
+                condition &= relation.condition_and(parent_table, other)  # ty: ignore[invalid-argument-type]
 
             left_joins.append(other.on(condition))
         else:
@@ -1417,7 +1417,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
                 other = other.with_alias(f"{key}_{hash(relation)}")
 
             if relation.condition is not None:
-                query &= relation.condition(model, other)
+                query &= relation.condition(model, other)  # ty: ignore[invalid-argument-type]
 
         return query
 
@@ -1478,7 +1478,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         relationship case only (without relationships both just defer to `count()`).
         """
         db = self._get_db()
-        query = self.__count(db, distinct=self.model.id, include_left_for_distinct=False)
+        query = self.__count(db, distinct=self.model.id, include_left_for_distinct=False)  # ty: ignore[invalid-argument-type]
         return db, query
 
     def __pagination_count(self) -> int:
@@ -1633,7 +1633,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
             # old-style pydal table: keep pydal semantics and return raw Row
             return row
 
-        return self.model.from_row(row)
+        return self.model.from_row(row)  # ty: ignore[invalid-argument-type]
 
     async def first_async(self, verbose: bool = False) -> T_MetaInstance | None:
         """
@@ -1649,7 +1649,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
             # old-style pydal table: keep pydal semantics and return raw Row
             return row
 
-        return self.model.from_row(row)
+        return self.model.from_row(row)  # ty: ignore[invalid-argument-type]
 
     def _first(self) -> str:
         return self._paginate(page=1, limit=1)

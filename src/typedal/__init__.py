@@ -15,7 +15,7 @@ from . import fields  # isort: skip
 try:
     from .for_py4web import DAL as P4W_DAL
 except ImportError:  # pragma: no cover
-    P4W_DAL = None  # type: ignore
+    P4W_DAL = None
 
 __all__ = [
     "PaginatedRows",

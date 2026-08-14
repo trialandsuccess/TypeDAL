@@ -22,6 +22,13 @@ if t.TYPE_CHECKING:
     from .query_builder import QueryBuilder
 
 
+class FunctionWithMetadata[T](t.Protocol):
+    __name__: str
+    __qualname__: str
+
+    def __call__(self, *args: t.Any, **kwargs: t.Any) -> T: ...
+
+
 def get_now(tz: dt.timezone = dt.timezone.utc) -> dt.datetime:
     """
     Get the default datetime, optionally in a specific timezone.
@@ -306,7 +313,8 @@ def _fetch_cached_payload(key: str) -> tuple[t.Any, t.Any] | None:
 
     now = get_now()
     # Ensure comparison is offset-aware if the row has a timestamp
-    expires = row.expires_at.replace(tzinfo=dt.timezone.utc) if row.expires_at else None
+    expires_at = t.cast(dt.datetime | None, row.expires_at)
+    expires = expires_at.replace(tzinfo=dt.timezone.utc) if expires_at else None
 
     if expires and now >= expires:
         row.delete_record()
@@ -531,7 +539,7 @@ def calculate_stats(db: "TypeDAL") -> Stats[GenericStats]:
 
 def memoize[T: t.Any](
     db: "TypeDAL",
-    func: t.Callable[..., T],
+    func: FunctionWithMetadata[T],
     *args: TypedRows[t.Any] | TypedTable,
     key: str | None = None,
     ttl: int | dt.timedelta | dt.datetime | None = None,
@@ -568,7 +576,7 @@ def memoize[T: t.Any](
             for row in arg:
                 deps.add((str(row._table), row.id))
         elif isinstance(arg, TypedTable):
-            deps.add((str(arg._table), arg.id))
+            deps.add((str(arg._table), t.cast(int, arg.id)))
 
     # Generate cache key
     _, hashed_key = create_and_hash_cache_key(key, *[getattr(arg, "id", None) for arg in args], kwargs)

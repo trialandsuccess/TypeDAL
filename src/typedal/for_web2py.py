@@ -3,11 +3,13 @@ ONLY USE IN COMBINATION WITH WEB2PY!
 """
 
 import datetime as dt
+import typing as t
 
 from pydal.validators import IS_NOT_IN_DB
 
 from . import TypeDAL, TypedField, TypedTable
 from .fields import TextField
+from .types import Validator
 from .web2py_py4web_shared import AuthUser
 
 DAL = TypeDAL  # export as DAL for compatibility with py4web
@@ -28,7 +30,8 @@ class AuthGroup(TypedTable):
         """
         super().__on_define__(db)
 
-        cls.role.requires = IS_NOT_IN_DB(db, "w2p_auth_group.role")
+        requires = [IS_NOT_IN_DB(db, "w2p_auth_group.role")]
+        cls.role.requires = t.cast(list[Validator], requires)
 
 
 class AuthMembership(TypedTable):

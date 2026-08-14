@@ -105,7 +105,7 @@ class HAS_UNIQUE_SLUG(IS_NOT_IN_DB):
         """
         super().__init__(db, field, error_message)
 
-    def validate[T](self, original: T, record_id: t.Optional[int] = None) -> T:
+    def validate[T](self, original: T, record_id: t.Optional[int] = None) -> T:  # ty: ignore[invalid-method-override]
         """
         Performs checks to see if the slug already exists for a different row.
         """
@@ -261,7 +261,7 @@ class BaseModeProtocol(t.Protocol):
 try:
     from pydantic import BaseModel
 except ImportError:
-    BaseModel = BaseModeProtocol  # type: ignore
+    BaseModel = BaseModeProtocol
 
 
 def dump_pydantic[T](values: T, _shallow_nested: bool = False) -> T:
@@ -367,7 +367,7 @@ class PydanticMixin(Mixin):
     @staticmethod
     def _make_instance_converter(model_cls: type, fields: dict[str, t.Any]) -> t.Callable[[t.Any], t.Any]:
         _PRIMITIVES = (str, float, bool, bytes)
-        relationship_names = set(model_cls.get_relationships()) if hasattr(model_cls, "get_relationships") else set()
+        relationship_names = set(model_cls.get_relationships()) if hasattr(model_cls, "get_relationships") else set()  # ty: ignore[call-non-callable]
 
         def convert(value: t.Any) -> t.Any:
             if isinstance(value, dict):
@@ -534,7 +534,7 @@ class PydanticMixin(Mixin):
         handler: t.Any,
     ) -> dict[str, t.Any]:
         """Build the JSON schema by delegating to pydantic's handler."""
-        return handler(schema)  # type: ignore
+        return handler(schema)
 
     def model_dump(self, mode: str = "python", *, _shallow: bool = False) -> dict[str, t.Any]:
         """Serialize this model to a dict, with optional shallow nested output."""

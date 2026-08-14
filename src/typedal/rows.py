@@ -49,9 +49,9 @@ class TypedRows(t.Collection[T_MetaInstance], Rows):
         self,
         rows: Rows,
         model: t.Type[T_MetaInstance],
-        records: dict[int, T_MetaInstance] = None,
-        metadata: Metadata = None,
-        raw: dict[int, list[Row]] = None,
+        records: dict[int, T_MetaInstance] | None = None,
+        metadata: Metadata | None = None,
+        raw: dict[int, list[Row]] | None = None,
     ) -> None:
         """
         Should not be called manually!
@@ -127,7 +127,7 @@ class TypedRows(t.Collection[T_MetaInstance], Rows):
     def find(
         self,
         f: t.Callable[[T_MetaInstance], Query],
-        limitby: tuple[int, int] = None,
+        limitby: tuple[int, int] | None = None,
     ) -> "TypedRows[T_MetaInstance]":
         """
         Returns a new Rows object, a subset of the original object, filtered by the function `f`.
@@ -198,7 +198,7 @@ class TypedRows(t.Collection[T_MetaInstance], Rows):
 
         return mktable(data, headers)
 
-    def group_by_value[T: t.Any, T_MetaInstance: _TypedTable](
+    def group_by_value[T: t.Any, T_MetaInstance: _TypedTable](  # ty: ignore[shadowed-type-variable]
         self,
         *fields: "str | Field | TypedField[T]",
         one_result: bool = False,
@@ -246,8 +246,8 @@ class TypedRows(t.Collection[T_MetaInstance], Rows):
 
         return {k: v.as_dict() for k, v in self.records.items()}
 
-    def as_json(
-        self, default: t.Callable[[t.Any], t.Any] = None, indent: t.Optional[int] = None, **kwargs: t.Any
+    def as_json(  # ty: ignore[invalid-method-override]
+        self, default: t.Callable[[t.Any], t.Any] | None = None, indent: int | None = None, **kwargs: t.Any
     ) -> str:
         """
         Turn the data into a dict and then dump to JSON.
@@ -256,7 +256,9 @@ class TypedRows(t.Collection[T_MetaInstance], Rows):
 
         return as_json.encode(data, default=default, indent=indent, **kwargs)
 
-    def json(self, default: t.Callable[[t.Any], t.Any] = None, indent: t.Optional[int] = None, **kwargs: t.Any) -> str:
+    def json(
+        self, default: t.Callable[[t.Any], t.Any] | None = None, indent: int | None = None, **kwargs: t.Any
+    ) -> str:  # ty: ignore[invalid-method-override]
         """
         Turn the data into a dict and then dump to JSON.
         """
@@ -267,7 +269,7 @@ class TypedRows(t.Collection[T_MetaInstance], Rows):
         compact: bool = False,
         storage_to_dict: bool = False,
         datetime_to_str: bool = False,
-        custom_types: list[type] = None,
+        custom_types: list[type] | None = None,
     ) -> list[AnyDict]:
         """
         Get the data in a list of dicts.
@@ -277,7 +279,7 @@ class TypedRows(t.Collection[T_MetaInstance], Rows):
 
         return [_.as_dict() for _ in self.records.values()]
 
-    def __getitem__(self, item: int) -> T_MetaInstance:
+    def __getitem__(self, item: int) -> T_MetaInstance:  # ty: ignore[invalid-method-override]
         """
         You can get a specific row by ID from a typedrows by using rows[idx] notation.
 
@@ -324,10 +326,10 @@ class TypedRows(t.Collection[T_MetaInstance], Rows):
     def join(
         self,
         field: "Field | TypedField[t.Any]",
-        name: str = None,
-        constraint: Query = None,
-        fields: list[str | Field] = None,
-        orderby: t.Optional[str | Field] = None,
+        name: str | None = None,
+        constraint: Query | None = None,
+        fields: list[str | Field] | None = None,
+        orderby: str | Field | None = None,
     ) -> T_MetaInstance:
         """
         This can be used to JOIN with some relationships after the initial select.
@@ -345,7 +347,7 @@ class TypedRows(t.Collection[T_MetaInstance], Rows):
         quotechar: str = '"',
         quoting: int = csv.QUOTE_MINIMAL,
         represent: bool = False,
-        colnames: list[str] = None,
+        colnames: list[str] | None = None,
         write_colnames: bool = True,
         *args: t.Any,
         **kwargs: t.Any,
@@ -373,7 +375,7 @@ class TypedRows(t.Collection[T_MetaInstance], Rows):
         cls,
         rows: Rows,
         model: t.Type[T_MetaInstance],
-        metadata: Metadata = None,
+        metadata: Metadata | None = None,
         into: t.Type[_TypedTable] | None = None,
         init: t.Callable[[_TypedTable, Row], None] | None = None,
     ) -> "TypedRows[T_MetaInstance]":
@@ -497,7 +499,7 @@ class PaginatedRows(TypedRows[T_MetaInstance]):
         if data["current_page"] >= data["max_page"]:
             raise StopIteration("Final Page")
 
-        return self._query_builder.paginate(limit=data["limit"], page=data["current_page"] + 1)
+        return t.cast(t.Self, self._query_builder.paginate(limit=data["limit"], page=data["current_page"] + 1))
 
     def previous(self) -> t.Self:
         """
@@ -507,7 +509,7 @@ class PaginatedRows(TypedRows[T_MetaInstance]):
         if data["current_page"] <= 1:
             raise StopIteration("First Page")
 
-        return self._query_builder.paginate(limit=data["limit"], page=data["current_page"] - 1)
+        return t.cast(t.Self, self._query_builder.paginate(limit=data["limit"], page=data["current_page"] - 1))
 
     def as_dict(self, *_: t.Any, **__: t.Any) -> PaginateDict:  # type: ignore
         """
@@ -525,7 +527,7 @@ class TypedSet(pydal.objects.Set):  # pragma: no cover
     This class is not actually used, only 'cast' by TypeDAL.__call__
     """
 
-    def count(self, distinct: t.Optional[bool] = None, cache: AnyDict = None) -> int:
+    def count(self, distinct: bool | None = None, cache: AnyDict | None = None) -> int:
         """
         Count returns an int.
         """

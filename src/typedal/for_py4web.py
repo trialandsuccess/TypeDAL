@@ -2,7 +2,7 @@
 ONLY USE IN COMBINATION WITH PY4WEB!
 """
 
-import typing
+import typing as t
 
 import threadsafevariable
 from py4web.core import ICECUBE
@@ -21,9 +21,9 @@ class Fixture(_Fixture):
 
 
 class PY4WEB_DAL_SINGLETON(MetaDAL):
-    _instances: typing.ClassVar[typing.MutableMapping[str, TypeDAL]] = {}
+    _instances: t.ClassVar[t.MutableMapping[str, TypeDAL]] = {}
 
-    def __call__(cls, uri: typing.Optional[str] = None, *args: typing.Any, **kwargs: typing.Any) -> TypeDAL:
+    def __call__(cls, uri: str | None = None, *args: t.Any, **kwargs: t.Any) -> TypeDAL:
         db_uid = kwargs.get("db_uid", hashlib_md5(repr(uri or (args, kwargs))).hexdigest())
         if db_uid not in cls._instances:
             cls._instances[db_uid] = super().__call__(uri, *args, **kwargs)
@@ -39,20 +39,20 @@ class DAL(TypeDAL, Fixture, metaclass=PY4WEB_DAL_SINGLETON):  # pragma: no cover
     Fixture similar to the py4web pydal fixture, but for typedal.
     """
 
-    def on_request(self, _: AnyDict) -> None:
+    def on_request(self, _: AnyDict) -> None:  # ty: ignore[invalid-method-override]
         """
         Make sure there is a database connection when a request comes in.
         """
         self.get_connection_from_pool_or_new()
         threadsafevariable.ThreadSafeVariable.restore(ICECUBE)
 
-    def on_error(self, _: AnyDict) -> None:
+    def on_error(self, _: AnyDict) -> None:  # ty: ignore[invalid-method-override]
         """
         Rollback db on error.
         """
         self.recycle_connection_in_pool_or_close("rollback")
 
-    def on_success(self, _: AnyDict) -> None:
+    def on_success(self, _: AnyDict) -> None:  # ty: ignore[invalid-method-override]
         """
         Commit db on success.
         """
