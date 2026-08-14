@@ -21,6 +21,7 @@ import pytest
 import pytest_asyncio
 
 from src.typedal import TypeDAL, TypedField, TypedTable
+from src.typedal.async_execution import ASYNC_POOL_FACTORIES
 from src.typedal.fields import DecimalField, JSONField
 
 
@@ -230,11 +231,11 @@ async def test_executesql_async_matches_sync_executesql(db_async: TypeDAL):
 
 
 @pytest.mark.asyncio
-async def test_collect_async_raises_on_relationships(db_async: TypeDAL):
+async def test_collect_async_with_relationships_matches_sync(db_async: TypeDAL):
     """
-    Deliberate, documented limitation, not a forgotten stub: collect_async() with
-    relationships/joins raises, because _collect_with_relationships() would need further
-    synchronous sub-queries reimplemented async first. This locks that behavior in as tested.
+    Relationships/joins must load through the async path too. Nothing on that path executes a
+    second query: the joins are in the single query built by `_before_query()` and
+    `_collect_with_relationships()` only maps already-fetched rows, so async parity is expected.
     """
     db = db_async
 
@@ -251,8 +252,20 @@ async def test_collect_async_raises_on_relationships(db_async: TypeDAL):
     AsyncThingRelMain.insert(name="child", other=other_id)
     db.commit()
 
-    with pytest.raises(NotImplementedError):
-        await AsyncThingRelMain.join("other").collect_async()
+    sync_rows = AsyncThingRelMain.join("other").collect()
+    async_rows = await AsyncThingRelMain.join("other").collect_async()
+
+    assert len(async_rows) == len(sync_rows) == 1
+
+    sync_row = sync_rows.first()
+    async_row = async_rows.first()
+    assert async_row.name == sync_row.name == "child"
+    assert async_row.other.name == sync_row.other.name == "parent"
+
+    # and with a limitby, which routes through `_apply_limitby_optimization()`'s id-subquery:
+    paginated = await AsyncThingRelMain.join("other").paginate_async(limit=1, page=1)
+    assert len(paginated) == 1
+    assert paginated.first().other.name == "parent"
 
 
 @pytest.mark.asyncio
@@ -344,7 +357,7 @@ async def test_paginate_async_matches_sync_paginate(db_async: TypeDAL):
 
     assert len(async_page) == len(sync_page) == 2
     assert async_page.pagination["current_page"] == sync_page.pagination["current_page"] == 2
-    assert async_page.pagination["rows"] == sync_page.pagination["rows"] == 5
+    assert async_page.pagination["total_items"] == sync_page.pagination["total_items"] == 5
 
     async_page_2 = await AsyncThingPaginate.paginate_async(limit=2, page=1)
     assert len(async_page_2) == 2
@@ -647,3 +660,219 @@ async def test_collect_async_does_not_block_event_loop(db_async: TypeDAL):
     gaps = [b - a for a, b in zip(ticks, ticks[1:])]
     # generous margin over the 5ms sleep interval; a blocking call would blow well past this
     assert max(gaps) < 0.05, f"event loop was blocked: max gap between ticks was {max(gaps) * 1000:.1f}ms"
+
+
+# ---------------------------------------------------------------------------
+# Known defects in the async execution path.
+#
+# Each test below asserts the behaviour the async path SHOULD have - in every case parity
+# with the sync path it is a twin of. They fail against the current implementation; they are
+# reproductions, not a regression net, and should go green as the defects are fixed.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_insert_async_honors_on_insert_error_hook(db_async: TypeDAL):
+    """
+    pydal's `adapter.insert()` routes a failing INSERT through `table._on_insert_error` and
+    returns the hook's value (adapters/base.py:541-549). `db.insert_async()` does not, so the
+    same table diverges between sync and async on a constraint violation - while the sibling
+    `update_async()` twenty lines up already does honour `_on_update_error` (core.py:694-699).
+    """
+    db = db_async
+
+    @db.define()
+    class AsyncThingInsertError(TypedTable):
+        name = TypedField(str, unique=True)
+
+    table = AsyncThingInsertError._ensure_table_defined()
+    table._on_insert_error = lambda _table, _fields, _e: "handled"
+
+    AsyncThingInsertError.insert(name="dup")
+    db.commit()
+
+    # sync: the hook swallows the integrity error and its return value comes back out
+    assert table.insert(name="dup") == "handled"
+    db.rollback()  # the failed statement aborted the sync transaction (postgres)
+
+    # async must do the same:
+    duplicate = table._fields_and_values_for_insert({"name": "dup"}).op_values()
+    assert await db.insert_async(table, duplicate) == "handled"
+
+
+@pytest.mark.asyncio
+async def test_get_async_pool_is_opened_once_under_concurrency(
+    db_async: TypeDAL,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """
+    `_get_async_pool()` checks `self._async_pool is None`, awaits the factory, then assigns
+    (core.py:602-612). Two coroutines whose first DB use overlaps both pass the check and both
+    open one: a second psycopg pool, or on SQLite a second aiosqlite connection. Only one is
+    stored; the other is dropped without `close()`, leaking the connection (and, for aiosqlite,
+    its background thread).
+
+    The stand-in factory suspends before doing the real work. Both real factories contain
+    awaits, but *whether* a given one actually yields to the loop is a driver detail rather
+    than a guarantee - `aiosqlite.connect()` does, `psycopg_pool`'s `open()` currently does
+    not - and this is a test of `_get_async_pool()`'s check-then-assign, not of which drivers
+    happen to make it observable today.
+    """
+    db = db_async
+
+    # start from "never opened", whatever earlier tests on this session-scoped DAL did:
+    await db.close_async()
+
+    dbengine = db._adapter.dbengine
+    real_factory = ASYNC_POOL_FACTORIES[dbengine]
+    opened = []
+
+    async def counting_factory(dal: TypeDAL):
+        await asyncio.sleep(0)  # any await inside a factory is enough to open the window
+        pool = await real_factory(dal)
+        opened.append(pool)
+        return pool
+
+    monkeypatch.setitem(ASYNC_POOL_FACTORIES, dbengine, counting_factory)
+
+    try:
+        first, second = await asyncio.gather(db._get_async_pool(), db._get_async_pool())
+
+        assert first is second, "concurrent first use handed out two different pools"
+        assert len(opened) == 1, f"opened {len(opened)}, so {len(opened) - 1} was leaked unclosed"
+    finally:
+        # don't let this test's own leak poison the rest of the session:
+        for pool in opened:
+            if pool is not db._async_pool:
+                await pool.close()
+
+
+@pytest.mark.asyncio
+async def test_update_record_async_ignores_common_filters_like_sync(db_async: TypeDAL):
+    """
+    pydal's `RecordUpdater` writes by primary key with `ignore_common_filters=True`
+    (helpers/classes.py:357), so a record you already hold can always be written back.
+    `update_record_async()` rebuilds that update through `QueryBuilder.update_async()` without
+    the flag, so `adapter._update()` re-applies the table's common filter (base.py:566-568 via
+    `use_common_filters`, helpers/methods.py:49-54) and a row the filter excludes - a
+    soft-deleted one, say - silently updates zero rows.
+
+    Also reached by `validate_and_update_async()` and the update branch of
+    `update_or_insert_async()`, which both route through `update_record_async()`.
+    """
+    db = db_async
+
+    @db.define()
+    class AsyncThingCommonFilter(TypedTable):
+        name: TypedField[str]
+        archived: TypedField[bool]
+
+    table = AsyncThingCommonFilter._ensure_table_defined()
+
+    row_id = int(AsyncThingCommonFilter.insert(name="original", archived=True))
+    db.commit()
+
+    # hold the record from before the filter exists, as a soft-delete flow would
+    record = AsyncThingCommonFilter.where(AsyncThingCommonFilter.id == row_id).first()
+
+    table._common_filter = lambda _query: table.archived == False  # noqa: E712
+
+    try:
+        # sync twin writes straight through the filter:
+        record.update_record(name="sync-updated")
+        db.commit()
+
+        # async twin must too:
+        await record.update_record_async(name="async-updated")
+        await db.commit_async()
+    finally:
+        table._common_filter = None
+
+    fresh = AsyncThingCommonFilter.where(AsyncThingCommonFilter.id == row_id).first()
+    assert fresh.name == "async-updated"
+
+
+@pytest.mark.asyncio
+async def test_insert_async_lastrowid_does_not_read_shared_last_insert(
+    db_async: TypeDAL,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """
+    `postgres_lastrowid_async()` decides whether the INSERT it just ran carried a RETURNING
+    clause by reading `adapter._last_insert` (async_execution.py:176) - a property over
+    `THREAD_LOCAL._pydal_last_insert_` (pydal adapters/postgres.py:128-133). Coroutines share
+    one thread, so that thread-local provides no isolation whatsoever here: for the async path
+    it is effectively a global.
+
+    `insert_async()` sets it via `adapter._insert()` (core.py:734) and reads it several awaits
+    later (core.py:745); any other insert landing in that window overwrites it. The window is
+    made deterministic here rather than raced: the statement built is a `DEFAULT VALUES` insert
+    (no fields -> no RETURNING, pydal postgres.py:149-162), while a concurrent normal insert
+    leaves the flag truthy - so lastrowid tries to `fetchone()` a result that does not exist.
+    """
+    db = db_async
+    if db._adapter.dbengine != "postgres":
+        pytest.skip("only the postgres lastrowid strategy consults _last_insert")
+
+    @db.define()
+    class AsyncThingLastInsert(TypedTable):
+        name = TypedField(str, notnull=False)
+
+    table = AsyncThingLastInsert._ensure_table_defined()
+    adapter = db._adapter
+    real_get_pool = db._get_async_pool
+
+    async def racing_get_pool():
+        pool = await real_get_pool()
+        # stand-in for a concurrent insert_async() finishing its own adapter._insert():
+        adapter._last_insert = (table._id, 1)
+        return pool
+
+    monkeypatch.setattr(db, "_get_async_pool", racing_get_pool)
+
+    # no fields -> INSERT INTO ... DEFAULT VALUES, which has no RETURNING clause
+    result = await db.insert_async(table, [])
+
+    assert int(result) > 0
+
+
+@pytest.mark.asyncio
+async def test_async_connection_is_not_shared_between_concurrent_coroutines(db_async: TypeDAL):
+    """
+    `SqliteAsyncConnection.connection()` yields the single connection it wraps to every caller
+    (async_execution.py:95-103) and commits on clean exit / rolls back on exception. Two
+    coroutines inside it simultaneously are therefore in the *same* transaction, and whichever
+    exits first decides for both: a clean writer's row gets discarded by an unrelated failure,
+    or a failed writer's row gets committed by an unrelated success.
+
+    `SqliteAsyncConnection`'s docstring promises every `_async` call is its own committed
+    transaction; that only holds while calls never overlap. Postgres passes this test, since
+    psycopg_pool hands out distinct connections.
+    """
+    db = db_async
+
+    @db.define()
+    class AsyncThingIsolation(TypedTable):
+        name: TypedField[str]
+
+    tablename = str(AsyncThingIsolation)
+    pool = await db._get_async_pool()
+    both_inside = asyncio.Barrier(2)
+
+    async def committing_writer():
+        async with pool.connection() as conn, conn.cursor() as cur:
+            await cur.execute(f"INSERT INTO {tablename} (name) VALUES ('keep')")  # noqa: S608
+            await both_inside.wait()
+            # clean exit -> this row must survive
+
+    async def failing_writer():
+        with contextlib.suppress(RuntimeError):
+            async with pool.connection() as conn, conn.cursor() as cur:
+                await cur.execute(f"INSERT INTO {tablename} (name) VALUES ('discard')")  # noqa: S608
+                await both_inside.wait()
+                raise RuntimeError("boom")  # -> this row must be rolled back
+
+    await asyncio.gather(committing_writer(), failing_writer())
+
+    rows = await AsyncThingIsolation.collect_async()
+    assert sorted(row.name for row in rows) == ["keep"]
