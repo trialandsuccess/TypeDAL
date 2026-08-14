@@ -148,6 +148,10 @@ upload_to_repository = false
 upload_to_release = false
 build_command = "hatch build"
 
+[tool.edwh.test]
+# measure coverage over src/ only, matching su6
+directory = "src"
+
 ### required in every su6 pyproject: ###
 [tool.su6]
 directory = "src"
