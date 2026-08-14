@@ -508,8 +508,33 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
     async def delete_async(self) -> list[int]:
         """
         Async twin of `delete()`.
+
+        `delete()` delegates the before_delete/after_delete hook dance to pydal's own
+        `Set.delete()` (objects.py:3010-3017); since pydal has no async version of that to
+        delegate to, it's replicated here, same reasoning as `insert_async` - only the
+        adapter-level execute step (`db.delete_async(...)`) is async.
         """
-        raise NotImplementedError
+        require_permission(self._permissions, "delete")
+        db = self._get_db()
+
+        removed_rows = await db.select_async(self.query, "id")
+        removed_ids = [row.id for row in removed_rows]
+
+        pydal_set = db(self.query)
+        table = db._adapter.get_table(self.query)
+
+        if any(f(pydal_set) for f in table._before_delete):
+            return []
+
+        result = await db.delete_async(table, self.query)
+
+        if result:
+            # success!
+            for f in table._after_delete:
+                f(pydal_set)
+            return removed_ids
+
+        return []
 
     def update(self, **fields: t.Any) -> list[int]:
         """
@@ -532,8 +557,37 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
     async def update_async(self, **fields: t.Any) -> list[int]:
         """
         Async twin of `update(**fields)`.
+
+        `update()` delegates the before_update/after_update hook dance to pydal's own
+        `Set.update()` (objects.py: `_build_update_row`/`_apply_update`); since pydal has no
+        async version of that to delegate to, it's replicated here, same reasoning as
+        `insert_async`/`delete_async` - only the adapter-level execute step
+        (`db.update_async(...)`) is async.
         """
-        raise NotImplementedError
+        require_permission(self._permissions, "update")
+        db = self._get_db()
+
+        updated_rows = await db.select_async(self.query, "id")
+        updated_ids = [row.id for row in updated_rows]
+
+        pydal_set = db(self.query)
+        table = db._adapter.get_table(self.query)
+        row = table._fields_and_values_for_update(fields)
+        if not row._values:
+            raise ValueError("No fields to update")
+
+        if any(f(pydal_set, row) for f in table._before_update):
+            return []
+
+        result = await db.update_async(table, self.query, row.op_values())
+
+        if result:
+            # success!
+            for f in table._after_update:
+                f(pydal_set, row)
+            return updated_ids
+
+        return []
 
     def _before_query(self, mut_metadata: Metadata, add_id: bool = True) -> tuple[Query, list[t.Any], SelectKwargs]:
         select_args = [self._select_arg_convert(_) for _ in self.select_args] or [self.model.ALL]
@@ -773,6 +827,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         db, query, select_args, select_kwargs = prepared
 
         if self.relationships:
+            # FIXME(async): Add async relationship loading once related sub-queries support it.
             raise NotImplementedError(
                 "collect_async() with relationships/joins is not implemented yet - "
                 "_collect_with_relationships() issues further synchronous queries that "
@@ -821,6 +876,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         """
         Async twin of `collect_into()`. Thin wrapper: builds on `collect_async()`.
         """
+        # FIXME(async): Implement this wrapper after `collect_async()` supports all required inputs.
         raise NotImplementedError
 
     def _validate_collect_into_model(self, into: t.Type[t.Any]) -> None:
@@ -870,6 +926,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         """
         Async twin of `column()`. Thin wrapper: `.select(field).execute_async()` then `.column(field)`.
         """
+        # FIXME(async): Implement this thin async wrapper.
         raise NotImplementedError
 
     def _handle_relationships_pre_select(
@@ -1323,6 +1380,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         """
         Async twin of `collect_or_fail()`. Thin wrapper: builds on `collect_async()`.
         """
+        # FIXME(async): Implement this thin async wrapper.
         raise NotImplementedError
 
     def __iter__(self) -> t.Generator[T_MetaInstance, None, None]:
@@ -1359,21 +1417,28 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
 
         return query
 
-    def count(self, distinct: t.Optional[bool] = None) -> int:
+    def _count_prepare(self, distinct: t.Optional[bool] = None) -> tuple[TypeDAL, Query]:
         """
-        Return the amount of rows matching the current query.
+        Shared setup for `count()`/`count_async()`.
         """
         require_permission(self._permissions, "read")
         db = self._get_db()
         query = self.__count(db, distinct=distinct)
+        return db, query
 
+    def count(self, distinct: t.Optional[bool] = None) -> int:
+        """
+        Return the amount of rows matching the current query.
+        """
+        db, query = self._count_prepare(distinct)
         return db(query).count(distinct)
 
     async def count_async(self, distinct: t.Optional[bool] = None) -> int:
         """
         Async twin of `count()`.
         """
-        raise NotImplementedError
+        db, query = self._count_prepare(distinct)
+        return await db.count_async(query, distinct)
 
     def _count(self, distinct: t.Optional[bool] = None) -> str:
         """
@@ -1400,6 +1465,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         """
         Async twin of `exists()`. Thin wrapper: builds on `count_async()`.
         """
+        # FIXME(async): Implement this thin async wrapper.
         raise NotImplementedError
 
     def __pagination_count(self) -> int:
@@ -1454,6 +1520,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         Note: `__pagination_count()` (the row-count step done before paginating) also hits the
         DB and needs its own async path internally - not exposed as a separate public method.
         """
+        # FIXME(async): Implement pagination, including its asynchronous count step.
         raise NotImplementedError
 
     def _paginate(
@@ -1490,6 +1557,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         """
         Async twin of `chunk()`. An async generator (`async for`), built on `collect_async()`.
         """
+        # FIXME(async): Implement this async generator on top of `collect_async()`.
         raise NotImplementedError
         yield  # pragma: no cover  # makes this an async generator for type-checking purposes
 
@@ -1514,6 +1582,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         """
         Async twin of `first()`. Thin wrapper: builds on `paginate_async()`.
         """
+        # FIXME(async): Implement this thin async wrapper.
         raise NotImplementedError
 
     def _first(self) -> str:
@@ -1534,6 +1603,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         """
         Async twin of `first_or_fail()`. Thin wrapper: builds on `first_async()`.
         """
+        # FIXME(async): Implement this thin async wrapper.
         raise NotImplementedError
 
 

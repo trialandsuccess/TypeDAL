@@ -5,6 +5,7 @@ Core functionality of TypeDAL.
 from __future__ import annotations
 
 # noinspection PyUnusedImports
+import collections
 import datetime as dt
 import sys
 import typing as t
@@ -14,7 +15,7 @@ from typing import Optional
 
 import pydal
 
-from .async_execution import ASYNC_POOL_FACTORIES, AsyncConnectionPool
+from .async_execution import ASYNC_POOL_FACTORIES, DELETE_STRATEGIES, LASTROWID_STRATEGIES, AsyncConnectionPool
 from .config import LazyPolicy, TypeDALConfig, load_config
 from .helpers import (
     SYSTEM_SUPPORTS_TEMPLATES,
@@ -656,42 +657,101 @@ class TypeDAL(_TypeDALBase):
     ) -> int:
         """
         Async twin of `db(query).count(distinct)`.
+
+        Mirrors `SQLAdapter.count()` (adapters/base.py:937-939): build via pydal's own
+        `_count()` (pure), execute via the async driver for this backend, read the first
+        column of the first (only) row.
         """
-        raise NotImplementedError
+        adapter = self._adapter
+        sql = adapter._count(query, distinct)
+
+        pool = await self._get_async_pool()
+        async with pool.connection() as conn, conn.cursor() as cur:
+            await cur.execute(sql)
+            row = await cur.fetchone()
+
+        return t.cast(int, row[0])
 
     async def update_async(
         self,
+        table: pydal.objects.Table,
         query: pydal.objects.Query,
-        **fields: t.Any,
-    ) -> int:
+        fields: list[tuple[pydal.objects.Field, t.Any]],
+    ) -> t.Optional[int]:
         """
-        Async twin of `db(query).update(**fields)`.
+        Async twin of the adapter-level step of `Set.update()`
+        (`adapter.update()`, adapters/base.py:581-593).
+
+        `fields` is the already-normalized `[(Field, value), ...]` list (`row.op_values()`),
+        same shape as `insert_async`'s `fields` - the before_update/after_update hooks and
+        validation stay in `QueryBuilder.update_async()`, this is only the execute step.
         """
-        raise NotImplementedError
+        adapter = self._adapter
+        sql = adapter._update(table, query, fields)
+
+        pool = await self._get_async_pool()
+        async with pool.connection() as conn, conn.cursor() as cur:
+            try:
+                await cur.execute(sql)
+            except Exception as e:
+                if hasattr(table, "_on_update_error"):
+                    return t.cast(t.Optional[int], table._on_update_error(table, query, fields, e))
+                raise
+            try:
+                return t.cast(int, cur.rowcount)
+            except Exception:  # noqa: BLE001
+                return None
 
     async def delete_async(
         self,
+        table: pydal.objects.Table,
         query: pydal.objects.Query,
-    ) -> int:
+    ) -> t.Any:
         """
-        Async twin of `db(query).delete()`.
+        Async twin of `Set.delete()`'s adapter-level step (`adapter.delete()`).
 
-        On SQLite, `SQLite.delete()` (pydal adapters/sqlite.py:93-104) is not a plain
-        build/execute/parse call: it selects affected ids first and recurses for
-        ON DELETE CASCADE. This has to replicate that cascade, not just wrap one
-        execute call.
+        Dispatches per backend via `DELETE_STRATEGIES`: SQLite's isn't a plain
+        build/execute/parse call - it selects affected ids first and recurses for
+        ON DELETE CASCADE (adapters/sqlite.py:93-104) - Postgres's is.
         """
-        raise NotImplementedError
+        return await DELETE_STRATEGIES[self._adapter.dbengine](self, table, query)
 
     async def insert_async(
         self,
         table: pydal.objects.Table,
-        **fields: t.Any,
-    ) -> pydal.helpers.classes.Reference:
+        fields: list[tuple[pydal.objects.Field, t.Any]],
+    ) -> t.Any:
         """
-        Async twin of `table.insert(**fields)`.
+        Async twin of the adapter-level step of `table.insert(**fields)`
+        (`adapter.insert()`, adapters/base.py:541-563).
+
+        `fields` is the already-normalized `[(Field, value), ...]` list (`row.op_values()`),
+        the same shape pydal's own `Table.insert()` passes to the adapter - the field-name-to-
+        value normalization, `_before_insert`/`_after_insert` hooks, and validation all stay in
+        `TypedTable.insert_async()` (tables.py), not here; this is only the execute step.
         """
-        raise NotImplementedError
+        adapter = self._adapter
+        query = adapter._insert(table, fields)
+
+        pool = await self._get_async_pool()
+        async with pool.connection() as conn, conn.cursor() as cur:
+            await cur.execute(query)
+
+            if hasattr(table, "_primarykey"):
+                pkdict = {k[0].name: k[1] for k in fields if k[0].name in table._primarykey}
+                if pkdict:
+                    return pkdict
+
+            id_ = await LASTROWID_STRATEGIES[adapter.dbengine](adapter, table, cur)
+
+        if hasattr(table, "_primarykey") and len(table._primarykey) == 1:
+            id_ = {table._primarykey[0]: id_}
+        if not isinstance(id_, int):
+            return id_
+
+        rid = pydal.helpers.classes.Reference(id_)
+        rid._table, rid._record = table, None
+        return rid
 
     async def executesql_async(
         self,
@@ -704,8 +764,79 @@ class TypeDAL(_TypeDALBase):
     ) -> list[t.Any]:
         """
         Async twin of `executesql(...)`.
+
+        Mirrors pydal's own `DAL.executesql()` (base.py:872-990): execute via the async
+        driver for this backend (the only I/O), then the same as_dict/fields/colnames
+        branching pydal itself does, calling pydal's own `adapter.parse()` (pure) for the
+        fields/colnames case, unmodified. Only the plain-tuples path (no as_dict, no
+        fields/colnames) is covered by tests so far.
         """
-        raise NotImplementedError
+        if SYSTEM_SUPPORTS_TEMPLATES and isinstance(query, Template):  # pragma: no cover
+            query = sql_escape_template(self, query)
+
+        adapter = self._adapter
+        pool = await self._get_async_pool()
+        async with pool.connection() as conn, conn.cursor() as cur:
+            if placeholders:
+                await cur.execute(query, placeholders)
+            else:
+                await cur.execute(query)
+
+            if as_dict or as_ordered_dict:
+                if not hasattr(cur, "description"):
+                    raise RuntimeError("database does not support executesql_async(...,as_dict=True)")
+
+                columns = cur.description
+                result_fields = list(colnames) if colnames else [col[0] for col in columns]
+                if len(result_fields) != len(set(result_fields)):
+                    raise RuntimeError(
+                        "Result set includes duplicate column names. "
+                        "Specify unique column names using the 'colnames' argument",
+                    )
+                if columns:
+                    for i in range(len(result_fields)):
+                        if isinstance(result_fields[i], bytes):
+                            result_fields[i] = result_fields[i].decode("utf8")
+
+                data = await cur.fetchall()
+                _dict = collections.OrderedDict if as_ordered_dict else dict
+                return [_dict(zip(result_fields, row)) for row in data]
+
+            try:
+                data = await cur.fetchall()
+            except Exception:  # noqa: BLE001
+                return None
+
+        if fields or colnames:
+            fields = [] if fields is None else list(fields)
+            extracted_fields = []
+            for field in fields:
+                if isinstance(field, pydal.objects.Table):
+                    extracted_fields.extend(list(field))
+                else:
+                    extracted_fields.append(field)
+            if not colnames:
+                resolved_colnames = [f.sqlsafe for f in extracted_fields]
+            else:
+                col_fields = []
+                newcolnames = []
+                for tf in colnames:
+                    if "." in tf:
+                        t_f = tf.split(".")
+                        tf = ".".join(adapter.dialect.quote(f) for f in t_f)
+                    else:
+                        t_f = None
+                    if not extracted_fields:
+                        col_fields.append(t_f)
+                    newcolnames.append(tf)
+                resolved_colnames = newcolnames
+            data = adapter.parse(
+                data,
+                fields=extracted_fields or [tf and self[tf[0]][tf[1]] for tf in col_fields],
+                colnames=resolved_colnames,
+            )
+
+        return t.cast(list[t.Any], data)
 
     async def commit_async(self) -> None:
         """
@@ -713,15 +844,20 @@ class TypeDAL(_TypeDALBase):
 
         Deliberately does not touch `commit()`/the sync connection: queries executed via
         `select_async`/`insert_async`/etc. run on a separate connection, so committing one
-        says nothing about the other.
+        says nothing about the other. For Postgres this is currently a no-op in practice -
+        `PostgresAsyncPool` already commits every call on its own - but calling it is still
+        the right thing to do: it keeps callers backend-agnostic, and it's the one that
+        actually matters for SQLite (see `AsyncConnectionPool` in async_execution.py).
         """
-        raise NotImplementedError
+        pool = await self._get_async_pool()
+        await pool.commit()
 
     async def rollback_async(self) -> None:
         """
         Roll back the transaction on the async connection. See `commit_async`.
         """
-        raise NotImplementedError
+        pool = await self._get_async_pool()
+        await pool.rollback()
 
     async def close_async(self) -> None:
         """

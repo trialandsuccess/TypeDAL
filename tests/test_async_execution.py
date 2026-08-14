@@ -123,6 +123,113 @@ async def test_collect_async_preserves_types(db_async: TypeDAL):
 
 
 @pytest.mark.asyncio
+async def test_count_async_matches_sync_count(db_async: TypeDAL):
+    """count_async must return the same count as the sync count()."""
+    db = db_async
+
+    @db.define()
+    class AsyncThingCount(TypedTable):
+        qty: TypedField[int]
+
+    AsyncThingCount.insert(qty=1)
+    AsyncThingCount.insert(qty=2)
+    AsyncThingCount.insert(qty=3)
+    db.commit()
+
+    sync_count = AsyncThingCount.where(AsyncThingCount.qty > 1).count()
+    async_count = await AsyncThingCount.where(AsyncThingCount.qty > 1).count_async()
+
+    assert async_count == sync_count == 2
+
+
+@pytest.mark.asyncio
+async def test_insert_async_matches_sync_insert(db_async: TypeDAL):
+    """insert_async must return a usable id, and the row must actually be committed and visible."""
+    db = db_async
+
+    @db.define()
+    class AsyncThingInsert(TypedTable):
+        name: TypedField[str]
+        qty: TypedField[int]
+
+    new_id = await AsyncThingInsert.insert_async(name="widget", qty=5)
+    await db.commit_async()
+
+    assert int(new_id) > 0
+
+    row = AsyncThingInsert.where(AsyncThingInsert.id == int(new_id)).first()
+    assert row is not None
+    assert row.name == "widget"
+    assert row.qty == 5
+
+
+@pytest.mark.asyncio
+async def test_update_async_matches_sync_update(db_async: TypeDAL):
+    """update_async must update the same rows as the sync update() and return matching ids."""
+    db = db_async
+
+    @db.define()
+    class AsyncThingUpdate(TypedTable):
+        name: TypedField[str]
+        qty: TypedField[int]
+
+    AsyncThingUpdate.insert(name="widget", qty=1)
+    AsyncThingUpdate.insert(name="gadget", qty=2)
+    db.commit()
+
+    updated_ids = await AsyncThingUpdate.where(AsyncThingUpdate.qty > 0).update_async(qty=99)
+    await db.commit_async()
+
+    assert len(updated_ids) == 2
+
+    rows = AsyncThingUpdate.where(AsyncThingUpdate.qty == 99).collect()
+    assert len(rows) == 2
+
+
+@pytest.mark.asyncio
+async def test_delete_async_matches_sync_delete(db_async: TypeDAL):
+    """delete_async must delete the same rows as the sync delete() and return matching ids."""
+    db = db_async
+
+    @db.define()
+    class AsyncThingDelete(TypedTable):
+        qty: TypedField[int]
+
+    AsyncThingDelete.insert(qty=1)
+    AsyncThingDelete.insert(qty=2)
+    db.commit()
+
+    deleted_ids = await AsyncThingDelete.where(AsyncThingDelete.qty > 0).delete_async()
+    await db.commit_async()
+
+    assert len(deleted_ids) == 2
+
+    remaining = AsyncThingDelete.where(AsyncThingDelete.qty > 0).count()
+    assert remaining == 0
+
+
+@pytest.mark.asyncio
+async def test_executesql_async_matches_sync_executesql(db_async: TypeDAL):
+    """executesql_async must return the same raw rows as the sync executesql()."""
+    db = db_async
+
+    @db.define()
+    class AsyncThingRaw(TypedTable):
+        qty: TypedField[int]
+
+    AsyncThingRaw.insert(qty=1)
+    AsyncThingRaw.insert(qty=2)
+    db.commit()
+
+    query = f"SELECT qty FROM {AsyncThingRaw._table._rname} ORDER BY qty;"
+
+    sync_rows = db.executesql(query)
+    async_rows = await db.executesql_async(query)
+
+    assert list(async_rows) == list(sync_rows) == [(1,), (2,)]
+
+
+@pytest.mark.asyncio
 async def test_collect_async_does_not_block_event_loop(db_async: TypeDAL):
     """
     The actual point of building this: a query in flight must not stall other coroutines.

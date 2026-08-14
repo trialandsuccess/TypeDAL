@@ -189,6 +189,7 @@ class TableMeta(type):
         """
         Async twin of `all()`. Thin wrapper: builds on `collect_async()`.
         """
+        # FIXME(async): Implement this thin async wrapper.
         raise NotImplementedError
 
     def get_relationships(self) -> dict[str, Relationship[t.Any]]:
@@ -223,8 +224,25 @@ class TableMeta(type):
     async def insert_async(self: t.Type[T_MetaInstance], **fields: t.Any) -> T_MetaInstance:
         """
         Async twin of `insert()`.
+
+        Mirrors pydal's `Table.insert()` (objects.py:960-968): the field normalization
+        (`_fields_and_values_for_insert`) and `_before_insert`/`_after_insert` hooks stay
+        exactly as they are (pure/sync), only the adapter-level execute step
+        (`table._db.insert_async(...)`) is async.
         """
-        raise NotImplementedError
+        table = self._ensure_table_defined()
+        require_permission(self._permissions, "insert")
+
+        row = table._fields_and_values_for_insert(fields)
+        if any(f(row) for f in table._before_insert):
+            result = 0
+        else:
+            result = await table._db.insert_async(table, row.op_values())
+            if result and table._after_insert:
+                for f in table._after_insert:
+                    f(row, result)
+
+        return self(result)
 
     def _insert(self, **fields: t.Any) -> str:
         table = self._ensure_table_defined()
@@ -244,6 +262,7 @@ class TableMeta(type):
         """
         Async twin of `bulk_insert()`.
         """
+        # FIXME(async): Implement bulk insertion and async result collection.
         raise NotImplementedError
 
     def update_or_insert(
@@ -279,6 +298,7 @@ class TableMeta(type):
         """
         Async twin of `update_or_insert()`.
         """
+        # FIXME(async): Implement this wrapper using async lookup, update, and insert paths.
         raise NotImplementedError
 
     def validate_and_insert(
@@ -305,6 +325,7 @@ class TableMeta(type):
         """
         Async twin of `validate_and_insert()`.
         """
+        # FIXME(async): Implement validation and insertion through the async path.
         raise NotImplementedError
 
     def validate_and_update(
@@ -338,6 +359,7 @@ class TableMeta(type):
         """
         Async twin of `validate_and_update()`.
         """
+        # FIXME(async): Implement validation and update through the async path.
         raise NotImplementedError
 
     def validate_and_update_or_insert(
@@ -376,6 +398,7 @@ class TableMeta(type):
         """
         Async twin of `validate_and_update_or_insert()`.
         """
+        # FIXME(async): Implement this wrapper using async validation paths.
         raise NotImplementedError
 
     def select(self: t.Type[T_MetaInstance], *a: t.Any, **kw: t.Any) -> "QueryBuilder[T_MetaInstance]":
@@ -404,6 +427,7 @@ class TableMeta(type):
         """
         See QueryBuilder.column_async!
         """
+        # FIXME(async): Implement this thin async wrapper.
         raise NotImplementedError
 
     def paginate(self: t.Type[T_MetaInstance], limit: int, page: int = 1) -> "PaginatedRows[T_MetaInstance]":
@@ -418,6 +442,7 @@ class TableMeta(type):
         """
         See QueryBuilder.paginate_async!
         """
+        # FIXME(async): Implement this thin async wrapper.
         raise NotImplementedError
 
     def chunk(self: t.Type[T_MetaInstance], chunk_size: int) -> t.Generator["TypedRows[T_MetaInstance]", t.Any, None]:
@@ -432,6 +457,7 @@ class TableMeta(type):
         """
         See QueryBuilder.chunk_async!
         """
+        # FIXME(async): Implement this thin async wrapper.
         raise NotImplementedError
         yield  # pragma: no cover  # makes this an async generator for type-checking purposes
 
@@ -483,7 +509,7 @@ class TableMeta(type):
         """
         See QueryBuilder.count_async!
         """
-        raise NotImplementedError
+        return await QueryBuilder(self).count_async()
 
     def exists(self: t.Type[T_MetaInstance]) -> bool:
         """
@@ -495,6 +521,7 @@ class TableMeta(type):
         """
         See QueryBuilder.exists_async!
         """
+        # FIXME(async): Implement this thin async wrapper.
         raise NotImplementedError
 
     def first(self: t.Type[T_MetaInstance]) -> T_MetaInstance | None:
@@ -507,6 +534,7 @@ class TableMeta(type):
         """
         See QueryBuilder.first_async!
         """
+        # FIXME(async): Implement this thin async wrapper.
         raise NotImplementedError
 
     def first_or_fail(self: t.Type[T_MetaInstance]) -> T_MetaInstance:
@@ -519,6 +547,7 @@ class TableMeta(type):
         """
         See QueryBuilder.first_or_fail_async!
         """
+        # FIXME(async): Implement this thin async wrapper.
         raise NotImplementedError
 
     def join(
@@ -566,6 +595,7 @@ class TableMeta(type):
         """
         See QueryBuilder.collect_into_async!
         """
+        # FIXME(async): Implement this thin async wrapper.
         raise NotImplementedError
 
     @property
@@ -1424,6 +1454,7 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
         """
         Async twin of `update()`. Thin wrapper: builds on `update_record_async()`.
         """
+        # FIXME(async): Implement this wrapper using async record lookup and update.
         raise NotImplementedError
 
     def _update(self: T_MetaInstance, **fields: t.Any) -> T_MetaInstance:
@@ -1452,6 +1483,7 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
         """
         Async twin of `update_record()`.
         """
+        # FIXME(async): Implement record updates on the async connection.
         raise NotImplementedError
 
     def _delete_record(self) -> int:
@@ -1480,6 +1512,7 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
         """
         Async twin of `delete_record()`.
         """
+        # FIXME(async): Implement record deletion on the async connection.
         raise NotImplementedError
 
     # __del__ is also called on the end of a scope so don't remove records on every del!!
