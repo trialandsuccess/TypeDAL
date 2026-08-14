@@ -189,8 +189,7 @@ class TableMeta(type):
         """
         Async twin of `all()`. Thin wrapper: builds on `collect_async()`.
         """
-        # FIXME(async): Implement this thin async wrapper.
-        raise NotImplementedError
+        return await self.collect_async()
 
     def get_relationships(self) -> dict[str, Relationship[t.Any]]:
         """
@@ -261,9 +260,19 @@ class TableMeta(type):
     async def bulk_insert_async(self: t.Type[T_MetaInstance], items: list[AnyDict]) -> "TypedRows[T_MetaInstance]":
         """
         Async twin of `bulk_insert()`.
+
+        pydal's `Table.bulk_insert()` (objects.py:1113-1124) only exists to hand the whole batch
+        to `adapter.bulk_insert()`, which for every backend TypeDAL supports asynchronously is
+        itself a loop over `insert()` - so looping `insert_async()` here loses nothing and keeps
+        the hook/normalization dance in one place.
         """
-        # FIXME(async): Implement bulk insertion and async result collection.
-        raise NotImplementedError
+        self._ensure_table_defined()
+        require_permission(self._permissions, "insert")
+
+        inserted = [await self.insert_async(**item) for item in items]
+        ids = [row.id for row in inserted]
+
+        return await self.where(lambda row: row.id.belongs(ids)).collect_async()
 
     def update_or_insert(
         self: t.Type[T_MetaInstance],
@@ -297,9 +306,42 @@ class TableMeta(type):
     ) -> T_MetaInstance:
         """
         Async twin of `update_or_insert()`.
+
+        The sync version leans on pydal's `table(...)` call syntax for the lookup, which is a
+        synchronous select; `_lookup_query()` turns the same three input shapes into a plain
+        Query so the lookup can go through `first_async()` instead.
         """
-        # FIXME(async): Implement this wrapper using async lookup, update, and insert paths.
-        raise NotImplementedError
+        record = await QueryBuilder(self).where(self._lookup_query(query, values)).first_async()
+
+        if not record:
+            return await self.insert_async(**values)
+
+        return await record.update_record_async(**values)
+
+    def _lookup_query(
+        self: t.Type[T_MetaInstance],
+        query: T_Query | AnyDict | None,
+        values: AnyDict,
+    ) -> Query:
+        """
+        Turn `update_or_insert`'s three input shapes (DEFAULT / dict / Query) into one Query.
+
+        Mirrors pydal's `Table.update_or_insert()` (objects.py:1067-1073): no query means
+        "match on the values you were going to write", a dict means "match on these fields".
+        """
+        table = self._ensure_table_defined()
+
+        if query is not DEFAULT and not isinstance(query, dict):
+            return t.cast(Query, query)
+
+        criteria = values if query is DEFAULT else t.cast(AnyDict, query)
+
+        result = None
+        for key, value in criteria.items():
+            condition = table[key] == value
+            result = condition if result is None else (result & condition)
+
+        return t.cast(Query, result)
 
     def validate_and_insert(
         self: t.Type[T_MetaInstance],
@@ -324,9 +366,18 @@ class TableMeta(type):
     ) -> tuple[t.Optional[T_MetaInstance], t.Optional[dict[str, str]]]:
         """
         Async twin of `validate_and_insert()`.
+
+        Mirrors pydal's `Table.validate_and_insert()` (objects.py:1039-1042): `_validate_fields()`
+        is pure (no I/O), so only the insert step needs an async twin.
         """
-        # FIXME(async): Implement validation and insertion through the async path.
-        raise NotImplementedError
+        table = self._ensure_table_defined()
+        require_permission(self._permissions, "insert")
+
+        errors, new_fields = table._validate_fields(fields)
+        if errors:
+            return None, errors
+
+        return await self.insert_async(**new_fields), None
 
     def validate_and_update(
         self: t.Type[T_MetaInstance],
@@ -358,9 +409,24 @@ class TableMeta(type):
     ) -> tuple[t.Optional[T_MetaInstance], t.Optional[dict[str, str]]]:
         """
         Async twin of `validate_and_update()`.
+
+        Mirrors pydal's `Table.validate_and_update()` (objects.py:1044-1065): fetch the record,
+        validate against it (pure), then update. Both DB steps go through the async path.
         """
-        # FIXME(async): Implement validation and update through the async path.
-        raise NotImplementedError
+        table = self._ensure_table_defined()
+        require_permission(self._permissions, "update")
+
+        record = await QueryBuilder(self).where(query).first_async()
+
+        errors, new_fields = table._validate_fields(fields, record._row if record else None)
+        if errors:
+            return None, errors
+
+        if not record:  # pragma: no cover
+            # update on query without result (shouldnt happen)
+            return None, None
+
+        return await record.update_record_async(**new_fields), None
 
     def validate_and_update_or_insert(
         self: t.Type[T_MetaInstance],
@@ -398,8 +464,10 @@ class TableMeta(type):
         """
         Async twin of `validate_and_update_or_insert()`.
         """
-        # FIXME(async): Implement this wrapper using async validation paths.
-        raise NotImplementedError
+        if await QueryBuilder(self).where(query).exists_async():
+            return await self.validate_and_update_async(query, **fields)
+
+        return await self.validate_and_insert_async(**fields)
 
     def select(self: t.Type[T_MetaInstance], *a: t.Any, **kw: t.Any) -> "QueryBuilder[T_MetaInstance]":
         """
@@ -427,8 +495,7 @@ class TableMeta(type):
         """
         See QueryBuilder.column_async!
         """
-        # FIXME(async): Implement this thin async wrapper.
-        raise NotImplementedError
+        return await QueryBuilder(self).column_async(field, **options)
 
     def paginate(self: t.Type[T_MetaInstance], limit: int, page: int = 1) -> "PaginatedRows[T_MetaInstance]":
         """
@@ -442,8 +509,7 @@ class TableMeta(type):
         """
         See QueryBuilder.paginate_async!
         """
-        # FIXME(async): Implement this thin async wrapper.
-        raise NotImplementedError
+        return await QueryBuilder(self).paginate_async(limit=limit, page=page)
 
     def chunk(self: t.Type[T_MetaInstance], chunk_size: int) -> t.Generator["TypedRows[T_MetaInstance]", t.Any, None]:
         """
@@ -457,9 +523,8 @@ class TableMeta(type):
         """
         See QueryBuilder.chunk_async!
         """
-        # FIXME(async): Implement this thin async wrapper.
-        raise NotImplementedError
-        yield  # pragma: no cover  # makes this an async generator for type-checking purposes
+        async for rows in QueryBuilder(self).chunk_async(chunk_size):
+            yield rows
 
     def where(self: t.Type[T_MetaInstance], *a: t.Any, **kw: t.Any) -> "QueryBuilder[T_MetaInstance]":
         """
@@ -521,8 +586,7 @@ class TableMeta(type):
         """
         See QueryBuilder.exists_async!
         """
-        # FIXME(async): Implement this thin async wrapper.
-        raise NotImplementedError
+        return await QueryBuilder(self).exists_async()
 
     def first(self: t.Type[T_MetaInstance]) -> T_MetaInstance | None:
         """
@@ -534,8 +598,7 @@ class TableMeta(type):
         """
         See QueryBuilder.first_async!
         """
-        # FIXME(async): Implement this thin async wrapper.
-        raise NotImplementedError
+        return await QueryBuilder(self).first_async()
 
     def first_or_fail(self: t.Type[T_MetaInstance]) -> T_MetaInstance:
         """
@@ -547,8 +610,7 @@ class TableMeta(type):
         """
         See QueryBuilder.first_or_fail_async!
         """
-        # FIXME(async): Implement this thin async wrapper.
-        raise NotImplementedError
+        return await QueryBuilder(self).first_or_fail_async()
 
     def join(
         self: t.Type[T_MetaInstance],
@@ -595,8 +657,7 @@ class TableMeta(type):
         """
         See QueryBuilder.collect_into_async!
         """
-        # FIXME(async): Implement this thin async wrapper.
-        raise NotImplementedError
+        return await QueryBuilder(self).collect_into_async(into=into, verbose=verbose, init=init)
 
     @property
     def ALL(cls) -> pydal.objects.SQLALL:
@@ -885,6 +946,7 @@ class _TypedTable(metaclass=TableMeta):
     _after_update: list[t.Callable[[Set, t.Self], t.Optional[bool]] | t.Callable[[Set, OpRow], t.Optional[bool]]]
     _before_delete: list[t.Callable[[Set], t.Optional[bool]]]
     _after_delete: list[t.Callable[[Set], t.Optional[bool]]]
+    _row: Row | None
     _rows: tuple[Row, ...]
     _with: list[str]
 
@@ -923,6 +985,10 @@ class _TypedTable(metaclass=TableMeta):
 
     def update_record(self: t.Self, **fields: t.Any) -> t.Self:
         # Declared here for generic update flows; real behavior is implemented in TypedTable.
+        raise NotImplementedError  # pragma: no cover
+
+    async def update_record_async(self: t.Self, **fields: t.Any) -> t.Self:
+        # Declared here for generic async update flows; real behavior is implemented in TypedTable.
         raise NotImplementedError  # pragma: no cover
 
     def as_dict(self, *args: t.Any, **kwargs: t.Any) -> AnyDict:
@@ -1454,8 +1520,10 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
         """
         Async twin of `update()`. Thin wrapper: builds on `update_record_async()`.
         """
-        # FIXME(async): Implement this wrapper using async record lookup and update.
-        raise NotImplementedError
+        if record := await QueryBuilder(cls).where(query).first_async():
+            return await record.update_record_async(**fields)
+        else:
+            return None
 
     def _update(self: T_MetaInstance, **fields: t.Any) -> T_MetaInstance:
         require_permission(getattr(self, "_permissions", None), "update")
@@ -1482,9 +1550,21 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
     async def update_record_async(self: T_MetaInstance, **fields: t.Any) -> T_MetaInstance:
         """
         Async twin of `update_record()`.
+
+        Mirrors pydal's `RecordUpdater` (helpers/classes.py:349-359): drop anything that isn't a
+        writable column of this table, update by primary key, then mirror the new values onto the
+        in-memory row/instance - `_update()` does that last part for both the sync and async path.
         """
-        # FIXME(async): Implement record updates on the async connection.
-        raise NotImplementedError
+        require_permission(getattr(self, "_permissions", None), "update")
+        row = self._ensure_matching_row()
+        cls = type(self)
+        table = cls._ensure_table_defined()
+
+        new_fields = {k: v for k, v in fields.items() if k in table.fields and table[k].type != "id"}
+
+        await QueryBuilder(cls).where(table._id == row[table._id.name]).update_async(**new_fields)
+
+        return self._update(**new_fields)
 
     def _delete_record(self) -> int:
         """
@@ -1511,9 +1591,23 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
     async def delete_record_async(self) -> int:
         """
         Async twin of `delete_record()`.
+
+        Mirrors pydal's `RecordDeleter` (helpers/classes.py:362-364) plus `_delete_record()`'s
+        own bookkeeping: the instance is emptied afterwards, since the row is no more.
         """
-        # FIXME(async): Implement record deletion on the async connection.
-        raise NotImplementedError
+        require_permission(getattr(self, "_permissions", None), "delete")
+        row = self._ensure_matching_row()
+        cls = type(self)
+        table = cls._ensure_table_defined()
+
+        deleted = await QueryBuilder(cls).where(table._id == row[table._id.name]).delete_async()
+
+        self.__dict__ = {}  # empty self, since row is no more.
+        self._row = None  # just to be sure
+        self._setup_instance_methods()
+        # ^ instance methods might've been deleted by emptying dict,
+        # but we still want .as_dict to show an error, not the table's as_dict.
+        return len(deleted)
 
     # __del__ is also called on the end of a scope so don't remove records on every del!!
 
