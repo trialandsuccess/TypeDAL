@@ -14,7 +14,15 @@ from pathlib import Path
 
 import pydal
 
-from .async_execution import DELETE_STRATEGIES, LASTROWID_STRATEGIES, AsyncConnectionPool, AsyncPoolManager
+from .async_execution import (
+    DELETE_STRATEGIES,
+    LASTROWID_STRATEGIES,
+    WRITE_STATEMENTS,
+    AsyncConnectionPool,
+    AsyncPoolManager,
+    SyncTransactionTracker,
+    TransactionSplitError,
+)
 from .config import LazyPolicy, TypeDALConfig, load_config
 from .helpers import (
     SYSTEM_SUPPORTS_TEMPLATES,
@@ -230,6 +238,15 @@ class TypeDAL(_TypeDALBase):
     _config: TypeDALConfig
     _builder: TableDefinitionBuilder
 
+    # appended to, not replaced: pydal's own TimingHandler is what fills `db._timings`, and
+    # dropping it would take that with it.
+    execution_handlers = [*pydal.DAL.execution_handlers, SyncTransactionTracker]  # noqa: RUF012
+
+    # whether each of the two connections holds an open transaction. See `TransactionSplitError`
+    # for why the pair has to be tracked at all.
+    _sync_pending: bool
+    _async_pending: bool
+
     # similar to the insert/update/delete hooks at table-level but for .collect/.execute:
     # note: return values are ignored!
     _before_collect: list[t.Callable[["QueryBuilder[t.Any]"], None]]
@@ -296,6 +313,11 @@ class TypeDAL(_TypeDALBase):
         self._after_execute = []
         self._async_pools = AsyncPoolManager(self)  # lazily-opened async connection; see _get_async_pool
 
+        # set before super().__init__(), which migrates and therefore already executes
+        # statements through SyncTransactionTracker.
+        self._sync_pending = False
+        self._async_pending = False
+
         if config.folder:
             Path(config.folder).mkdir(exist_ok=True)
 
@@ -328,6 +350,24 @@ class TypeDAL(_TypeDALBase):
         if config.caching:
             self.try_define(_TypedalCache)
             self.try_define(_TypedalCacheDependency)
+
+    def commit(self) -> None:
+        """
+        Commit the transaction on pydal's own (synchronous) connection.
+
+        Says nothing about the async connection - that one is ended by `commit_async()`. What it
+        does do is clear the flag that blocks the async path, so committing here is how you make
+        the other side usable again after a sync write.
+        """
+        super().commit()
+        self._sync_pending = False
+
+    def rollback(self) -> None:
+        """
+        Roll back the transaction on pydal's own (synchronous) connection. See `commit`.
+        """
+        super().rollback()
+        self._sync_pending = False
 
     def close(self) -> None:
         """Close the database connection and unbind all defined TypedTable models."""
@@ -537,7 +577,7 @@ class TypeDAL(_TypeDALBase):
         query: str | Template,
         placeholders: t.Iterable[str] | dict[str, str] | None = None,
         as_dict: bool = False,
-        fields: t.Iterable[Field | TypedField[t.Any]] | None = None,
+        fields: "Field | TypedField[t.Any] | Table | t.Iterable[Field | TypedField[t.Any]] | None" = None,
         colnames: t.Iterable[str] | None = None,
         as_ordered_dict: bool = False,
     ) -> list[t.Any] | None:
@@ -593,13 +633,30 @@ class TypeDAL(_TypeDALBase):
         The async connection (a real pool for Postgres, a single wrapped connection for SQLite)
         for this instance, opened on first use.
 
-        Deliberately a separate connection from pydal's own thread-local sync connection: they
-        are two independent transactions, so a write on one is invisible to a read on the other
-        until committed, and commit()/rollback() on one says nothing about the other.
+        Necessarily a separate connection from pydal's own thread-local sync connection - pydal
+        drives Postgres with psycopg2 and SQLite with sqlite3, neither of which can be awaited -
+        and therefore a separate transaction. Rather than let a read silently miss the other
+        side's uncommitted work, this refuses to run while the sync side has any; the reasoning
+        is in `TransactionSplitError`.
 
         The lifecycle itself lives in `AsyncPoolManager` (async_execution.py).
         """
+        if self._sync_pending:
+            raise TransactionSplitError(
+                "The synchronous connection has uncommitted writes, which this async statement "
+                "would not see. Call `db.commit()` or `db.rollback()` first.",
+            )
+
         return await self._async_pools.get()
+
+    def _mark_async_pending(self) -> None:
+        """
+        Note that the async connection now holds a transaction the sync side must not step on.
+
+        Called by the `_async` methods that write rather than from `_get_async_pool()`, because
+        a read leaves nothing behind for the other connection to miss.
+        """
+        self._async_pending = True
 
     async def select_async(
         self,
@@ -678,6 +735,7 @@ class TypeDAL(_TypeDALBase):
         sql = adapter._update(table, query, fields)
 
         pool = await self._get_async_pool()
+        self._mark_async_pending()
         async with pool.connection() as conn, conn.cursor() as cur:
             try:
                 await cur.execute(sql)
@@ -731,6 +789,7 @@ class TypeDAL(_TypeDALBase):
         last_insert = getattr(adapter, "_last_insert", None)
 
         pool = await self._get_async_pool()
+        self._mark_async_pending()
         async with pool.connection() as conn, conn.cursor() as cur:
             try:
                 await cur.execute(query)
@@ -771,7 +830,7 @@ class TypeDAL(_TypeDALBase):
         query: str | Template,
         placeholders: t.Iterable[str] | dict[str, str] | None = None,
         as_dict: bool = False,
-        fields: t.Iterable[Field | TypedField[t.Any]] | None = None,
+        fields: "Field | TypedField[t.Any] | Table | t.Iterable[Field | TypedField[t.Any]] | None" = None,
         colnames: t.Iterable[str] | None = None,
         as_ordered_dict: bool = False,
     ) -> list[t.Any] | None:
@@ -789,6 +848,13 @@ class TypeDAL(_TypeDALBase):
 
         adapter = self._adapter
         pool = await self._get_async_pool()
+
+        # unlike the other `_async` methods this one is handed arbitrary SQL, so whether it
+        # opens a transaction has to be read off the statement - same test the sync side
+        # applies in `SyncTransactionTracker`.
+        if str(query).lstrip().upper().startswith(WRITE_STATEMENTS):
+            self._mark_async_pending()
+
         async with pool.connection() as conn, conn.cursor() as cur:
             if placeholders:
                 await cur.execute(query, placeholders)
@@ -825,9 +891,23 @@ class TypeDAL(_TypeDALBase):
                 return None
 
         if fields or colnames:
-            fields = [] if fields is None else list(fields)
-            extracted_fields = []
-            for field in fields:
+            if fields is None:
+                given_fields: list[t.Any] = []
+            elif isinstance(fields, (pydal.objects.Expression, pydal.objects.Table, str, bytes)):
+                # pydal's `executesql` accepts one Field/Table instead of a list
+                # (base.py: `if not isinstance(fields, list): fields = [fields]`), and the sync
+                # `executesql()` above inherits that by delegating to it. Wrapping is not just
+                # for parity: `list()` on a single Field never terminates, because
+                # `Expression.__getitem__` (pydal objects.py) answers every integer index with a
+                # substring expression instead of raising IndexError, so iteration has no end.
+                # `str`/`bytes` are in here for the same reason in reverse: neither is valid
+                # input, but iterating one silently yields characters, so it would fail much
+                # later on `f.sqlsafe` with a character rather than with what was passed in.
+                given_fields = [fields]
+            else:
+                given_fields = list(fields)
+            extracted_fields: list[t.Any] = []
+            for field in given_fields:
                 if isinstance(field, pydal.objects.Table):
                     extracted_fields.extend(list(field))
                 else:
@@ -860,21 +940,29 @@ class TypeDAL(_TypeDALBase):
         Commit the transaction on the async connection.
 
         Deliberately does not touch `commit()`/the sync connection: queries executed via
-        `select_async`/`insert_async`/etc. run on a separate connection, so committing one
-        says nothing about the other. For Postgres this is currently a no-op in practice -
-        `PostgresAsyncPool` already commits every call on its own - but calling it is still
-        the right thing to do: it keeps callers backend-agnostic, and it's the one that
-        actually matters for SQLite (see `AsyncConnectionPool` in async_execution.py).
+        `select_async`/`insert_async`/etc. run on a separate connection, so committing one says
+        nothing about the other. On Postgres this ends the transaction on the connection
+        checked out for *this task* and returns it to the pool; on SQLite there is one
+        connection and it ends the only transaction there is.
+
+        Goes to `AsyncPoolManager.pool` rather than `_get_async_pool()` on purpose: ending a
+        transaction must never be the thing that opens a connection, and it must stay callable
+        while the sync side has pending writes - the guard in `_get_async_pool()` would refuse
+        exactly when a caller is trying to settle up.
         """
-        pool = await self._get_async_pool()
-        await pool.commit()
+        if pool := self._async_pools.pool:
+            await pool.commit()
+
+        self._async_pending = False
 
     async def rollback_async(self) -> None:
         """
         Roll back the transaction on the async connection. See `commit_async`.
         """
-        pool = await self._get_async_pool()
-        await pool.rollback()
+        if pool := self._async_pools.pool:
+            await pool.rollback()
+
+        self._async_pending = False
 
     async def close_async(self) -> None:
         """

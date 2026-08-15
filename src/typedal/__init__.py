@@ -2,6 +2,11 @@
 TypeDAL Library.
 """
 
+from .async_execution import (
+    ConcurrentTransactionError,
+    TransactionBoundaryError,
+    TransactionSplitError,
+)
 from .core import TypeDAL
 from .fields import TypedField
 from .helpers import sql_expression
@@ -18,10 +23,13 @@ except ImportError:  # pragma: no cover
     P4W_DAL = None
 
 __all__ = [
+    "ConcurrentTransactionError",
     "PaginatedRows",
     "QueryBuilder",
     "Ref",
     "Relationship",
+    "TransactionBoundaryError",
+    "TransactionSplitError",
     "TypeDAL",
     "TypedField",
     "TypedRows",
