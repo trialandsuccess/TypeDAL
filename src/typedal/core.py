@@ -714,6 +714,27 @@ class TypeDAL(_TypeDALBase):
                 self._async_pending_owners.discard(owner)
             raise
 
+    async def _release_readonly_connection(self, pool: AsyncConnectionPool) -> None:
+        """
+        Return the connection a read-only `_async` call checked out, unless this task still has
+        uncommitted writes on it.
+
+        `select_async`/`count_async` (and read-only `executesql_async`) leave nothing behind, so
+        they must not keep a checked-out Postgres connection until the task ends. The
+        transaction is ended with `rollback()` because that is the pool API for "I am done and
+        do not want to commit", which releases the connection on the per-task backends and
+        clears the shared owner on `sqlite:memory`.
+
+        Cleanup is deliberately best-effort. It runs in a `finally`, where a rollback failure
+        must not replace whatever the statement itself raised; if rollback does fail, the task's
+        done-callback is still armed and reclaims the connection.
+        """
+        if self._async_pending_owner() in self._async_pending_owners:
+            return
+
+        with contextlib.suppress(Exception):
+            await pool.rollback()
+
     def _settle_abandoned_async_writes(self) -> bool:
         """
         Reclaim an abandoned `sqlite:memory` async transaction, if there is one.
@@ -786,9 +807,12 @@ class TypeDAL(_TypeDALBase):
         colnames, sql = adapter._select_wcols(query, expanded_fields, **attributes)
 
         pool = await self._get_async_pool()
-        async with pool.connection() as conn, conn.cursor() as cur:
-            await cur.execute(sql)
-            rows = await cur.fetchall()
+        try:
+            async with pool.connection() as conn, conn.cursor() as cur:
+                await cur.execute(sql)
+                rows = await cur.fetchall()
+        finally:
+            await self._release_readonly_connection(pool)
 
         limitby = attributes.get("limitby") or (0,)
         rows = adapter.rowslice(rows, limitby[0], None)
@@ -811,9 +835,12 @@ class TypeDAL(_TypeDALBase):
         sql = adapter._count(query, distinct)
 
         pool = await self._get_async_pool()
-        async with pool.connection() as conn, conn.cursor() as cur:
-            await cur.execute(sql)
-            row = await cur.fetchone()
+        try:
+            async with pool.connection() as conn, conn.cursor() as cur:
+                await cur.execute(sql)
+                row = await cur.fetchone()
+        finally:
+            await self._release_readonly_connection(pool)
 
         return t.cast(int, row[0])
 
@@ -956,40 +983,44 @@ class TypeDAL(_TypeDALBase):
         marker = self._mark_async_pending() if opens_a_transaction else contextlib.nullcontext()
 
         with marker:
-            async with pool.connection() as conn, conn.cursor() as cur:
-                if placeholders:
-                    await cur.execute(query, placeholders)
-                else:
-                    await cur.execute(query)
+            try:
+                async with pool.connection() as conn, conn.cursor() as cur:
+                    if placeholders:
+                        await cur.execute(query, placeholders)
+                    else:
+                        await cur.execute(query)
 
-                if as_dict or as_ordered_dict:
-                    if not hasattr(cur, "description"):  # pragma: no cover
-                        # both supported drivers always expose it; guard kept for parity with
-                        # pydal's own `executesql`.
-                        raise RuntimeError("database does not support executesql_async(...,as_dict=True)")
+                    if as_dict or as_ordered_dict:
+                        if not hasattr(cur, "description"):  # pragma: no cover
+                            # both supported drivers always expose it; guard kept for parity with
+                            # pydal's own `executesql`.
+                            raise RuntimeError("database does not support executesql_async(...,as_dict=True)")
 
-                    columns = cur.description
-                    result_fields = list(colnames) if colnames else [col[0] for col in columns]
-                    if len(result_fields) != len(set(result_fields)):
-                        raise RuntimeError(
-                            "Result set includes duplicate column names. "
-                            "Specify unique column names using the 'colnames' argument",
-                        )
-                    if columns:
-                        for i in range(len(result_fields)):
-                            if isinstance(result_fields[i], bytes):  # pragma: no cover
-                                # psycopg and aiosqlite both report column names as str; this is
-                                # for drivers that hand back bytes, as pydal's `executesql` allows.
-                                result_fields[i] = result_fields[i].decode("utf8")  # ty: ignore[unresolved-attribute]
+                        columns = cur.description
+                        result_fields = list(colnames) if colnames else [col[0] for col in columns]
+                        if len(result_fields) != len(set(result_fields)):
+                            raise RuntimeError(
+                                "Result set includes duplicate column names. "
+                                "Specify unique column names using the 'colnames' argument",
+                            )
+                        if columns:
+                            for i in range(len(result_fields)):
+                                if isinstance(result_fields[i], bytes):  # pragma: no cover
+                                    # psycopg and aiosqlite both report column names as str; this is
+                                    # for drivers that hand back bytes, as pydal's `executesql` allows.
+                                    result_fields[i] = result_fields[i].decode("utf8")  # ty: ignore[unresolved-attribute]
 
-                    data = await cur.fetchall()
-                    _dict = collections.OrderedDict if as_ordered_dict else dict
-                    return [_dict(zip(result_fields, row)) for row in data]
+                        data = await cur.fetchall()
+                        _dict = collections.OrderedDict if as_ordered_dict else dict
+                        return [_dict(zip(result_fields, row)) for row in data]
 
-                try:
-                    data = await cur.fetchall()
-                except Exception:
-                    return None
+                    try:
+                        data = await cur.fetchall()
+                    except Exception:
+                        return None
+            finally:
+                if not opens_a_transaction:
+                    await self._release_readonly_connection(pool)
 
         if fields or colnames:
             if fields is None:

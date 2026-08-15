@@ -1884,6 +1884,57 @@ class _StubPool:
         self.closed = True
 
 
+class _StubAsyncCursor:
+    """A cursor that always answers an empty read result."""
+
+    async def execute(self, _sql: str, _parameters: t.Any = None) -> None:
+        return None
+
+    async def fetchone(self) -> tuple[int]:
+        return (0,)
+
+    async def fetchall(self) -> list[t.Any]:
+        return []
+
+
+class _StubAsyncConnection:
+    """Enough of a psycopg AsyncConnection for `PostgresAsyncPool` to run a read."""
+
+    def __init__(self) -> None:
+        self.closed = False
+        self.rolled_back = False
+
+    @contextlib.asynccontextmanager
+    async def cursor(self) -> t.AsyncIterator[_StubAsyncCursor]:
+        yield _StubAsyncCursor()
+
+    async def rollback(self) -> None:
+        self.rolled_back = True
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+class _ReadOnlyPool:
+    """A pool that reports how many of its connections are currently checked out."""
+
+    def __init__(self, conn: _StubAsyncConnection) -> None:
+        self.conn = conn
+        self.checked_out = 0
+        self.returned = 0
+
+    async def getconn(self) -> _StubAsyncConnection:
+        self.checked_out += 1
+        return self.conn
+
+    async def putconn(self, _conn: _StubAsyncConnection) -> None:
+        self.checked_out -= 1
+        self.returned += 1
+
+    async def close(self) -> None:
+        return None
+
+
 @pytest.mark.asyncio
 async def test_postgres_pool_closes_a_connection_it_cannot_return():
     """
@@ -1913,6 +1964,47 @@ async def test_postgres_pool_closes_a_connection_it_cannot_return():
     assert conn.rolled_back, "an abandoned transaction must be rolled back before disposal"
     assert conn.closed, "a connection the pool refused must be closed, or its socket leaks"
     assert conn not in pool._checked_out, "a disposed-of connection must not stay tracked"
+
+
+@pytest.mark.asyncio
+async def test_postgres_read_only_async_returns_its_connection():
+    """
+    `count_async()` and `collect_async()` must not retain a Postgres connection after they
+    return.
+
+    Both are read-only and leave no uncommitted writes behind, but they run through
+    `PostgresAsyncPool.connection()`, which does not hand the connection back on context exit.
+    A long-lived task that only counts/collects and then awaits unrelated work therefore keeps
+    a checked-out connection until the task itself ends. With `POSTGRES_POOL_MAX_SIZE` capped
+    at 10, eleven such tasks exhaust the pool even though none of them is in a transaction.
+
+    Driven through a stub pool so the test can observe the checkout directly; the public
+    `count_async()` path is what needs to trigger the release.
+    """
+    conn = _StubAsyncConnection()
+    raw_pool = _ReadOnlyPool(conn)
+    pool = PostgresAsyncPool(raw_pool)
+
+    async def fake_pool_factory(_db: TypeDAL) -> PostgresAsyncPool:
+        return pool
+
+    with tempfile.TemporaryDirectory() as directory:
+        db = TypeDAL("sqlite:memory", enable_typedal_caching=False, folder=directory)
+
+        @db.define()
+        class AsyncThingReadRelease(TypedTable):
+            name: TypedField[str]
+
+        db.commit()
+
+        db._async_pools = AsyncPoolManager(db, factories={"sqlite": fake_pool_factory})
+        try:
+            assert await AsyncThingReadRelease.count_async() == 0
+            assert raw_pool.checked_out == 0, "count_async left its connection checked out"
+            assert raw_pool.returned == 1, "the read-only connection was never returned to the pool"
+        finally:
+            await db.close_async()
+            db.close()
 
 
 @pytest.mark.asyncio
