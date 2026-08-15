@@ -2,8 +2,8 @@ import pytest
 from pydal.objects import Field, Query
 
 from src.typedal import TypeDAL, TypedField, TypedTable, relationship
-from typedal import QueryBuilder
-from typedal.fields import rname
+from src.typedal import QueryBuilder
+from src.typedal.fields import rname
 
 db = TypeDAL("sqlite:memory")
 

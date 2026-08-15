@@ -7,7 +7,7 @@ from pydal.validators import IS_EMAIL, IS_NOT_IN_DB
 from src.typedal import TypedTable
 from src.typedal.for_py4web import DAL, AuthUser, setup_py4web_tables
 from src.typedal.serializers import as_json
-from typedal.config import TypeDALConfig
+from src.typedal.config import TypeDALConfig
 
 db = DAL("sqlite:memory")
 
