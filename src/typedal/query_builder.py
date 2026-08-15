@@ -517,13 +517,17 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         require_permission(self._permissions, "delete")
         db = self._get_db()
 
-        removed_rows = await db.select_async(self.query, "id")
+        # `_hold_connection`: the delete below has to land in the same transaction as this
+        # snapshot, or the ids returned describe rows it never touched - see `select_async`.
+        removed_rows = await db.select_async(self.query, "id", _hold_connection=True)
         removed_ids = [row.id for row in removed_rows]
 
         pydal_set = db(self.query)
         table = db._adapter.get_table(self.query)
 
         if any(f(pydal_set) for f in table._before_delete):
+            # the delete the snapshot above was holding its connection for is not happening
+            await db._release_held_connection()
             return []
 
         result = await db.delete_async(table, self.query)
@@ -567,16 +571,21 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         require_permission(self._permissions, "update")
         db = self._get_db()
 
-        updated_rows = await db.select_async(self.query, "id")
+        # `_hold_connection`: same reason as in `delete_async` - the update below has to share
+        # this snapshot's transaction, see `select_async`.
+        updated_rows = await db.select_async(self.query, "id", _hold_connection=True)
         updated_ids = [row.id for row in updated_rows]
 
         pydal_set = db(self.query)
         table = db._adapter.get_table(self.query)
         row = table._fields_and_values_for_update(fields)
         if not row._values:
+            await db._release_held_connection()
             raise ValueError("No fields to update")
 
         if any(f(pydal_set, row) for f in table._before_update):
+            # the update the snapshot above was holding its connection for is not happening
+            await db._release_held_connection()
             return []
 
         result = await db.update_async(table, self.query, row.op_values())

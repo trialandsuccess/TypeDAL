@@ -19,7 +19,7 @@ import pydal
 from .async_execution import (
     DELETE_STRATEGIES,
     LASTROWID_STRATEGIES,
-    WRITE_STATEMENTS,
+    UNCOMMITTED_WORK_STRATEGIES,
     AsyncConnectionPool,
     AsyncPoolManager,
     ConcurrentTransactionError,
@@ -56,6 +56,30 @@ if t.TYPE_CHECKING:
 # object rather than None so it cannot collide with a real entry, and so the "is this owner
 # still running?" test can special-case it explicitly instead of by falsiness.
 NO_ASYNC_TASK = object()
+
+
+class _AsyncPendingMark:
+    """
+    Handle on one `TypeDAL._mark_async_pending()` block, so it can be withdrawn again.
+
+    Exists for `executesql_async()`, which is handed arbitrary SQL: it has to mark before
+    running the statement (a later mark would leave a window for a sync write to slip in), but
+    only afterwards can it ask the connection whether anything was actually left uncommitted.
+    """
+
+    def __init__(self, db: "TypeDAL", owner: t.Any, already_pending: bool) -> None:
+        self._db = db
+        self._owner = owner
+        # a mark this block did not add is not this block's to withdraw: an earlier `_async`
+        # write in the same task still holds its transaction open.
+        self._already_pending = already_pending
+
+    def release(self) -> None:
+        """
+        Withdraw this mark, if it was this block that placed it.
+        """
+        if not self._already_pending:
+            self._db._async_pending_owners.discard(self._owner)
 
 
 def _expression_subclasses() -> t.Iterator[type]:
@@ -678,7 +702,7 @@ class TypeDAL(_TypeDALBase):
         return asyncio.current_task() or NO_ASYNC_TASK
 
     @contextlib.contextmanager
-    def _mark_async_pending(self) -> t.Iterator[None]:
+    def _mark_async_pending(self) -> t.Iterator["_AsyncPendingMark"]:
         """
         Mark this task as holding an async write for the duration of the write.
 
@@ -686,6 +710,9 @@ class TypeDAL(_TypeDALBase):
         cannot slip in during the await. Only `ConcurrentTransactionError` un-marks because
         that caller was refused before opening a transaction; any other failure may have left
         one open.
+
+        Yields a handle whose `release()` withdraws the mark, for the one caller that has to
+        mark before it can know whether there was anything to mark - see `executesql_async`.
         """
         owner = self._async_pending_owner()
         # an earlier `_async` write in this same task already marked it, and its transaction is
@@ -694,7 +721,7 @@ class TypeDAL(_TypeDALBase):
 
         self._async_pending_owners.add(owner)
         try:
-            yield
+            yield _AsyncPendingMark(self, owner, already_pending)
         except ConcurrentTransactionError:
             if not already_pending:
                 self._async_pending_owners.discard(owner)
@@ -712,6 +739,21 @@ class TypeDAL(_TypeDALBase):
 
         with contextlib.suppress(Exception):
             await pool.rollback()
+
+    async def _release_held_connection(self) -> None:
+        """
+        Hand back a connection a `select_async(..., _hold_connection=True)` is still holding.
+
+        For the callers that hold one for a write which then turns out not to happen - a
+        `_before_update`/`_before_delete` hook cancelling it, or nothing to update. Without this
+        the read's connection stays checked out (on Postgres: idle in transaction) until the
+        task ends, for a transaction that will never receive its write.
+
+        Goes to `AsyncPoolManager.pool` rather than `_get_async_pool()`: if no pool was ever
+        opened there is nothing held, and releasing must not be what opens one.
+        """
+        if pool := self._async_pools.pool:
+            await self._release_readonly_connection(pool)
 
     def _settle_abandoned_async_writes(self) -> bool:
         """
@@ -748,6 +790,7 @@ class TypeDAL(_TypeDALBase):
         self,
         query: pydal.objects.Query,
         *fields: t.Any,
+        _hold_connection: bool = False,
         **attributes: t.Any,
     ) -> pydal.objects.Rows:
         """
@@ -758,6 +801,15 @@ class TypeDAL(_TypeDALBase):
         `tables()`/`expand_all()`/`_select_wcols()` (pure, no I/O), execute via the async
         driver for this backend (the only I/O, on our own connection, not pydal's; see
         `ASYNC_POOL_FACTORIES`), parse via pydal's own `parse()` (pure).
+
+        `_hold_connection` keeps this task's connection instead of handing it back afterwards,
+        so a write issued next lands in the same transaction as this read. Internal, and for
+        exactly one situation: a write that first has to know *which* rows it is about to touch
+        (`QueryBuilder.update_async`/`delete_async`, `sqlite_delete_async`). Without it those
+        two statements run in separate transactions and the ids reported back can describe rows
+        the write never touched - where the synchronous path, sharing one connection throughout,
+        cannot come apart that way. Ordinary reads leave it False and release, which is what
+        keeps a read from occupying a pool connection until its task ends.
         """
         adapter = self._adapter
 
@@ -777,7 +829,8 @@ class TypeDAL(_TypeDALBase):
                 await cur.execute(sql)
                 rows = await cur.fetchall()
         finally:
-            await self._release_readonly_connection(pool)
+            if not _hold_connection:
+                await self._release_readonly_connection(pool)
 
         limitby = attributes.get("limitby") or (0,)
         rows = adapter.rowslice(rows, limitby[0], None)
@@ -941,19 +994,30 @@ class TypeDAL(_TypeDALBase):
         adapter = self._adapter
         pool = await self._get_async_pool()
 
-        # unlike the other `_async` methods this one is handed arbitrary SQL, so whether it
-        # opens a transaction has to be read off the statement - same test the sync side
-        # applies in `SyncTransactionTracker`. A read marks nothing, hence the `nullcontext`.
-        opens_a_transaction = str(query).lstrip().upper().startswith(WRITE_STATEMENTS)
-        marker = self._mark_async_pending() if opens_a_transaction else contextlib.nullcontext()
+        # Unlike the other `_async` methods this one is handed arbitrary SQL, so whether it
+        # leaves uncommitted work is not knowable up front. Mark first and withdraw after:
+        # marking only once the statement has run would leave a window in which a sync write
+        # from another coroutine slips past the split guard, and reading the *statement text*
+        # to decide (as this used to do, and as the sync side still does) mistakes a leading
+        # comment, a CTE-wrapped write or DDL for a read - which then took the read-only
+        # release path below and silently rolled the write back.
+        left_uncommitted_work = False
+        left_work = UNCOMMITTED_WORK_STRATEGIES[adapter.dbengine]
 
-        with marker:
+        with self._mark_async_pending() as pending:
             try:
                 async with pool.connection() as conn, conn.cursor() as cur:
                     if placeholders:
                         await cur.execute(query, placeholders)
                     else:
                         await cur.execute(query)
+
+                    # right after `execute()` and before any fetching, which is what both
+                    # strategies read; fetching does not change either answer, but the early
+                    # returns below would skip this.
+                    left_uncommitted_work = left_work(conn, cur)
+                    if not left_uncommitted_work:
+                        pending.release()
 
                     if as_dict or as_ordered_dict:
                         if not hasattr(cur, "description"):  # pragma: no cover
@@ -983,8 +1047,17 @@ class TypeDAL(_TypeDALBase):
                         data = await cur.fetchall()
                     except Exception:
                         return None
+            except Exception:
+                # A statement that raised has no effect to preserve, and on Postgres it leaves
+                # the transaction aborted, so this task's mark goes with it - which lets the
+                # `finally` roll the connection back. Withdrawn rather than kept because the
+                # alternative is that one failed read blocks the sync side until the caller
+                # thinks to call `rollback_async()`. A task with *earlier* async writes is
+                # unaffected: `release()` leaves a mark it did not place.
+                pending.release()
+                raise
             finally:
-                if not opens_a_transaction:
+                if not left_uncommitted_work:
                     await self._release_readonly_connection(pool)
 
         if fields or colnames:

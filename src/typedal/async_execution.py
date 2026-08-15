@@ -32,9 +32,15 @@ if t.TYPE_CHECKING:
 # (adapters/postgres.py). Backends without the concept never set it at all, hence None.
 type LastInsert = tuple[pydal.objects.Field, int] | None
 
-# SQL verbs that open a transaction on whichever connection runs them. DDL is left out on
-# purpose: `db.define()` migrates on the sync connection, and treating that as pending work
-# would make the first `_async` call after any table definition raise.
+# SQL verbs that open a transaction on whichever connection runs them, used by
+# `SyncTransactionTracker` to decide whether a statement pydal just ran left uncommitted work.
+# DDL is left out on purpose: `db.define()` migrates on the sync connection, and treating that
+# as pending work would make the first `_async` call after any table definition raise.
+#
+# A text prefix is a weak test - a leading comment or a CTE hides the verb - and the async side
+# deliberately no longer uses it: it asks the connection instead, see
+# `UNCOMMITTED_WORK_STRATEGIES`. The sync side cannot do the same without also catching
+# migration DDL, so it stays on the prefix for now.
 WRITE_STATEMENTS = ("INSERT", "UPDATE", "DELETE", "REPLACE", "MERGE", "TRUNCATE")
 
 # How long a file-backed SQLite connection waits for another one's write to finish before
@@ -212,6 +218,30 @@ class AsyncConnectionPool(t.Protocol):
     def settle_abandoned_sync(self) -> bool: ...
 
 
+def _spawn_reclaim(coro: t.Coroutine[t.Any, t.Any, None], tasks: "set[asyncio.Task[None]]") -> None:
+    """
+    Run a reclaim coroutine on the running loop, holding a reference until it finishes.
+
+    `add_done_callback` is synchronous, so the actual rollback/close has to be scheduled. The
+    reference is the point: the event loop only keeps a *weak* one to a task, so a bare
+    `create_task(...)` can be garbage-collected part-way through its rollback. That surfaces as
+    a connection which is never handed back - only under load, and never twice in the same
+    place.
+
+    Best-effort, like everything on the reclaim path: with no running loop there is nothing to
+    schedule on, and closing the pool is what reclaims the connection instead.
+    """
+    try:
+        task = asyncio.get_running_loop().create_task(coro)
+    except RuntimeError:
+        # no running loop; closing the coroutine keeps it from warning about never being awaited
+        coro.close()
+        return
+
+    tasks.add(task)
+    task.add_done_callback(tasks.discard)
+
+
 class PostgresAsyncPool:
     """
     Wrap `psycopg_pool.AsyncConnectionPool` with one connection per asyncio task.
@@ -227,6 +257,8 @@ class PostgresAsyncPool:
             default=None,
         )
         self._checked_out: set[t.Any] = set()
+        # see `_spawn_reclaim()` - without this the reclaim tasks can be collected mid-flight.
+        self._reclaim_tasks: "set[asyncio.Task[None]]" = set()
 
     def _own_connection(self) -> t.Any:
         """
@@ -300,8 +332,7 @@ class PostgresAsyncPool:
                 with contextlib.suppress(Exception):
                     await conn.close()
 
-        with contextlib.suppress(RuntimeError):
-            asyncio.get_running_loop().create_task(_rollback_and_return())
+        _spawn_reclaim(_rollback_and_return(), self._reclaim_tasks)
 
     async def _release(self, conn: t.Any) -> None:
         """
@@ -584,6 +615,8 @@ class SqliteAsyncPool:
         # every connection handed out and not yet closed, so close() can reach the ones whose
         # tasks ended without committing. Same reasoning as `PostgresAsyncPool._checked_out`.
         self._open: set[t.Any] = set()
+        # see `_spawn_reclaim()` - without this the reclaim tasks can be collected mid-flight.
+        self._reclaim_tasks: "set[asyncio.Task[None]]" = set()
 
     def _own_connection(self) -> t.Any:
         """
@@ -635,8 +668,7 @@ class SqliteAsyncPool:
             with contextlib.suppress(Exception):
                 await conn.close()
 
-        with contextlib.suppress(RuntimeError):
-            asyncio.get_running_loop().create_task(_rollback_and_close())
+        _spawn_reclaim(_rollback_and_close(), self._reclaim_tasks)
 
     async def _release(self, conn: t.Any) -> None:
         # handed the connection for the same reason as `PostgresAsyncPool._release`.
@@ -946,6 +978,54 @@ LASTROWID_STRATEGIES: dict[
 }
 
 
+# Postgres command tags that report a statement which changed nothing. Everything else either
+# modified data or changed schema, and therefore left work the sync connection cannot see.
+# Inverted like this on purpose: an unrecognised tag then counts as a write, which costs a held
+# connection at worst, where the other way round costs a silently discarded statement.
+POSTGRES_READ_ONLY_COMMAND_TAGS = frozenset(
+    {"SELECT", "SHOW", "EXPLAIN", "FETCH", "MOVE", "CLOSE", "SET", "RESET", "BEGIN", "COMMIT", "ROLLBACK"},
+)
+
+
+def postgres_left_uncommitted_work(_conn: AsyncConnection, cur: AsyncCursor) -> bool:
+    """
+    Whether the statement this psycopg cursor just ran left uncommitted work.
+
+    Read off the command tag the *server* sent back (`INSERT 0 1`, `UPDATE 3`, `CREATE TABLE`,
+    `SELECT 5`), not off the SQL that was sent. That is what makes this reliable where a text
+    prefix is not: a CTE-wrapped `INSERT`, a statement behind a leading comment and DDL all
+    report their real command here.
+
+    `conn.info.transaction_status` cannot answer this on Postgres - psycopg opens a transaction
+    for a plain `SELECT` too, so it reports `INTRANS` for statements with nothing to commit.
+    """
+    tag = str(getattr(cur, "statusmessage", "") or "").split(" ", 1)[0].upper()
+    return tag not in POSTGRES_READ_ONLY_COMMAND_TAGS
+
+
+def sqlite_left_uncommitted_work(conn: AsyncConnection, _cur: AsyncCursor) -> bool:
+    """
+    Whether the statement this aiosqlite connection just ran left uncommitted work.
+
+    sqlite3 implicitly BEGINs before DML and leaves SELECT and DDL in autocommit, so
+    `in_transaction` *is* the question being asked - no command tag needed (and none exists).
+
+    That DDL is excluded is the driver's behaviour, not a choice made here: a SQLite
+    `CREATE TABLE` is durable the moment it runs, so there is nothing pending to report.
+    """
+    # not on the `AsyncConnection` protocol: psycopg has no counterpart, this is aiosqlite's.
+    return bool(conn.in_transaction)  # type: ignore[attr-defined] # ty: ignore[unresolved-attribute]
+
+
+# One "did this leave uncommitted work" strategy per backend, mirroring `ASYNC_POOL_FACTORIES`.
+# Used by `executesql_async()`, which is the one `_async` method handed arbitrary SQL and so the
+# only one that cannot know up front whether it is about to write.
+UNCOMMITTED_WORK_STRATEGIES: dict[str, t.Callable[[AsyncConnection, AsyncCursor], bool]] = {
+    "postgres": postgres_left_uncommitted_work,
+    "sqlite": sqlite_left_uncommitted_work,
+}
+
+
 async def base_delete_async(db: "TypeDAL", table: pydal.objects.Table, query: pydal.objects.Query) -> int | None:
     """
     Async twin of the base `SQLAdapter.delete()` (pydal adapters/base.py): plain
@@ -976,7 +1056,9 @@ async def sqlite_delete_async(db: "TypeDAL", table: pydal.objects.Table, query: 
     directly), so a cascaded delete on another table gets the dbengine-appropriate treatment
     too, same as the original.
     """
-    id_rows = await db.select_async(query, table._id)
+    # `_hold_connection`: the delete below (and the cascades after it) have to share this
+    # snapshot's transaction, or the rows cascaded to are chosen from ids read outside it.
+    id_rows = await db.select_async(query, table._id, _hold_connection=True)
     deleted = [row[table._id.name] for row in id_rows]
 
     counter = await base_delete_async(db, table, query)
