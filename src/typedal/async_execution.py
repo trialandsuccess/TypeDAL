@@ -119,7 +119,9 @@ class SyncTransactionTracker(ExecutionHandler):
         if db is None:  # pragma: no cover - adapter detached during close()
             return
 
-        if getattr(db, "_async_pending", False):
+        # asks the db rather than reading a flag: what counts is whether *any* live task has an
+        # open async transaction, and only the `TypeDAL` knows which tasks those are.
+        if callable(pending := getattr(db, "_has_pending_async_writes", None)) and pending():
             raise TransactionSplitError(
                 "The async connection has uncommitted writes, which this synchronous statement "
                 "would not see. Call `await db.commit_async()` or `await db.rollback_async()` "
@@ -324,13 +326,14 @@ class PostgresAsyncPool:
         with contextlib.suppress(RuntimeError):
             asyncio.get_running_loop().create_task(_rollback_and_return())
 
-    async def _release(self) -> None:
+    async def _release(self, conn: t.Any) -> None:
         """
         Hand this task's connection back, after its transaction has been ended.
-        """
-        if (conn := self._own_connection()) is None:
-            return
 
+        Handed the connection rather than reading the `ContextVar` again: both callers have
+        just read it to decide there was a transaction to end at all, and a second read is one
+        more opportunity for the two to disagree about which connection this is.
+        """
         self._current.set(None)
         self._checked_out.discard(conn)
         await self._pool.putconn(conn)
@@ -346,14 +349,14 @@ class PostgresAsyncPool:
             return
 
         await conn.commit()
-        await self._release()
+        await self._release(conn)
 
     async def rollback(self) -> None:
         if (conn := self._own_connection()) is None:
             return
 
         await conn.rollback()
-        await self._release()
+        await self._release(conn)
 
     async def close(self) -> None:
         """
@@ -564,10 +567,8 @@ class SqliteAsyncPool:
         with contextlib.suppress(RuntimeError):
             asyncio.get_running_loop().create_task(_rollback_and_close())
 
-    async def _release(self) -> None:
-        if (conn := self._own_connection()) is None:
-            return
-
+    async def _release(self, conn: t.Any) -> None:
+        # handed the connection for the same reason as `PostgresAsyncPool._release`.
         self._current.set(None)
         self._open.discard(conn)
         await conn.close()
@@ -583,14 +584,14 @@ class SqliteAsyncPool:
             return
 
         await conn.commit()
-        await self._release()
+        await self._release(conn)
 
     async def rollback(self) -> None:
         if (conn := self._own_connection()) is None:
             return
 
         await conn.rollback()
-        await self._release()
+        await self._release(conn)
 
     async def close(self) -> None:
         for conn in list(self._open):

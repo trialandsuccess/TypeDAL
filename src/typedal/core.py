@@ -5,6 +5,7 @@ Core functionality of TypeDAL.
 from __future__ import annotations
 
 # noinspection PyUnusedImports
+import asyncio
 import collections
 import datetime as dt
 import sys
@@ -47,6 +48,12 @@ if t.TYPE_CHECKING:
     from .fields import TypedField
     from .query_builder import QueryBuilder
     from .types import AnyDict, DefineKwargs, Expression, Rows, Set, T_Query, Table
+
+
+# stands in for the task in `TypeDAL._async_pending_owners` when there isn't one. Its own
+# object rather than None so it cannot collide with a real entry, and so the "is this owner
+# still running?" test can special-case it explicitly instead of by falsiness.
+NO_ASYNC_TASK = object()
 
 
 def _expression_subclasses() -> t.Iterator[type]:
@@ -244,8 +251,15 @@ class TypeDAL(_TypeDALBase):
 
     # whether each of the two connections holds an open transaction. See `TransactionSplitError`
     # for why the pair has to be tracked at all.
+    #
+    # The two are shaped differently on purpose. pydal's sync connection really is one shared
+    # thing - `THREAD_LOCAL` gives one per thread, and every coroutine on an event loop is the
+    # same thread - so a single flag describes it exactly. The async side keeps a connection
+    # *per task* (`PostgresAsyncPool`), so "has uncommitted writes" is a per-task fact and a
+    # single flag cannot hold it: one task's `commit_async()` would clear it on behalf of every
+    # other task, and the guard would then wave through exactly the read it exists to refuse.
     _sync_pending: bool
-    _async_pending: bool
+    _async_pending_owners: set[t.Any]
 
     # similar to the insert/update/delete hooks at table-level but for .collect/.execute:
     # note: return values are ignored!
@@ -316,7 +330,7 @@ class TypeDAL(_TypeDALBase):
         # set before super().__init__(), which migrates and therefore already executes
         # statements through SyncTransactionTracker.
         self._sync_pending = False
-        self._async_pending = False
+        self._async_pending_owners = set()
 
         if config.folder:
             Path(config.folder).mkdir(exist_ok=True)
@@ -649,14 +663,47 @@ class TypeDAL(_TypeDALBase):
 
         return await self._async_pools.get()
 
+    def _async_pending_owner(self) -> t.Any:
+        """
+        The key the calling task's pending async writes are recorded under.
+
+        The task itself where there is one. `asyncio.current_task()` answers None for a
+        coroutine driven without one, which is rare but not impossible; `NO_ASYNC_TASK` keeps
+        those recorded rather than silently untracked, at the cost of only being cleared by an
+        explicit `commit_async()`/`rollback_async()` - there is no task whose end could stand
+        in for that.
+        """
+        return asyncio.current_task() or NO_ASYNC_TASK
+
     def _mark_async_pending(self) -> None:
         """
-        Note that the async connection now holds a transaction the sync side must not step on.
+        Note that *this task's* async connection now holds a transaction the sync side must
+        not step on.
 
         Called by the `_async` methods that write rather than from `_get_async_pool()`, because
         a read leaves nothing behind for the other connection to miss.
         """
-        self._async_pending = True
+        self._async_pending_owners.add(self._async_pending_owner())
+
+    def _has_pending_async_writes(self) -> bool:
+        """
+        Whether any live task holds uncommitted writes on an async connection.
+
+        Any task, not just the caller's: the sync connection is shared by every coroutine on
+        this thread, so a statement issued from one task is invisible to *another* task's open
+        async transaction just as much as to its own. Both are the split this refuses.
+
+        Finished tasks are dropped rather than counted. A task that ended without committing
+        had its connection reclaimed and rolled back (`PostgresAsyncPool._reclaim`), so its
+        writes are never going to become visible to anyone - there is nothing left for the
+        sync side to miss. Pruning here rather than in a callback also keeps the set from
+        growing for the life of the process.
+        """
+        self._async_pending_owners = {
+            owner for owner in self._async_pending_owners if owner is NO_ASYNC_TASK or not owner.done()
+        }
+
+        return bool(self._async_pending_owners)
 
     async def select_async(
         self,
@@ -953,7 +1000,10 @@ class TypeDAL(_TypeDALBase):
         if pool := self._async_pools.pool:
             await pool.commit()
 
-        self._async_pending = False
+        # only this task's, matching what was actually committed: on Postgres `pool.commit()`
+        # ends the transaction on the connection checked out for *this* task and leaves every
+        # other task's alone.
+        self._async_pending_owners.discard(self._async_pending_owner())
 
     async def rollback_async(self) -> None:
         """
@@ -962,13 +1012,18 @@ class TypeDAL(_TypeDALBase):
         if pool := self._async_pools.pool:
             await pool.rollback()
 
-        self._async_pending = False
+        self._async_pending_owners.discard(self._async_pending_owner())
 
     async def close_async(self) -> None:
         """
         Close the async connection pool, if one was ever opened.
         """
         await self._async_pools.close()
+
+        # every connection those writes were sitting on is gone (rolled back on the way out),
+        # so nothing is pending anymore - and leaving stale owners behind would refuse sync
+        # statements on a database that no longer has an async side at all.
+        self._async_pending_owners.clear()
 
     def sql_expression(
         self,
