@@ -7,6 +7,7 @@ from __future__ import annotations
 # noinspection PyUnusedImports
 import asyncio
 import collections
+import contextlib
 import datetime as dt
 import sys
 import typing as t
@@ -21,6 +22,7 @@ from .async_execution import (
     WRITE_STATEMENTS,
     AsyncConnectionPool,
     AsyncPoolManager,
+    ConcurrentTransactionError,
     SyncTransactionTracker,
     TransactionSplitError,
 )
@@ -675,15 +677,57 @@ class TypeDAL(_TypeDALBase):
         """
         return asyncio.current_task() or NO_ASYNC_TASK
 
-    def _mark_async_pending(self) -> None:
+    @contextlib.contextmanager
+    def _mark_async_pending(self) -> t.Iterator[None]:
         """
-        Note that *this task's* async connection now holds a transaction the sync side must
-        not step on.
+        Note, for the duration of a write, that *this task's* async connection holds a
+        transaction the sync side must not step on.
 
-        Called by the `_async` methods that write rather than from `_get_async_pool()`, because
-        a read leaves nothing behind for the other connection to miss.
+        Used by the `_async` methods that write rather than by `_get_async_pool()`, because a
+        read leaves nothing behind for the other connection to miss.
+
+        Entered *before* the connection is acquired, not after. Acquiring awaits - on Postgres
+        `getconn()` can take a full round trip - and a plain synchronous write issued by
+        another coroutine during that await would slip past the check `_get_async_pool()` just
+        made, opening exactly the split both guards exist to prevent. So the mark has to be
+        standing before the first await.
+
+        The cost of being early is `ConcurrentTransactionError`, which `sqlite:memory` raises
+        from `connection()` *before* it yields: that caller opened no transaction at all, and
+        leaving it recorded would refuse every sync statement on this instance - the guard is
+        "does any live task hold async writes", not "does mine" - until its task happened to
+        end. So that one exception, and only that one, un-marks. Any other failure may well
+        have left a transaction open: sqlite3 implicitly BEGINs before DML and a statement that
+        raised can still have opened one, which is why `SqliteAsyncConnection` claims ownership
+        in a `finally` too.
         """
-        self._async_pending_owners.add(self._async_pending_owner())
+        owner = self._async_pending_owner()
+        # an earlier `_async` write in this same task already marked it, and its transaction is
+        # still open - this block's failure says nothing about that one, so leave it recorded.
+        already_pending = owner in self._async_pending_owners
+
+        self._async_pending_owners.add(owner)
+        try:
+            yield
+        except ConcurrentTransactionError:
+            if not already_pending:
+                self._async_pending_owners.discard(owner)
+            raise
+
+    def _settle_abandoned_async_writes(self) -> bool:
+        """
+        Reclaim an abandoned `sqlite:memory` async transaction, if there is one.
+
+        Only the sync side needs this: pydal's `ExecutionHandler` cannot await the async pool,
+        and `sqlite:memory` has no connection to hand back. The two per-task backends already
+        reclaim their abandoned connections through their own done-callbacks.
+
+        Returns False when the reclaim could not be completed. The caller must then treat the
+        async side as still pending, so the sync statement raises `TransactionSplitError`
+        instead of walking into a driver lock.
+        """
+        pool = self._async_pools.pool
+        return pool is None or pool.settle_abandoned_sync()
 
     def _has_pending_async_writes(self) -> bool:
         """
@@ -693,12 +737,21 @@ class TypeDAL(_TypeDALBase):
         this thread, so a statement issued from one task is invisible to *another* task's open
         async transaction just as much as to its own. Both are the split this refuses.
 
+        This is the settle-then-check decision point, kept here rather than in
+        `SyncTransactionTracker`: `sqlite:memory` must first synchronously reclaim a finished
+        task's abandoned transaction, and callers must not be able to ask the predicate without
+        that reclaim having run. If reclaim cannot complete, the async side is still treated as
+        pending and the caller is refused.
+
         Finished tasks are dropped rather than counted. A task that ended without committing
         had its connection reclaimed and rolled back (`PostgresAsyncPool._reclaim`), so its
         writes are never going to become visible to anyone - there is nothing left for the
         sync side to miss. Pruning here rather than in a callback also keeps the set from
         growing for the life of the process.
         """
+        if not self._settle_abandoned_async_writes():
+            return True
+
         self._async_pending_owners = {
             owner for owner in self._async_pending_owners if owner is NO_ASYNC_TASK or not owner.done()
         }
@@ -782,20 +835,20 @@ class TypeDAL(_TypeDALBase):
         sql = adapter._update(table, query, fields)
 
         pool = await self._get_async_pool()
-        self._mark_async_pending()
-        async with pool.connection() as conn, conn.cursor() as cur:
-            try:
-                await cur.execute(sql)
-            except Exception as e:
-                if hasattr(table, "_on_update_error"):
-                    return t.cast(t.Optional[int], table._on_update_error(table, query, fields, e))  # ty: ignore[call-non-callable]
-                raise
-            try:
-                return cur.rowcount
-            except Exception:  # pragma: no cover
-                # defensive, mirroring `adapter.update()` (adapters/base.py):
-                # neither driver's `rowcount` actually raises, it is a plain property.
-                return None
+        with self._mark_async_pending():
+            async with pool.connection() as conn, conn.cursor() as cur:
+                try:
+                    await cur.execute(sql)
+                except Exception as e:
+                    if hasattr(table, "_on_update_error"):
+                        return t.cast(t.Optional[int], table._on_update_error(table, query, fields, e))  # ty: ignore[call-non-callable]
+                    raise
+                try:
+                    return cur.rowcount
+                except Exception:  # pragma: no cover
+                    # defensive, mirroring `adapter.update()` (adapters/base.py):
+                    # neither driver's `rowcount` actually raises, it is a plain property.
+                    return None
 
     async def delete_async(
         self,
@@ -836,22 +889,22 @@ class TypeDAL(_TypeDALBase):
         last_insert = getattr(adapter, "_last_insert", None)
 
         pool = await self._get_async_pool()
-        self._mark_async_pending()
-        async with pool.connection() as conn, conn.cursor() as cur:
-            try:
-                await cur.execute(query)
-            except Exception as e:
-                # mirrors `adapter.insert()` (adapters/base.py), same as `update_async`:
-                if hasattr(table, "_on_insert_error"):
-                    return table._on_insert_error(table, fields, e)  # ty: ignore[call-non-callable]
-                raise
+        with self._mark_async_pending():
+            async with pool.connection() as conn, conn.cursor() as cur:
+                try:
+                    await cur.execute(query)
+                except Exception as e:
+                    # mirrors `adapter.insert()` (adapters/base.py), same as `update_async`:
+                    if hasattr(table, "_on_insert_error"):
+                        return table._on_insert_error(table, fields, e)  # ty: ignore[call-non-callable]
+                    raise
 
-            if hasattr(table, "_primarykey"):
-                pkdict = {k[0].name: k[1] for k in fields if k[0].name in table._primarykey}  # ty: ignore[unsupported-operator]
-                if pkdict:
-                    return pkdict
+                if hasattr(table, "_primarykey"):
+                    pkdict = {k[0].name: k[1] for k in fields if k[0].name in table._primarykey}  # ty: ignore[unsupported-operator]
+                    if pkdict:
+                        return pkdict
 
-            row_id = await LASTROWID_STRATEGIES[adapter.dbengine](adapter, table, cur, last_insert)
+                row_id = await LASTROWID_STRATEGIES[adapter.dbengine](adapter, table, cur, last_insert)
 
         # a table with a single custom primarykey reports its id as a `{name: value}` dict
         # instead of a bare int, matching `adapter.insert()` (adapters/base.py):
@@ -898,44 +951,45 @@ class TypeDAL(_TypeDALBase):
 
         # unlike the other `_async` methods this one is handed arbitrary SQL, so whether it
         # opens a transaction has to be read off the statement - same test the sync side
-        # applies in `SyncTransactionTracker`.
-        if str(query).lstrip().upper().startswith(WRITE_STATEMENTS):
-            self._mark_async_pending()
+        # applies in `SyncTransactionTracker`. A read marks nothing, hence the `nullcontext`.
+        opens_a_transaction = str(query).lstrip().upper().startswith(WRITE_STATEMENTS)
+        marker = self._mark_async_pending() if opens_a_transaction else contextlib.nullcontext()
 
-        async with pool.connection() as conn, conn.cursor() as cur:
-            if placeholders:
-                await cur.execute(query, placeholders)
-            else:
-                await cur.execute(query)
+        with marker:
+            async with pool.connection() as conn, conn.cursor() as cur:
+                if placeholders:
+                    await cur.execute(query, placeholders)
+                else:
+                    await cur.execute(query)
 
-            if as_dict or as_ordered_dict:
-                if not hasattr(cur, "description"):  # pragma: no cover
-                    # both supported drivers always expose it; guard kept for parity with
-                    # pydal's own `executesql`.
-                    raise RuntimeError("database does not support executesql_async(...,as_dict=True)")
+                if as_dict or as_ordered_dict:
+                    if not hasattr(cur, "description"):  # pragma: no cover
+                        # both supported drivers always expose it; guard kept for parity with
+                        # pydal's own `executesql`.
+                        raise RuntimeError("database does not support executesql_async(...,as_dict=True)")
 
-                columns = cur.description
-                result_fields = list(colnames) if colnames else [col[0] for col in columns]
-                if len(result_fields) != len(set(result_fields)):
-                    raise RuntimeError(
-                        "Result set includes duplicate column names. "
-                        "Specify unique column names using the 'colnames' argument",
-                    )
-                if columns:
-                    for i in range(len(result_fields)):
-                        if isinstance(result_fields[i], bytes):  # pragma: no cover
-                            # psycopg and aiosqlite both report column names as str; this is
-                            # for drivers that hand back bytes, as pydal's `executesql` allows.
-                            result_fields[i] = result_fields[i].decode("utf8")  # ty: ignore[unresolved-attribute]
+                    columns = cur.description
+                    result_fields = list(colnames) if colnames else [col[0] for col in columns]
+                    if len(result_fields) != len(set(result_fields)):
+                        raise RuntimeError(
+                            "Result set includes duplicate column names. "
+                            "Specify unique column names using the 'colnames' argument",
+                        )
+                    if columns:
+                        for i in range(len(result_fields)):
+                            if isinstance(result_fields[i], bytes):  # pragma: no cover
+                                # psycopg and aiosqlite both report column names as str; this is
+                                # for drivers that hand back bytes, as pydal's `executesql` allows.
+                                result_fields[i] = result_fields[i].decode("utf8")  # ty: ignore[unresolved-attribute]
 
-                data = await cur.fetchall()
-                _dict = collections.OrderedDict if as_ordered_dict else dict
-                return [_dict(zip(result_fields, row)) for row in data]
+                    data = await cur.fetchall()
+                    _dict = collections.OrderedDict if as_ordered_dict else dict
+                    return [_dict(zip(result_fields, row)) for row in data]
 
-            try:
-                data = await cur.fetchall()
-            except Exception:
-                return None
+                try:
+                    data = await cur.fetchall()
+                except Exception:
+                    return None
 
         if fields or colnames:
             if fields is None:

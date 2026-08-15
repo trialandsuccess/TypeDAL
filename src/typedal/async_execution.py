@@ -119,9 +119,9 @@ class SyncTransactionTracker(ExecutionHandler):
         if db is None:  # pragma: no cover - adapter detached during close()
             return
 
-        # asks the db rather than reading a flag: what counts is whether *any* live task has an
-        # open async transaction, and only the `TypeDAL` knows which tasks those are.
-        if callable(pending := getattr(db, "_has_pending_async_writes", None)) and pending():
+        # TypeDAL owns the settle-then-check decision, so the sync side cannot accidentally ask
+        # the predicate without first reclaiming an abandoned sqlite:memory transaction.
+        if db._has_pending_async_writes():
             raise TransactionSplitError(
                 "The async connection has uncommitted writes, which this synchronous statement "
                 "would not see. Call `await db.commit_async()` or `await db.rollback_async()` "
@@ -207,6 +207,8 @@ class AsyncConnectionPool(t.Protocol):
     async def rollback(self) -> None: ...
 
     async def close(self) -> None: ...
+
+    def settle_abandoned_sync(self) -> bool: ...
 
 
 class PostgresAsyncPool:
@@ -344,6 +346,10 @@ class PostgresAsyncPool:
         # call, made via commit()/rollback(), exactly as it is on pydal's sync connection.
         yield t.cast(AsyncConnection, await self._acquire())
 
+    def settle_abandoned_sync(self) -> bool:
+        """Per-task backends reclaim abandoned connections through their own done-callback."""
+        return True
+
     async def commit(self) -> None:
         if (conn := self._own_connection()) is None:
             return
@@ -425,10 +431,54 @@ class SqliteAsyncConnection:
         # for *other* tasks to see it and be refused, which is the opposite of what a
         # ContextVar's per-task isolation provides.
         self._owner: "asyncio.Task[t.Any] | None" = None
+        # tasks with a reclaim callback armed, so one is armed per task rather than per
+        # statement. Entries are dropped when the callback fires.
+        self._reclaimable: "set[asyncio.Task[t.Any]]" = set()
+
+    def _is_owned_elsewhere(self) -> bool:
+        """
+        Whether the open transaction belongs to a task other than the calling one.
+
+        No `done()` term, deliberately. A finished owner is settled by
+        `_settle_abandoned_owner()` before anyone gets here, so by this point `_owner` is either
+        absent, the caller's, or a live other task's. Treating a *finished* owner as absent
+        instead - which this used to do - is how the next task ended up inheriting an
+        abandoned transaction and deciding its writes.
+
+        `asyncio.current_task()` answers None off-task, and None is never stored as an owner,
+        so an off-task caller correctly reads any owner as somebody else's.
+        """
+        return self._owner is not None and self._owner is not asyncio.current_task()
+
+    async def _settle_abandoned_owner(self) -> None:
+        """
+        Roll back a transaction whose owning task ended without committing it.
+
+        Must be called with `_lock` held. `PostgresAsyncPool` and `SqliteAsyncPool` both hand
+        the abandoned connection back and roll it back on the way (`_reclaim`); there is no
+        connection to hand back here, so the transaction itself is what gets reclaimed.
+
+        `settle_abandoned_sync()` normally gets there first, from the task's done-callback or
+        from `TypeDAL._settle_abandoned_async_writes()`. This is the deterministic backstop for
+        when neither has run yet, or when the sync path could not act because the lock was held.
+
+        If the rollback fails, the owner is left set so the next task is refused rather than
+        allowed to inherit a transaction that could not be reclaimed.
+        """
+        owner = self._owner
+        if owner is None or owner is asyncio.current_task() or not owner.done():
+            return
+
+        try:
+            await self._conn.rollback()
+        except Exception:  # pragma: no cover - a hard rollback failure is not reachable through the public API
+            return
+
+        self._owner = None
 
     def _refuse_if_owned_elsewhere(self) -> None:
         """
-        Refuse the caller if a different, still-running task holds the open transaction.
+        Refuse the caller if a different task holds the open transaction.
 
         Must be called with `_lock` held. Checking on the way *to* the lock instead lets a
         second task read `_owner` while the first is still awaiting inside its `connection()`
@@ -436,9 +486,7 @@ class SqliteAsyncConnection:
         check, queues on the lock, and then walks straight into the transaction it should have
         been refused from. Under the lock, the first task's ownership is always already visible.
         """
-        task = asyncio.current_task()
-
-        if self._owner is not None and self._owner is not task and not self._owner.done():
+        if self._is_owned_elsewhere():
             raise ConcurrentTransactionError(
                 "Another task holds an open transaction on this sqlite:memory database, and "
                 "SQLite cannot give the two of them separate ones - shared-cache mode refuses "
@@ -455,12 +503,78 @@ class SqliteAsyncConnection:
         SELECT and DDL alone. Claiming on every use instead would mean a single `collect_async()`
         locked every other task out of the database until the reader happened to commit, which
         readers have no reason to do.
+
+        Taking ownership also arms the done-callback that reclaims the transaction if this task
+        never ends it, the same safety net the two real pools arm at checkout. Armed here
+        rather than on entry to `connection()` because this is the moment there is something to
+        reclaim; `_reclaimable` keeps one callback per task rather than one per statement.
         """
-        self._owner = asyncio.current_task() if self._conn.in_transaction else None  # ty: ignore[unresolved-attribute]
+        owner = asyncio.current_task() if self._conn.in_transaction else None  # ty: ignore[unresolved-attribute]
+        self._owner = owner
+
+        if owner is not None and owner not in self._reclaimable:
+            self._reclaimable.add(owner)
+            owner.add_done_callback(self._reclaim)
+
+    def settle_abandoned_sync(self) -> bool:
+        """
+        Synchronously roll back a transaction whose owning task ended without committing it.
+
+        The sync counterpart to `_settle_abandoned_owner()`, for callers that cannot await.
+        `TypeDAL._settle_abandoned_async_writes()` runs inside pydal's synchronous execution
+        handler, so it needs this path: scheduling an async rollback and hoping it has run
+        before the sync statement executes is exactly the race that lets `database is locked`
+        out of the driver instead of being reclaimed here.
+
+        A finished owner means no statement from that task is still queued, and `_lock` being
+        free means no other coroutine is mid-statement on this single connection. Under those
+        two conditions the aiosqlite worker thread is idle, so the underlying sqlite3
+        connection can be rolled back directly without going through aiosqlite's queue.
+
+        Returns False when the rollback cannot be done safely right now, or when it fails. The
+        caller must keep the abandoned owner counted: a rollback that did not happen still has
+        an open transaction behind it, and letting the next task inherit that is precisely the
+        failure this class exists to prevent.
+        """
+        owner = self._owner
+        if owner is None or owner is asyncio.current_task() or not owner.done():
+            return True
+
+        if self._lock.locked():
+            return False
+
+        try:
+            self._conn._conn.rollback()  # type: ignore[attr-defined]
+        except Exception:  # pragma: no cover - a hard rollback failure is not reachable through the public API
+            return False
+
+        self._owner = None
+        return True
+
+    def _reclaim(self, task: "asyncio.Task[t.Any]") -> None:
+        """
+        Roll back the transaction of a task that ended without committing it.
+
+        Re-checks ownership rather than trusting the callback fired: by the time it runs the
+        task may have committed (so `_owner` is None), or another task may already hold the
+        transaction, and rolling *that* back is the very thing this class exists to prevent.
+
+        A False from `settle_abandoned_sync()` is safe to ignore here: `_settle_abandoned_owner()`
+        runs on the next async `connection()`, so the still-open owner is refused rather than
+        inherited.
+        """
+        self._reclaimable.discard(task)
+
+        if self._owner is not task:
+            # the ordinary case - commit()/rollback() already ended it
+            return
+
+        self.settle_abandoned_sync()
 
     @contextlib.asynccontextmanager
     async def connection(self) -> t.AsyncIterator[AsyncConnection]:
         async with self._lock:
+            await self._settle_abandoned_owner()
             self._refuse_if_owned_elsewhere()
             try:
                 yield self._conn
@@ -473,15 +587,27 @@ class SqliteAsyncConnection:
         # under the lock so a commit cannot land halfway through another coroutine's
         # `connection()` block and write out a statement it has not finished issuing.
         async with self._lock:
-            await self._conn.commit()
+            if self._is_owned_elsewhere():
+                # Not this task's transaction to end, so this does nothing - matching what
+                # `PostgresAsyncPool` and `SqliteAsyncPool` do for a task that holds no
+                # connection. Unlike them, the connection here is shared, so acting anyway
+                # would commit or roll back writes the owner has not finished issuing: a
+                # handler that settles up unconditionally on its way out would decide another
+                # request's transaction. Silent rather than an exception because both of these
+                # are what a caller reaches for while cleaning up, often in a `finally`, where
+                # raising would mask whatever sent it there.
+                return
 
-        self._owner = None
+            await self._conn.commit()
+            self._owner = None
 
     async def rollback(self) -> None:
         async with self._lock:
-            await self._conn.rollback()
+            if self._is_owned_elsewhere():
+                return
 
-        self._owner = None
+            await self._conn.rollback()
+            self._owner = None
 
     async def close(self) -> None:
         await self._conn.close()
@@ -578,6 +704,10 @@ class SqliteAsyncPool:
         # no commit and no rollback on exit - the caller's transaction spans its calls and ends
         # when it says so, exactly as on pydal's sync connection.
         yield t.cast(AsyncConnection, await self._acquire())
+
+    def settle_abandoned_sync(self) -> bool:
+        """Per-task backends reclaim abandoned connections through their own done-callback."""
+        return True
 
     async def commit(self) -> None:
         if (conn := self._own_connection()) is None:
@@ -882,15 +1012,15 @@ async def base_delete_async(db: "TypeDAL", table: pydal.objects.Table, query: py
     sql = adapter._delete(table, query)
 
     pool = await db._get_async_pool()
-    db._mark_async_pending()
-    async with pool.connection() as conn, conn.cursor() as cur:
-        await cur.execute(sql)
-        try:
-            return cur.rowcount
-        except Exception:  # pragma: no cover
-            # defensive, mirroring `adapter.delete()` (adapters/base.py):
-            # neither driver's `rowcount` actually raises, it is a plain property.
-            return None
+    with db._mark_async_pending():
+        async with pool.connection() as conn, conn.cursor() as cur:
+            await cur.execute(sql)
+            try:
+                return cur.rowcount
+            except Exception:  # pragma: no cover
+                # defensive, mirroring `adapter.delete()` (adapters/base.py):
+                # neither driver's `rowcount` actually raises, it is a plain property.
+                return None
 
 
 async def sqlite_delete_async(db: "TypeDAL", table: pydal.objects.Table, query: pydal.objects.Query) -> int | None:

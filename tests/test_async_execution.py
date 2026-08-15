@@ -2128,6 +2128,72 @@ async def test_sqlite_memory_abandoned_transaction_does_not_lock_out_the_sync_si
 
 
 @pytest.mark.asyncio
+async def test_sqlite_memory_async_connection_settles_a_finished_owner(db_sqlite_memory: TypeDAL):
+    """
+    `connection()` must settle a finished owner even when no sync statement has triggered
+    `settle_abandoned_sync()` first.
+
+    This is the async backstop behind `SqliteAsyncConnection._settle_abandoned_owner()`.
+    """
+    db = db_sqlite_memory
+    pool = await db._get_async_pool()
+
+    finished = asyncio.create_task(asyncio.sleep(0))
+    await finished
+    pool._owner = finished
+
+    async with pool.connection():
+        pass
+
+    assert pool._owner is None
+
+
+@pytest.mark.asyncio
+async def test_sqlite_memory_sync_side_stays_refused_while_async_lock_is_held(db_sqlite_memory: TypeDAL):
+    """
+    `settle_abandoned_sync()` must not roll back a finished owner while another coroutine is
+    mid-statement on the single shared connection.
+
+    The sync side cannot await that other coroutine, so the only correct answer is to keep the
+    abandoned owner counted and let `TransactionSplitError` refuse the sync statement until the
+    lock holder finishes. This pins the `_lock.locked()` branch in `SqliteAsyncConnection`.
+    """
+    db = db_sqlite_memory
+
+    @db.define()
+    class AsyncThingLockHeld(TypedTable):
+        name: TypedField[str]
+
+    db.commit()
+
+    pool = await db._get_async_pool()
+    finished = asyncio.create_task(asyncio.sleep(0))
+    await finished
+    pool._owner = finished
+
+    entered = asyncio.Event()
+    leave = asyncio.Event()
+
+    async def hold_the_connection_lock() -> None:
+        async with pool._lock:
+            entered.set()
+            await leave.wait()
+
+    holder = asyncio.create_task(hold_the_connection_lock())
+    await asyncio.wait_for(entered.wait(), timeout=5)
+
+    try:
+        with pytest.raises(TransactionSplitError):
+            AsyncThingLockHeld.insert(name="blocked")
+
+        assert pool._owner is finished
+    finally:
+        leave.set()
+        await asyncio.wait_for(holder, timeout=5)
+        pool._owner = None
+
+
+@pytest.mark.asyncio
 async def test_refused_task_is_not_recorded_as_holding_async_writes(db_sqlite_memory: TypeDAL):
     """
     A task refused with `ConcurrentTransactionError` opened no transaction, and must not be
