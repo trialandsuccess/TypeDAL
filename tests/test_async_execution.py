@@ -30,6 +30,7 @@ from src.typedal import TypeDAL, TypedField, TypedTable
 from src.typedal.async_execution import (
     ASYNC_POOL_FACTORIES,
     AsyncPoolManager,
+    PostgresAsyncPool,
     TransactionBoundaryError,
     TransactionSplitError,
     open_sqlite_async_connection,
@@ -878,6 +879,92 @@ async def test_concurrent_coroutines_do_not_share_one_transaction(dal_psql: Type
 
 
 @pytest.mark.asyncio
+async def test_split_guard_is_per_task_not_per_instance(dal_psql: TypeDAL):
+    """
+    The sync/async split guard has to be keyed to the task whose transaction it describes.
+
+    `TransactionSplitError` and its two flags exist so a statement on one connection can never
+    silently miss uncommitted work on the other. On Postgres the async side keeps one
+    connection *per task* (`PostgresAsyncPool`), so "the async connection has uncommitted
+    writes" is a per-task fact - but `_async_pending` (core.py) is a single bool on the
+    `TypeDAL` instance, so any task's `commit_async()` clears it for every other task.
+
+    Three coroutines, pinned with events rather than sleeps:
+      - `holder` inserts and does *not* end its transaction, so its connection stays dirty
+      - `bystander` does its own unrelated write and commits it, which is what clears the flag
+      - `sync_reader` then issues a plain synchronous SELECT
+
+    That SELECT runs on pydal's own connection and cannot see `holder`'s row, which is the
+    exact condition the guard is there to refuse. It must raise. Today it does not: the flag
+    `SyncTransactionTracker.before_execute` reads was reset by a task that had no business
+    speaking for `holder`, so the guard fails *open* - and it fails open only under
+    concurrency, which is where it is the only thing standing between the caller and a wrong
+    answer.
+
+    Postgres only, on `dal_psql`, for the same reason as
+    `test_concurrent_coroutines_do_not_share_one_transaction`: two tasks have to hold separate
+    open transactions at once for the premise to exist at all, and SQLite permits one writer.
+
+    The mirror defect - `holder`'s write refusing an unrelated task's sync read - is the same
+    root cause and is not asserted here; fixing the flag to be per-task fixes both.
+    """
+    db = dal_psql
+
+    @db.define()
+    class AsyncThingSplitGuard(TypedTable):
+        name: TypedField[str]
+
+    db.commit()
+
+    holder_wrote = asyncio.Event()
+    bystander_committed = asyncio.Event()
+    sync_read_done = asyncio.Event()
+
+    # collected rather than raised in place: an exception out of `gather()` propagates while
+    # the other two coroutines are still running, and the assertion belongs after they are all
+    # settled anyway.
+    refusal: list[TransactionSplitError] = []
+
+    async def holder() -> None:
+        # never committed or rolled back until the very end - this task's connection is the
+        # one holding the writes the sync reader must be protected from.
+        await AsyncThingSplitGuard.insert_async(name="uncommitted")
+        holder_wrote.set()
+        await asyncio.wait_for(sync_read_done.wait(), timeout=5)
+        await db.rollback_async()
+
+    async def bystander() -> None:
+        # ordinary, correct, unrelated work: its own connection, its own transaction, ended
+        # properly. Nothing here is a misuse; that is the point.
+        await asyncio.wait_for(holder_wrote.wait(), timeout=5)
+        await AsyncThingSplitGuard.insert_async(name="bystander")
+        await db.commit_async()
+        bystander_committed.set()
+
+    async def sync_reader() -> None:
+        await asyncio.wait_for(bystander_committed.wait(), timeout=5)
+        try:
+            # a plain INSERT takes no lock a SELECT waits on, so this does not block on
+            # `holder` - it just quietly returns a view of the table that is missing a row.
+            AsyncThingSplitGuard.collect()
+        except TransactionSplitError as e:
+            refusal.append(e)
+        finally:
+            sync_read_done.set()
+
+    try:
+        await asyncio.gather(holder(), bystander(), sync_reader())
+
+        assert refusal, (
+            "the sync SELECT was allowed to run while another task's async transaction held "
+            "uncommitted writes - `_async_pending` was cleared by `bystander`, which speaks "
+            "only for its own connection"
+        )
+    finally:
+        await db.close_async()
+
+
+@pytest.mark.asyncio
 async def test_insert_async_honors_on_insert_error_hook(db_async: TypeDAL):
     """
     pydal's `adapter.insert()` routes a failing INSERT through `table._on_insert_error` and
@@ -1105,13 +1192,6 @@ async def test_async_connection_is_not_shared_between_concurrent_coroutines(db_a
 
     rows = await AsyncThingIsolation.collect_async()
     assert sorted(row.name for row in rows) == ["keep"]
-
-
-# ---------------------------------------------------------------------------
-# Coverage for async paths the parity tests above never reach: rollback, the pydal
-# hook/abort branches, error hooks, cascades and the unsupported-backend guard.
-# ---------------------------------------------------------------------------
-
 
 @pytest.mark.asyncio
 async def test_rollback_async_is_usable_on_every_backend(db_async: TypeDAL):
@@ -1477,6 +1557,15 @@ async def test_executesql_async_with_fields_and_colnames(db_async: TypeDAL):
     )
     assert by_colname[0].name == "widget"
 
+    # ...and `fields` left off entirely is the same case: pydal's own `executesql` treats a
+    # missing `fields` and an empty one alike (base.py), so both have to reach `parse()` with
+    # the colnames doing the resolving.
+    omitted_fields = await db.executesql_async(
+        f"SELECT {tablename}.name FROM {tablename}",
+        colnames=[f"{tablename}.name"],
+    )
+    assert omitted_fields[0].name == "widget"
+
     # a colname without a `table.` prefix is passed through unquoted
     bare_colname = await db.executesql_async(
         f"SELECT {tablename}.name FROM {tablename}",
@@ -1748,3 +1837,126 @@ async def test_after_connection_hook_also_applies_to_the_async_connection():
             await db.close_async()
             db.close()
 
+class _StubConnection:
+    """Enough of a psycopg AsyncConnection for the pool to hand around and close."""
+
+    def __init__(self) -> None:
+        self.closed = False
+        self.rolled_back = False
+
+    async def rollback(self) -> None:
+        self.rolled_back = True
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+class _StubPool:
+    """A psycopg_pool stand-in whose `putconn` refuses, the way a closed pool does."""
+
+    def __init__(self, conn: _StubConnection) -> None:
+        self.conn = conn
+        self.closed = False
+
+    async def getconn(self) -> _StubConnection:
+        return self.conn
+
+    async def putconn(self, _conn: _StubConnection) -> None:
+        raise RuntimeError("pool is closed")
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+@pytest.mark.asyncio
+async def test_postgres_pool_closes_a_connection_it_cannot_return():
+    """
+    A connection the pool refuses to take back must be closed, not forgotten.
+
+    This is the branch that made the suite die with `FATAL: sorry, too many clients already`.
+    A task that ends without committing has its connection returned by a done-callback, which
+    runs after the fixture teardown has already closed the pool - so `putconn` fails. The
+    original code re-added the connection to `_checked_out` on that failure, but nothing drains
+    that set once `close()` has run, so the socket stayed open for the life of the process.
+
+    Driven through stubs rather than a real pool: the failure needs `putconn` to raise at a
+    moment that is a race with a real one, and the point being asserted is what this class does
+    with the failure, not that psycopg produces it.
+    """
+    conn = _StubConnection()
+    pool = PostgresAsyncPool(_StubPool(conn))
+
+    async def abandons_its_transaction() -> None:
+        await pool._acquire()  # never committed, never rolled back
+
+    await asyncio.create_task(abandons_its_transaction())
+    # the done-callback schedules the return rather than doing it inline, so yield once
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+
+    assert conn.rolled_back, "an abandoned transaction must be rolled back before disposal"
+    assert conn.closed, "a connection the pool refused must be closed, or its socket leaks"
+    assert conn not in pool._checked_out, "a disposed-of connection must not stay tracked"
+
+
+@pytest.mark.asyncio
+async def test_settling_up_twice_is_a_no_op(db_async: TypeDAL):
+    """
+    `commit_async()`/`rollback_async()` must be safe when this task holds no connection.
+
+    Two ways to get there, both ordinary: calling either twice, or calling one having done no
+    async work at all - a request handler that commits unconditionally on the way out, say.
+    The pools return the connection on the first call, so the second finds nothing; without the
+    guard it would commit on a connection already handed back to the pool.
+    """
+    db = db_async
+
+    @db.define()
+    class AsyncThingSettleTwice(TypedTable):
+        name: TypedField[str]
+
+    db.commit()
+
+    # nothing done on the async side yet
+    await db.commit_async()
+    await db.rollback_async()
+
+    await AsyncThingSettleTwice.insert_async(name="once")
+    await db.commit_async()
+    await db.commit_async()  # second one has nothing left to settle
+    await db.rollback_async()  # and this must not undo the commit above
+
+    assert [row.name for row in await AsyncThingSettleTwice.collect_async()] == ["once"]
+
+
+@pytest.mark.asyncio
+async def test_sqlite_pool_reclaim_yields_to_whoever_claimed_first():
+    """
+    `_reclaim` schedules its work, so the connection can be gone by the time that work runs.
+
+    The done-callback checks `_open` when it fires, but the coroutine it starts runs later -
+    after `close()` or `_release()` may have taken the same connection. Both claim by removing
+    from `_open` before their first await, so the loser has to notice and do nothing; closing a
+    connection twice is harmless, but rolling back one that has been handed to another task is
+    not.
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        db = TypeDAL(f"sqlite://{Path(directory) / 'reclaim.db'}", enable_typedal_caching=False, folder=directory)
+        try:
+            pool = await db._get_async_pool()
+            conn = await pool._acquire()
+
+            pool._reclaim(conn)  # schedules the rollback-and-close
+            pool._open.discard(conn)  # somebody else claims it before that runs
+            await asyncio.sleep(0)  # let the scheduled work find it gone
+
+            assert not pool._open
+
+            # the losing claim leaves this connection open on purpose - that is the branch
+            # under test - so close it here. aiosqlite runs a non-daemon thread per connection,
+            # and one left behind outlives the test's event loop and reports
+            # `RuntimeError: Event loop is closed` from inside some later, unrelated test.
+            await conn.close()
+        finally:
+            await db.close_async()
+            db.close()
