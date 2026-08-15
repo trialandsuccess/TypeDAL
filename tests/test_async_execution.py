@@ -30,6 +30,7 @@ from src.typedal import TypeDAL, TypedField, TypedTable
 from src.typedal.async_execution import (
     ASYNC_POOL_FACTORIES,
     AsyncPoolManager,
+    ConcurrentTransactionError,
     PostgresAsyncPool,
     TransactionBoundaryError,
     TransactionSplitError,
@@ -49,7 +50,9 @@ async def _postgres_db(dal_psql: TypeDAL) -> t.AsyncIterator[TypeDAL]:
 
 
 @contextlib.asynccontextmanager
-async def _sqlite_db(dal_psql: TypeDAL) -> t.AsyncIterator[TypeDAL]:
+async def _sqlite_db(dal_psql: TypeDAL | None = None) -> t.AsyncIterator[TypeDAL]:
+    # `dal_psql` is unused and optional so this doubles as the `db_sqlite_memory` fixture's
+    # factory: the `sqlite:memory`-only tests below have no reason to start a Postgres container.
     with tempfile.TemporaryDirectory() as d:
         db = TypeDAL("sqlite:memory", enable_typedal_caching=False, folder=d)
         try:
@@ -101,6 +104,19 @@ async def db_async(request: pytest.FixtureRequest, dal_psql: TypeDAL) -> t.Async
     """
     factory = _ASYNC_DB_FACTORIES[request.param]
     async with factory(dal_psql) as db:
+        yield db
+
+
+@pytest_asyncio.fixture
+async def db_sqlite_memory() -> t.AsyncIterator[TypeDAL]:
+    """
+    A `sqlite:memory` `TypeDAL`, for the claims that only exist on `SqliteAsyncConnection`.
+
+    Not a slice of `db_async`: the tests using this are about the one-connection backend
+    specifically - a second task being refused, and what the single shared transaction does
+    when its owner never ends it - which has no counterpart on the two per-task backends.
+    """
+    async with _sqlite_db() as db:
         yield db
 
 
@@ -1960,3 +1976,229 @@ async def test_sqlite_pool_reclaim_yields_to_whoever_claimed_first():
         finally:
             await db.close_async()
             db.close()
+
+
+@pytest.mark.asyncio
+async def test_sqlite_memory_commit_and_rollback_only_act_for_the_owning_task(db_sqlite_memory: TypeDAL):
+    """
+    On `sqlite:memory`, `rollback_async()` from a task that owns no transaction must not
+    destroy the one another task is holding open.
+
+    `SqliteAsyncConnection` refuses a second task at `connection()`
+    (`_refuse_if_owned_elsewhere`) precisely so one task's rollback cannot decide another's
+    rows - that is what its class docstring gives as the reason the refusal exists. But
+    `commit()`/`rollback()` never go through `connection()`: `commit_async()`/`rollback_async()`
+    (core.py) reach the pool directly, on purpose, so that settling up cannot be the thing that
+    opens a connection. On the two per-task backends that is harmless - `PostgresAsyncPool` and
+    `SqliteAsyncPool` both no-op when the calling task holds no connection - but
+    `SqliteAsyncConnection` acts on the single shared connection unconditionally.
+
+    So the refusal only covers the path that writes, not the path that decides. A request
+    handler that rolls back unconditionally on its way out, on a task that did no async work at
+    all, ends someone else's transaction.
+
+    `sqlite:memory` only: it is the one backend where two tasks share a connection, so it is
+    the only one where a non-owner *has* anything to end.
+
+    The two coroutines, pinned with events rather than sleeps:
+      - `keeper` inserts `keep` and waits to commit until the outsider has had its turn
+      - `outsider` does no async work of its own and calls `rollback_async()`
+
+    Ownership-guarded, `keep` survives: the outsider's rollback had nothing of its own to end.
+    Unguarded, it rolls back the keeper's insert, and the keeper's later commit commits an
+    empty transaction.
+    """
+    db = db_sqlite_memory
+
+    @db.define()
+    class AsyncThingForeignRollback(TypedTable):
+        name: TypedField[str]
+
+    db.commit()
+
+    keeper_wrote = asyncio.Event()
+    outsider_settled = asyncio.Event()
+
+    async def keeper() -> None:
+        await AsyncThingForeignRollback.insert_async(name="keep")
+        keeper_wrote.set()
+        await asyncio.wait_for(outsider_settled.wait(), timeout=5)
+        await db.commit_async()
+
+    async def outsider() -> None:
+        await asyncio.wait_for(keeper_wrote.wait(), timeout=5)
+        # nothing of this task's own is open - on every other backend this is a no-op
+        await db.rollback_async()
+        outsider_settled.set()
+
+    await asyncio.gather(keeper(), outsider())
+
+    assert [row.name for row in await AsyncThingForeignRollback.collect_async()] == ["keep"], (
+        "a task that holds no transaction rolled back the one another task was still writing to"
+    )
+
+
+@pytest.mark.asyncio
+async def test_sqlite_memory_does_not_inherit_an_abandoned_transaction(db_sqlite_memory: TypeDAL):
+    """
+    A `sqlite:memory` transaction whose task ended without settling it must not be handed to
+    the next task.
+
+    Both per-task backends arm a done-callback at checkout to roll back and dispose of a
+    connection its task abandoned (`PostgresAsyncPool._reclaim`, `SqliteAsyncPool._reclaim`).
+    `SqliteAsyncConnection` has no such path, so `_owner` keeps pointing at the finished task
+    with its transaction still open. `_refuse_if_owned_elsewhere()` then lets the next task
+    straight in - its `not self._owner.done()` term is false for a finished owner - and that
+    task lands inside the abandoned transaction. Its `commit_async()` is now deciding the
+    previous task's writes.
+
+    Asserted as the outcome rather than by poking at `_owner`, because the outcome is what a
+    caller can be surprised by: `abandoned` was never committed by anyone, and committing
+    `mine` must not make it durable.
+
+    The sleeps are `sleep(0)` yields, not waits: a done-callback cannot await, so any reclaim
+    it schedules runs as a task on the next pass of the loop, and the assertion has to be made
+    after that has had its turn.
+    """
+    db = db_sqlite_memory
+
+    @db.define()
+    class AsyncThingAbandoned(TypedTable):
+        name: TypedField[str]
+
+    db.commit()
+
+    async def abandons_its_transaction() -> None:
+        # ends without commit_async()/rollback_async() - the case the two pools' done-callbacks
+        # exist for
+        await AsyncThingAbandoned.insert_async(name="abandoned")
+
+    await asyncio.create_task(abandons_its_transaction())
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+
+    await AsyncThingAbandoned.insert_async(name="mine")
+    await db.commit_async()
+
+    assert [row.name for row in await AsyncThingAbandoned.collect_async()] == ["mine"], (
+        "the next task inherited the abandoned transaction and its commit made another task's "
+        "uncommitted row durable"
+    )
+
+
+@pytest.mark.asyncio
+async def test_sqlite_memory_abandoned_transaction_does_not_lock_out_the_sync_side(db_sqlite_memory: TypeDAL):
+    """
+    The sync connection must not be waved through while an abandoned async transaction is still
+    holding the table.
+
+    `TypeDAL._has_pending_async_writes()` (core.py) prunes owners whose task has finished, and
+    says why in its own comment: a task that ended without committing "had its connection
+    reclaimed and rolled back (`PostgresAsyncPool._reclaim`)", so there is nothing left for the
+    sync side to miss. That reasoning holds for both per-task backends and not for
+    `SqliteAsyncConnection`, which has no reclaim path - the transaction is still open, and on
+    `sqlite:memory` shared-cache mode it is still holding the table against pydal's own
+    connection.
+
+    The guard therefore fails open exactly where it was supposed to raise, and what the caller
+    gets instead is the driver's `database table is locked` after the busy timeout - which is
+    the outcome `TransactionSplitError` was introduced to replace.
+    """
+    db = db_sqlite_memory
+
+    @db.define()
+    class AsyncThingAbandonedLock(TypedTable):
+        name: TypedField[str]
+
+    db.commit()
+
+    async def abandons_its_transaction() -> None:
+        await AsyncThingAbandonedLock.insert_async(name="abandoned")
+
+    await asyncio.create_task(abandons_its_transaction())
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+
+    # nobody is going to make those writes visible, so the sync side has nothing to miss and
+    # must be free to run - which requires the abandoned transaction to have been reclaimed
+    AsyncThingAbandonedLock.insert(name="sync")
+    db.commit()
+
+    assert sorted(row.name for row in AsyncThingAbandonedLock.collect()) == ["sync"]
+
+
+@pytest.mark.asyncio
+async def test_refused_task_is_not_recorded_as_holding_async_writes(db_sqlite_memory: TypeDAL):
+    """
+    A task refused with `ConcurrentTransactionError` opened no transaction, and must not be
+    recorded as holding one.
+
+    `_mark_async_pending()` is called before entering `pool.connection()` (`insert_async`,
+    `update_async`, `executesql_async` in core.py, `base_delete_async` in
+    async_execution.py). On `sqlite:memory` that context manager can raise before it ever
+    yields, so the refused task ends up in `_async_pending_owners` having done nothing at all.
+
+    Nothing clears it: the entry is only dropped by that task's own `commit_async()`/
+    `rollback_async()`, which a caller who just got told "you were refused" has no reason to
+    call, or by the pruning in `_has_pending_async_writes()` once the task ends. Until then the
+    guard is global - `SyncTransactionTracker.before_execute` asks "does *any* live task hold
+    async writes" - so one refused task refuses every sync statement on the instance, including
+    those of tasks that were never involved.
+
+    Ordering, pinned with events:
+      - `holder` writes and keeps its transaction open, then commits once the refusal happened
+      - `refused` is turned away, waits for the holder to settle, and only then looks
+
+    By that point the one real async transaction is committed and gone, so the correct answer
+    is "nothing pending" and a plain sync INSERT that runs.
+
+    Note this is not merely an ordering nit to be fixed by moving the call inside the `async
+    with`: on Postgres `_acquire()` awaits `getconn()`, and a sync write issued by another
+    coroutine during that await would slip past the check `_get_async_pool()` already made. The
+    mark has to stay ahead of that await and be undone when - and only when - the connection
+    was refused before any statement ran.
+    """
+    db = db_sqlite_memory
+
+    @db.define()
+    class AsyncThingRefusedMark(TypedTable):
+        name: TypedField[str]
+
+    db.commit()
+
+    holder_wrote = asyncio.Event()
+    refusal_happened = asyncio.Event()
+    holder_settled = asyncio.Event()
+
+    # collected rather than asserted inside the coroutine, so a failure does not tear down the
+    # gather while the other one is still waiting on an event.
+    problems: list[str] = []
+
+    async def holder() -> None:
+        await AsyncThingRefusedMark.insert_async(name="held")
+        holder_wrote.set()
+        await asyncio.wait_for(refusal_happened.wait(), timeout=5)
+        await db.commit_async()
+        holder_settled.set()
+
+    async def refused() -> None:
+        await asyncio.wait_for(holder_wrote.wait(), timeout=5)
+        with pytest.raises(ConcurrentTransactionError):
+            await AsyncThingRefusedMark.insert_async(name="refused")
+        refusal_happened.set()
+
+        await asyncio.wait_for(holder_settled.wait(), timeout=5)
+
+        # this task is still alive, so pruning cannot cover for the stale entry
+        if db._has_pending_async_writes():
+            problems.append("a refused task is recorded as holding uncommitted async writes")
+
+        try:
+            AsyncThingRefusedMark.insert(name="sync")
+            db.commit()
+        except TransactionSplitError:
+            problems.append("a refused task's stale entry refused an unrelated sync statement")
+
+    await asyncio.gather(holder(), refused())
+
+    assert not problems, problems
