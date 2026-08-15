@@ -221,28 +221,50 @@ class TableMeta(type):
         # it already is an int but mypy doesn't understand that
         return self(result)
 
-    async def insert_async(self: t.Type[T_MetaInstance], **fields: t.Any) -> T_MetaInstance:
+    async def _insert_id_async(self: t.Type[T_MetaInstance], **fields: t.Any) -> t.Any:
         """
-        Async twin of `insert()`.
+        The insert itself, returning what pydal's own `Table.insert()` returns: the new id.
 
         Mirrors pydal's `Table.insert()` (objects.py): the field normalization
         (`_fields_and_values_for_insert`) and `_before_insert`/`_after_insert` hooks stay
         exactly as they are (pure/sync), only the adapter-level execute step
         (`table._db.insert_async(...)`) is async.
+
+        Split out from `insert_async()` because turning that id into a model instance costs a
+        second query: `bulk_insert_async()` wants the ids only and does that lookup once for
+        the whole batch, not once per row.
         """
         table = self._ensure_table_defined()
         require_permission(self._permissions, "insert")
 
         row = table._fields_and_values_for_insert(fields)
         if any(f(row) for f in table._before_insert):
-            result = 0
-        else:
-            result = await table._db.insert_async(table, row.op_values())
-            if result and table._after_insert:
-                for f in table._after_insert:
-                    f(row, result)
+            return 0
 
-        return self(result)
+        result = await table._db.insert_async(table, row.op_values())
+        if result and table._after_insert:
+            for f in table._after_insert:
+                f(row, result)
+
+        return result
+
+    async def insert_async(self: t.Type[T_MetaInstance], **fields: t.Any) -> T_MetaInstance:
+        """
+        Async twin of `insert()`.
+        """
+        result = await self._insert_id_async(**fields)
+
+        if not isinstance(result, int) or not result:
+            # a `_before_insert` hook that blocked the insert (0), or a table with a custom
+            # `_primarykey`, whose id is a dict - `self(...)` answers None for both, as sync does.
+            return self(result)
+
+        table = self._ensure_table_defined()
+        # NOT `self(result)`: that is pydal's *synchronous* `Table.__call__` -> `db(...).select()`,
+        # which would run a blocking query on the event loop - on pydal's sync connection, no
+        # less, so it also reads from a different transaction than the insert just wrote in.
+        row = await self.where(table._id == result).first_async()
+        return t.cast(T_MetaInstance, row)
 
     def _insert(self, **fields: t.Any) -> str:
         table = self._ensure_table_defined()
@@ -264,14 +286,15 @@ class TableMeta(type):
 
         pydal's `Table.bulk_insert()` (objects.py) only exists to hand the whole batch
         to `adapter.bulk_insert()`, which for every backend TypeDAL supports asynchronously is
-        itself a loop over `insert()` - so looping `insert_async()` here loses nothing and keeps
+        itself a loop over `insert()` - so looping the insert here loses nothing and keeps
         the hook/normalization dance in one place.
+
+        `_insert_id_async()` rather than `insert_async()`: the ids are all this needs, and the
+        `collect_async()` below already fetches every inserted row in one query.
         """
         self._ensure_table_defined()
-        require_permission(self._permissions, "insert")
 
-        inserted = [await self.insert_async(**item) for item in items]
-        ids = [row.id for row in inserted]
+        ids = [await self._insert_id_async(**item) for item in items]
 
         return await self.where(lambda row: row.id.belongs(ids)).collect_async()
 
@@ -312,7 +335,9 @@ class TableMeta(type):
         synchronous select; `_lookup_query()` turns the same three input shapes into a plain
         Query so the lookup can go through `first_async()` instead.
         """
-        record = await QueryBuilder(self).where(self._lookup_query(query, values)).first_async()
+        lookup = self._lookup_query(query, values)
+
+        record = await QueryBuilder(self).where(lookup).first_async() if lookup is not None else None
 
         if not record:
             return await self.insert_async(**values)
@@ -323,17 +348,24 @@ class TableMeta(type):
         self: t.Type[T_MetaInstance],
         query: T_Query | AnyDict | t.Callable[[], None] | None,
         values: AnyDict,
-    ) -> Query:
+    ) -> Query | None:
         """
         Turn `update_or_insert`'s three input shapes (DEFAULT / dict / Query) into one Query.
 
         Mirrors pydal's `Table.update_or_insert()` (objects.py): no query means
         "match on the values you were going to write", a dict means "match on these fields".
+
+        `None` means "no lookup at all, go straight to the insert" - the caller's cue, not a
+        failure. `T_Query` includes `None` and `bool`, and pydal's `Table.__call__`
+        (objects.py) answers anything that is not a Query or a digit-like id with "no
+        record", which is exactly what makes the sync `update_or_insert(None, ...)` insert.
+        Handing those to `QueryBuilder.where()` instead would raise ValueError.
         """
         table = self._ensure_table_defined()
 
         if query is not DEFAULT and not isinstance(query, dict):
-            return t.cast(Query, query)
+            is_query = isinstance(query, (pydal.objects.Query, pydal.objects.Expression))
+            return t.cast(Query, query) if is_query else None
 
         criteria = values if query is DEFAULT else t.cast(AnyDict, query)
 
