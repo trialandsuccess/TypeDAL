@@ -14,10 +14,13 @@ and the actual point of the exercise: the event loop is not blocked while the qu
 import asyncio
 import collections
 import contextlib
+import signal
+import sqlite3
 import tempfile
 import time
 import typing as t
 from decimal import Decimal
+from pathlib import Path
 
 import pydal.objects
 import pytest
@@ -27,6 +30,8 @@ from src.typedal import TypeDAL, TypedField, TypedTable
 from src.typedal.async_execution import (
     ASYNC_POOL_FACTORIES,
     AsyncPoolManager,
+    TransactionBoundaryError,
+    TransactionSplitError,
     open_sqlite_async_connection,
     postgres_lastrowid_async,
 )
@@ -53,14 +58,33 @@ async def _sqlite_db(dal_psql: TypeDAL) -> t.AsyncIterator[TypeDAL]:
             db.close()
 
 
-# One factory per backend the async execution path targets. Adding a new backend (e.g. MySQL)
-# is adding a function + an entry here, not editing branching logic in the fixture below.
-# (Every factory currently takes `dal_psql` as input for simplicity; a backend needing a
-# differently-shaped upstream fixture - e.g. its own testcontainer - would need its factory
-# signature adjusted accordingly, but the registry/dispatch shape stays the same.)
+@contextlib.asynccontextmanager
+async def _sqlite_file_db(dal_psql: TypeDAL) -> t.AsyncIterator[TypeDAL]:
+    """
+    A file-backed SQLite database, which is a materially different async backend from
+    `sqlite:memory` and not a redundant copy of it.
+
+    `sqlite:memory` reaches a second connection only through shared-cache mode, which refuses a
+    concurrent writer with SQLITE_LOCKED, so its async path is one shared connection
+    (`SqliteAsyncConnection`) that turns a second task away. A file has a path two connections
+    can both open, so it gets `SqliteAsyncPool` and a connection per task instead. Every
+    transaction-boundary claim differs between the two, and without this parametrization the
+    per-task SQLite code is never executed by the suite at all.
+    """
+    with tempfile.TemporaryDirectory() as d:
+        db = TypeDAL(f"sqlite://{Path(d) / 'async.db'}", enable_typedal_caching=False, folder=d)
+        try:
+            yield db
+        finally:
+            await db.close_async()
+            db.close()
+
+
+# One factory per backend the async execution path targets.
 _ASYNC_DB_FACTORIES: dict[str, t.Callable[[TypeDAL], t.AsyncContextManager[TypeDAL]]] = {
     "postgres": _postgres_db,
     "sqlite": _sqlite_db,
+    "sqlite-file": _sqlite_file_db,
 }
 
 
@@ -677,22 +701,189 @@ async def test_collect_async_does_not_block_event_loop(db_async: TypeDAL):
     assert max(gaps) < 0.05, f"event loop was blocked: max gap between ticks was {max(gaps) * 1000:.1f}ms"
 
 
-# ---------------------------------------------------------------------------
-# Known defects in the async execution path.
-#
-# Each test below asserts the behaviour the async path SHOULD have - in every case parity
-# with the sync path it is a twin of. They fail against the current implementation; they are
-# reproductions, not a regression net, and should go green as the defects are fixed.
-# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_insert_async_can_be_rolled_back(db_async: TypeDAL):
+    """
+    (1/3) An `_async` write must leave its transaction open, the way its sync twin does.
+
+    Neither backend does today, and each for its own reason:
+
+      - SQLite: `SqliteAsyncConnection.connection()` (async_execution.py) commits on clean
+        exit, so the write is durable before `insert_async()` returns.
+      - Postgres: psycopg_pool's `connection()` applies the same commit-on-success behaviour,
+        and `PostgresAsyncPool.commit()`/`rollback()` are therefore literally `pass`.
+        `rollback_async()` is a no-op that reads like transaction control.
+
+    Both are known and documented (see the `PostgresAsyncPool` and `AsyncConnectionPool`
+    docstrings, and `TypeDAL.commit_async` in core.py). Documented is not the same as safe: a
+    py4web handler calling `insert_async()` silently falls outside the framework's
+    rollback-on-error, and gets no signal that it has.
+
+    No concurrency here on purpose. This is a single-coroutine defect, and until it is fixed no
+    coroutine can hold an open transaction at all - which makes (3/3) unattributable, since it
+    would fail for this reason no matter how connections are bound.
+    """
+    db = db_async
+
+    @db.define()
+    class AsyncThingUndoable(TypedTable):
+        name: TypedField[str]
+
+    db.commit()
+
+    await AsyncThingUndoable.insert_async(name="discard")
+    await db.rollback_async()
+
+    rows = await AsyncThingUndoable.collect_async()
+    assert [row.name for row in rows] == [], "rollback_async() did not undo insert_async()"
+
+    # and the sync rollback a framework issues on an unhandled exception must not undo it
+    # either way round - assert it separately so a fix that only wires up one of the two is
+    # visible as such.
+    db.rollback()
+    assert AsyncThingUndoable.count() == 0, "the write survived both rollbacks"
+
+
+@pytest.mark.asyncio
+async def test_crossing_the_sync_async_seam_is_a_loud_error(db_async: TypeDAL):
+    """
+    (2/3) A read must never quietly miss the other connection's uncommitted writes.
+
+    `_async` methods run on a connection opened by `AsyncPoolManager`; sync methods run on
+    pydal's own, bound to the `THREAD_LOCAL` in pydal's `ConnectionPool`. Those cannot be made
+    into one connection - pydal drives Postgres with psycopg2 and SQLite with sqlite3, neither
+    of which can be awaited - so read-your-own-writes across the two paths is not available at
+    any price. Left alone it failed silently: Postgres returned nothing, SQLite blocked on the
+    table lock and then raised `database table is locked`.
+
+    This test used to assert cross-visibility outright and closed with "if the split is made
+    explicit instead, invert this to assert the raised error". That is what happened.
+
+    Warning and continuing was measured before settling on a raise, and does not survive
+    contact with SQLite: Postgres can return the committed rows and warn, a plain SQLite read
+    cannot execute at all, and SQLite with `PRAGMA read_uncommitted=1` returns *more* rows than
+    Postgres - including ones a rollback then deletes. Three answers to identical code, two
+    silent. See `TransactionSplitError`.
+
+    Both directions asserted, because different machinery guards each and a regression could
+    hit only one:
+
+      - sync write -> async read: the flag check in `TypeDAL._get_async_pool()`.
+      - async write -> sync read: `SyncTransactionTracker`, a pydal `ExecutionHandler`, which
+        sees every statement that reaches the adapter.
+
+    The tail matters most in practice: after committing, the same calls go through. The guard
+    gates on there being pending work, not on the two paths having been mixed at all - the
+    latter would make the async path unusable in any handler that also touches pydal.
+    """
+    db = db_async
+
+    @db.define()
+    class AsyncThingCrossVisibility(TypedTable):
+        name: TypedField[str]
+
+    db.commit()
+
+    # sync write, not committed -> the async read must refuse rather than silently miss it
+    AsyncThingCrossVisibility.insert(name="from-sync")
+    with pytest.raises(TransactionSplitError, match="synchronous connection has uncommitted writes"):
+        await AsyncThingCrossVisibility.collect_async()
+
+    db.commit()
+
+    # async write, not committed -> the sync read must refuse rather than silently miss it
+    await AsyncThingCrossVisibility.insert_async(name="from-async")
+    with pytest.raises(TransactionSplitError, match="async connection has uncommitted writes"):
+        AsyncThingCrossVisibility.collect()
+
+    # and once both sides are settled, mixing the two paths is ordinary business again
+    await db.commit_async()
+    assert sorted(row.name for row in AsyncThingCrossVisibility.collect()) == ["from-async", "from-sync"]
+    assert sorted(row.name for row in await AsyncThingCrossVisibility.collect_async()) == [
+        "from-async",
+        "from-sync",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_concurrent_coroutines_do_not_share_one_transaction(dal_psql: TypeDAL):
+    """
+    (3/3) The transaction must be bound per task, so two coroutines on one event-loop thread do
+    not decide each other's commits and rollbacks.
+
+    This is the hazard the issue describes, arriving on the path this package owns. pydal's
+    `ConnectionPool` binds connection and cursor to a global `THREAD_LOCAL`; under the
+    threadpool model one thread is one request, so that is the right boundary, but under
+    `async def` handlers it is not. `_async` methods move off `THREAD_LOCAL`, and this asserts
+    what they land on instead: `PostgresAsyncPool` pins a checked-out connection to the running
+    task in a `ContextVar` and holds it until that task ends its own transaction.
+
+    Postgres only, on `dal_psql` rather than the parametrized `db_async`, because it is the only
+    backend that can run the interleave below at all. The two coroutines have to be inside
+    separate write transactions simultaneously, and SQLite permits exactly one writer at a time
+    regardless of how many connections it is given - `sqlite:memory` refuses the second outright
+    with `ConcurrentTransactionError`, and a file-backed database waits out `busy_timeout` and
+    then reports `database is locked`. Neither is a defect, and neither can reach the assertion.
+
+    That is a narrower fixture, not a skip: the invariant this shares with the other backends -
+    the discarder's rollback must never destroy the keeper's rows - is asserted for all three in
+    `test_async_connection_is_not_shared_between_concurrent_coroutines`. What is Postgres-only
+    is the stronger claim that both transactions genuinely ran at once.
+
+    Note that a `contextvars.ContextVar` holding the *pool* would solve nothing: the boundary
+    has to be a transaction per task, not a per-task reference to a shared one. It also has to
+    be keyed to the task that acquired it - a `ContextVar` set in a parent is copied into every
+    task it later spawns, so an unkeyed entry would hand both coroutines below the same
+    connection and quietly reintroduce exactly the bug this test exists to catch.
+
+    The interleave, pinned with events rather than sleeps so the ordering is deterministic:
+      - `keeper` inserts `keep`, then commits once `discarder` has rolled back
+      - `discarder` inserts `discard`, then rolls its own insert back
+
+    Per-task transactions leave only `keep`. One shared transaction leaves `discard` behind: it
+    was committed out from under the coroutine that asked for it to be discarded.
+    """
+    db = dal_psql
+
+    @db.define()
+    class AsyncThingSharedTransaction(TypedTable):
+        name: TypedField[str]
+
+    db.commit()
+
+    keeper_inserted = asyncio.Event()
+    discarder_rolled_back = asyncio.Event()
+
+    async def keeper():
+        await AsyncThingSharedTransaction.insert_async(name="keep")
+        keeper_inserted.set()
+        await discarder_rolled_back.wait()
+        await db.commit_async()
+
+    async def discarder():
+        await keeper_inserted.wait()
+        await AsyncThingSharedTransaction.insert_async(name="discard")
+        await db.rollback_async()
+        discarder_rolled_back.set()
+
+    try:
+        await asyncio.gather(keeper(), discarder())
+
+        rows = await AsyncThingSharedTransaction.collect_async()
+        assert sorted(row.name for row in rows) == ["keep"]
+    finally:
+        # `db_async` does this in its teardown; `dal_psql` is a plain session db, so an async
+        # pool left open here outlives this test's event loop and hangs the next one.
+        await db.close_async()
 
 
 @pytest.mark.asyncio
 async def test_insert_async_honors_on_insert_error_hook(db_async: TypeDAL):
     """
     pydal's `adapter.insert()` routes a failing INSERT through `table._on_insert_error` and
-    returns the hook's value (adapters/base.py:541-549). `db.insert_async()` does not, so the
+    returns the hook's value (adapters/base.py). `db.insert_async()` does not, so the
     same table diverges between sync and async on a constraint violation - while the sibling
-    `update_async()` twenty lines up already does honour `_on_update_error` (core.py:694-699).
+    `update_async()` twenty lines up already does honour `_on_update_error` (core.py).
     """
     db = db_async
 
@@ -759,10 +950,10 @@ async def test_async_pool_manager_opens_once_under_concurrency(db_async: TypeDAL
 async def test_update_record_async_ignores_common_filters_like_sync(db_async: TypeDAL):
     """
     pydal's `RecordUpdater` writes by primary key with `ignore_common_filters=True`
-    (helpers/classes.py:357), so a record you already hold can always be written back.
+    (helpers/classes.py), so a record you already hold can always be written back.
     `update_record_async()` rebuilds that update through `QueryBuilder.update_async()` without
-    the flag, so `adapter._update()` re-applies the table's common filter (base.py:566-568 via
-    `use_common_filters`, helpers/methods.py:49-54) and a row the filter excludes - a
+    the flag, so `adapter._update()` re-applies the table's common filter (base.py via
+    `use_common_filters`, helpers/methods.py) and a row the filter excludes - a
     soft-deleted one, say - silently updates zero rows.
 
     Also reached by `validate_and_update_async()` and the update branch of
@@ -806,12 +997,12 @@ async def test_postgres_lastrowid_async_uses_only_the_value_it_was_given(dal_psq
     `postgres_lastrowid_async()` must decide whether the statement it just ran carried a
     RETURNING clause from its `last_insert` argument alone - never by reading
     `adapter._last_insert` back. That attribute is a property over
-    `THREAD_LOCAL._pydal_last_insert_` (pydal adapters/postgres.py:128-133), and coroutines
+    `THREAD_LOCAL._pydal_last_insert_` (pydal adapters/postgres.py), and coroutines
     share one thread, so for the async path it is effectively a global: any other insert
     running between `_insert()` and here overwrites it.
 
     Proven by executing a `DEFAULT VALUES` insert - no fields, therefore no RETURNING
-    (postgres.py:149-162) - while the thread-local says the opposite. Reading the attribute
+    (postgres.py) - while the thread-local says the opposite. Reading the attribute
     would take the `fetchone()` branch and raise on a statement that produced no rows.
 
     Takes the Postgres fixture directly instead of the parametrized `db_async`: SQLite has no
@@ -846,27 +1037,37 @@ async def test_postgres_lastrowid_async_uses_only_the_value_it_was_given(dal_psq
 @pytest.mark.asyncio
 async def test_async_connection_is_not_shared_between_concurrent_coroutines(db_async: TypeDAL):
     """
-    `SqliteAsyncConnection.connection()` yields the single connection it wraps to every caller
-    (async_execution.py:95-103) and commits on clean exit / rolls back on exception. Two
-    coroutines inside it simultaneously are therefore in the *same* transaction, and whichever
-    exits first decides for both: a clean writer's row gets discarded by an unrelated failure,
-    or a failed writer's row gets committed by an unrelated success.
+    Two coroutines writing at the same time must never end up deciding each other's outcome.
 
-    `SqliteAsyncConnection`'s docstring promises every `_async` call is its own committed
-    transaction; that only holds while calls never overlap. Postgres passes this test, since
-    psycopg_pool hands out distinct connections.
+    This test used to assert the opposite contract: that `connection()` commits on clean exit
+    and rolls back on exception, so a failing writer's row disappears and a clean writer's row
+    survives *because of how the block exited*. That per-call commit is the defect
+    `test_insert_async_can_be_rolled_back` removes - it put every `_async` write outside
+    anything the caller could undo - so the two assertions cannot both hold. The isolation
+    intent is kept here; the auto-commit mechanism it used to rely on is not.
 
-    Do NOT rewrite this with an `asyncio.Barrier`: it deadlocks, and not because of a bug.
-    SQLite cannot fix this by handing each caller its own connection the way psycopg_pool does
-    - two aiosqlite connections to pydal's `sqlite:memory` (shared-cache, `uri: True`) answer
-    the second concurrent writer with `OperationalError: database table is locked`, which no
-    busy-timeout retries. So the fix has to *serialize* callers, and a barrier demands the one
-    thing the fix exists to prevent: two coroutines inside `connection()` at the same time.
+    What replaces it: each writer ends its own transaction explicitly, the way pydal expects.
+    The outcome asserted is the same one the old test wanted - `keep` survives, `discard` does
+    not - but it now depends on the transactions being *separate*, not on the context manager
+    guessing.
 
-    Instead each writer signals that it is inside and waits a bounded time for the other. That
-    forces the overlap where one is possible (the unfixed, shared-connection code) and simply
-    times out where it is not (serialized), so the assertion below is about the transactional
-    outcome either way, on both backends.
+    Do NOT rewrite the overlap with an `asyncio.Barrier`. It deadlocks on `sqlite:memory`, and
+    not because of a bug: that backend refuses a second concurrent transaction outright
+    (`ConcurrentTransactionError`), so demanding both coroutines be inside at once demands the
+    thing the design exists to prevent. Each writer instead signals that it is inside and waits
+    a bounded time for the other, which forces an overlap where one is possible and simply
+    times out where it is not.
+
+    Per backend, all three of which are safe and none of which lose `keep`:
+
+      - Postgres: a connection per task, genuinely concurrent, both transactions independent.
+      - file-backed SQLite: a connection per task, but SQLite allows one writer at a time, so
+        the second waits out `busy_timeout` and then reports `database is locked`.
+      - `sqlite:memory`: one connection, so the second writer is refused immediately with
+        `ConcurrentTransactionError`.
+
+    The second writer failing is therefore an accepted outcome on SQLite, and the assertion is
+    about what the database is left holding rather than about who got to run.
     """
     db = db_async
 
@@ -874,8 +1075,8 @@ async def test_async_connection_is_not_shared_between_concurrent_coroutines(db_a
     class AsyncThingIsolation(TypedTable):
         name: TypedField[str]
 
-    tablename = str(AsyncThingIsolation)
-    pool = await db._get_async_pool()
+    db.commit()
+
     keeper_inside = asyncio.Event()
     failer_inside = asyncio.Event()
 
@@ -883,20 +1084,22 @@ async def test_async_connection_is_not_shared_between_concurrent_coroutines(db_a
         with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(event.wait(), timeout=0.25)
 
-    async def committing_writer():
-        async with pool.connection() as conn, conn.cursor() as cur:
-            await cur.execute(f"INSERT INTO {tablename} (name) VALUES ('keep')")
-            keeper_inside.set()
-            await wait_briefly(failer_inside)
-            # clean exit -> this row must survive
+    async def committing_writer() -> None:
+        await AsyncThingIsolation.insert_async(name="keep")
+        keeper_inside.set()
+        await wait_briefly(failer_inside)
+        await db.commit_async()
 
-    async def failing_writer():
-        with contextlib.suppress(RuntimeError):
-            async with pool.connection() as conn, conn.cursor() as cur:
-                await cur.execute(f"INSERT INTO {tablename} (name) VALUES ('discard')")
-                failer_inside.set()
-                await wait_briefly(keeper_inside)
-                raise RuntimeError("boom")  # -> this row must be rolled back
+    async def failing_writer() -> None:
+        # both are accepted: the write goes through and this rolls it back, or SQLite refuses
+        # it outright. Either way `discard` must not be in the database at the end.
+        with contextlib.suppress(TransactionBoundaryError, sqlite3.OperationalError):
+            await AsyncThingIsolation.insert_async(name="discard")
+            failer_inside.set()
+            await wait_briefly(keeper_inside)
+            await db.rollback_async()
+
+        failer_inside.set()
 
     await asyncio.gather(committing_writer(), failing_writer())
 
@@ -936,7 +1139,7 @@ async def test_rollback_async_is_usable_on_every_backend(db_async: TypeDAL):
 @pytest.mark.asyncio
 async def test_delete_async_cascades_to_referencing_rows(db_async: TypeDAL):
     """
-    `sqlite_delete_async` re-implements `SQLite.delete()`'s cascade (adapters/sqlite.py:93-104):
+    `sqlite_delete_async` re-implements `SQLite.delete()`'s cascade (adapters/sqlite.py):
     select ids, delete, then recurse per FK with `ondelete=CASCADE`. Postgres leaves that to
     the database. Either way the children must be gone.
     """
@@ -968,7 +1171,7 @@ async def test_delete_async_cascades_to_referencing_rows(db_async: TypeDAL):
 async def test_update_async_honors_on_update_error_hook(db_async: TypeDAL):
     """
     Twin of `test_insert_async_honors_on_insert_error_hook`: `update_async` routes a failing
-    UPDATE through `table._on_update_error`, mirroring `adapter.update()` (base.py:585-589).
+    UPDATE through `table._on_update_error`, mirroring `adapter.update()` (base.py).
     """
     db = db_async
 
@@ -1008,7 +1211,7 @@ async def test_async_pool_manager_rejects_unsupported_backend(db_async: TypeDAL)
 @pytest.mark.asyncio
 async def test_insert_async_runs_pydal_insert_hooks(db_async: TypeDAL):
     """
-    `TypedTable.insert_async()` keeps pydal's `Table.insert()` hook dance (objects.py:960-968):
+    `TypedTable.insert_async()` keeps pydal's `Table.insert()` hook dance (objects.py):
     a truthy `_before_insert` aborts the insert, and `_after_insert` sees the new id.
     """
     db = db_async
@@ -1037,7 +1240,7 @@ async def test_insert_async_runs_pydal_insert_hooks(db_async: TypeDAL):
 @pytest.mark.asyncio
 async def test_delete_async_runs_pydal_delete_hooks(db_async: TypeDAL):
     """
-    `QueryBuilder.delete_async()` replicates `Set.delete()`'s hooks (objects.py:3010-3017),
+    `QueryBuilder.delete_async()` replicates `Set.delete()`'s hooks (objects.py),
     since pydal has no async version to delegate to: a truthy `_before_delete` aborts and
     returns no ids, `_after_delete` runs on success, and a query matching nothing returns [].
     """
@@ -1155,6 +1358,13 @@ async def test_insert_and_update_async_reraise_without_error_hook(db_async: Type
     with pytest.raises(Exception, match=r"(?i)unique"):
         await db.insert_async(table, table._fields_and_values_for_insert({"name": "a"}).op_values())
 
+    # The failed statement aborted the async transaction, so Postgres answers everything after
+    # it with InFailedSqlTransaction until that transaction ends. The sync twin of this test
+    # already calls `db.rollback()` for exactly this reason. It only needs saying here now that
+    # `_async` calls no longer self-commit: before, each one was its own transaction and an
+    # error could not reach the next.
+    await db.rollback_async()
+
     with pytest.raises(Exception, match=r"(?i)unique"):
         row = table._fields_and_values_for_update({"name": "b"})
         await db.update_async(table, table.id == first, row.op_values())
@@ -1164,7 +1374,7 @@ async def test_insert_and_update_async_reraise_without_error_hook(db_async: Type
 async def test_insert_async_with_custom_primarykey(db_async: TypeDAL):
     """
     Tables with a `_primarykey` instead of pydal's standard `_id` report the new row as a
-    `{name: value}` dict rather than a `Reference` (adapters/base.py:550-563).
+    `{name: value}` dict rather than a `Reference` (adapters/base.py).
     """
     db = db_async
 
@@ -1361,3 +1571,180 @@ async def test_collect_async_serves_cached_rows():
         finally:
             await db.close_async()
             db.close()
+
+@contextlib.contextmanager
+def _fail_after(seconds: float, message: str) -> t.Iterator[None]:
+    """
+    Fail instead of hanging when the code under test loops forever.
+
+    `SIGALRM` rather than `asyncio.timeout()`: the loop this guards (see
+    `test_executesql_async_accepts_a_single_field`) contains no await, so the event loop never
+    gets control back and an asyncio timeout would never fire. Signals are only delivered on
+    the main thread, which is where pytest-asyncio runs the loop.
+    """
+
+    def raise_timeout(_signum: int, _frame: t.Any) -> None:
+        raise TimeoutError(message)
+
+    previous = signal.signal(signal.SIGALRM, raise_timeout)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+
+
+@pytest.mark.asyncio
+async def test_insert_async_does_not_run_a_sync_query(db_async: TypeDAL):
+    """
+    `insert_async()` may not fall back to the sync connection to build its return value.
+
+    It returns `self(result)` with `result` an int-like `Reference`, which `TypedTable.__new__`
+    feeds to pydal's synchronous `Table.__call__` -> `db(...).select()`. That is a blocking
+    SELECT on the event loop, on the *other* (sync) connection, for a row this method already
+    has the id of. `db._timings` is pydal's own record of every statement executed on the sync
+    adapter (helpers/classes.py, installed by default via `DAL.execution_handlers`),
+    so it can be checked without patching anything.
+    """
+    db = db_async
+
+    @db.define()
+    class AsyncThingInsertBlocking(TypedTable):
+        name: TypedField[str]
+        qty: TypedField[int]
+
+    db.commit()
+
+    before = len(db._timings)
+    inserted = await AsyncThingInsertBlocking.insert_async(name="widget", qty=5)
+
+    # the return value must stay usable - the point is how it is built, not that it shrinks
+    assert int(inserted) > 0
+    assert inserted.name == "widget"
+    assert inserted.qty == 5
+
+    sync_statements = [command for command, _ in db._timings[before:]]
+    selects = [command for command in sync_statements if command.lstrip().upper().startswith("SELECT")]
+    assert not selects, f"insert_async ran {len(selects)} synchronous SELECT(s): {selects}"
+
+
+@pytest.mark.asyncio
+async def test_update_or_insert_async_handles_none_and_false_query(db_async: TypeDAL):
+    """
+    `None` and `False` are both members of `T_Query` (types.py) and both are accepted by
+    the sync `update_or_insert()`: pydal's `Table.__call__` (objects.py) finds no record
+    for a non-Query, non-digit key, so the call inserts. The async twin routes the same values
+    through `QueryBuilder.where()` (query_builder.py), which raises `ValueError`.
+    """
+    db = db_async
+
+    @db.define()
+    class AsyncThingUpsertFalsy(TypedTable):
+        name: TypedField[str]
+        qty: TypedField[int]
+
+    db.commit()
+
+    sync_none = AsyncThingUpsertFalsy.update_or_insert(None, name="via-none", qty=1)
+    sync_false = AsyncThingUpsertFalsy.update_or_insert(False, name="via-false", qty=2)
+    db.commit()
+    assert sync_none.name == "via-none"
+    assert sync_false.name == "via-false"
+
+    async_none = await AsyncThingUpsertFalsy.update_or_insert_async(None, name="via-none-async", qty=3)
+    async_false = await AsyncThingUpsertFalsy.update_or_insert_async(False, name="via-false-async", qty=4)
+    await db.commit_async()
+
+    assert async_none.name == "via-none-async"
+    assert async_false.name == "via-false-async"
+    assert AsyncThingUpsertFalsy.count() == 4
+
+
+@pytest.mark.asyncio
+async def test_executesql_async_accepts_a_single_field(db_async: TypeDAL):
+    """
+    pydal's `executesql()` explicitly allows `fields` to be one object instead of a list
+    (base.py: `if not isinstance(fields, list): fields = [fields]`), and TypeDAL's sync
+    `executesql()` inherits that by delegating to it. `executesql_async()` does
+    `list(fields)` instead.
+
+    That does not fail with a `TypeError`: a `Field` is an `Expression`, and
+    `Expression.__getitem__` (objects.py) answers any integer index with
+    `self[i:i+1]` - a substring expression - and never raises `IndexError`. `list()` therefore
+    falls back to the legacy sequence protocol and spins forever, allocating expressions. Hence
+    the alarm below: an `asyncio` timeout cannot break a CPU-bound loop with no await in it.
+    """
+    db = db_async
+
+    @db.define()
+    class AsyncThingSingleField(TypedTable):
+        name: TypedField[str]
+        qty: TypedField[int]
+
+    AsyncThingSingleField.insert(name="widget", qty=1)
+    db.commit()
+
+    table = AsyncThingSingleField._ensure_table_defined()
+    tablename = str(AsyncThingSingleField)
+    query = f"SELECT {tablename}.qty FROM {tablename}"
+
+    sync_rows = db.executesql(query, fields=table.qty)
+    assert sync_rows[0].qty == 1
+
+    with _fail_after(5, "executesql_async(fields=<single Field>) never returned"):
+        async_rows = await db.executesql_async(query, fields=table.qty)
+
+    assert async_rows[0].qty == 1
+
+
+@pytest.mark.asyncio
+async def test_after_connection_hook_also_applies_to_the_async_connection():
+    """
+    `TypeDAL(..., after_connection=...)` is handed to pydal, which runs it on every sync
+    connection it opens (connection.py). The async factories in `async_execution.py`
+    open a raw driver connection and never do, so connection-scoped setup the user asked for
+    (custom functions, PRAGMAs, session settings) is missing on the async side.
+
+    A TEMP table is the backend-neutral way to observe that: it lives on the connection that
+    created it, so it is visible from the sync connection and absent from the async one.
+
+    SQLite-only: it needs to build its own `TypeDAL` to pass `after_connection`, which the
+    `db_async` fixture's already-connected Postgres instance cannot.
+
+    Note the fix is not simply calling `adapter._after_connection(adapter)` from the factory:
+    the hook is handed the pydal adapter and drives the *sync* cursor, so replaying it there
+    would re-run it against the wrong connection. Making this pass means giving the async
+    connection an adapter-shaped façade to run the hook against.
+    """
+    statements: list[str] = []
+
+    def after_connection(adapter: t.Any) -> None:
+        statements.append("ran")
+        adapter.execute("CREATE TEMPORARY TABLE async_hook_marker (x INTEGER)")
+
+    with tempfile.TemporaryDirectory() as directory:
+        # a URI no other test uses, because pydal's connection pool is global and keyed by URI
+        # (connection.py): a `sqlite:memory` connection left there by an earlier test is
+        # handed back with `run_hooks=False`, so the hook would never run and the test would be
+        # measuring the pool instead of the hook.
+        db = TypeDAL(
+            "sqlite://after_connection_hook.db",
+            enable_typedal_caching=False,
+            folder=directory,
+            after_connection=after_connection,
+        )
+        try:
+            # this query is what opens pydal's sync connection - it connects lazily, so the
+            # hook has not run at construction time - and the TEMP table it selects from only
+            # exists because the hook ran while that connection was being set up.
+            assert db.executesql("SELECT * FROM async_hook_marker") == []
+            assert statements, "pydal did not run the hook on its own connection - test is meaningless"
+
+            # ...and the async connection is a different connection, which never saw the hook
+            with pytest.raises(sqlite3.OperationalError, match="no such table"):
+                await db.executesql_async("SELECT * FROM async_hook_marker")
+        finally:
+            await db.close_async()
+            db.close()
+
