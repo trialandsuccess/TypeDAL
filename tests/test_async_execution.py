@@ -2039,6 +2039,49 @@ async def test_sqlite_memory_commit_and_rollback_only_act_for_the_owning_task(db
 
 
 @pytest.mark.asyncio
+async def test_sqlite_memory_non_owner_commit_does_not_make_another_tasks_row_durable(db_sqlite_memory: TypeDAL):
+    """
+    `commit_async()` from a task that owns no transaction must not commit the one another task
+    is still holding open.
+
+    This is the commit-side counterpart to
+    `test_sqlite_memory_commit_and_rollback_only_act_for_the_owning_task`. The guard is harder
+    to observe than the rollback case because a wrongly committed row would still be visible
+    after the owner's later commit. The owner therefore rolls back instead: a guarded outsider
+    no-op leaves the rollback able to discard the row, while an unguarded outsider commit makes
+    that row durable first.
+    """
+    db = db_sqlite_memory
+
+    @db.define()
+    class AsyncThingForeignCommit(TypedTable):
+        name: TypedField[str]
+
+    db.commit()
+
+    keeper_wrote = asyncio.Event()
+    outsider_settled = asyncio.Event()
+
+    async def keeper() -> None:
+        await AsyncThingForeignCommit.insert_async(name="keep")
+        keeper_wrote.set()
+        await asyncio.wait_for(outsider_settled.wait(), timeout=5)
+        await db.rollback_async()
+
+    async def outsider() -> None:
+        await asyncio.wait_for(keeper_wrote.wait(), timeout=5)
+        # nothing of this task's own is open - on every other backend this is a no-op
+        await db.commit_async()
+        outsider_settled.set()
+
+    await asyncio.gather(keeper(), outsider())
+
+    assert list(await AsyncThingForeignCommit.collect_async()) == [], (
+        "a task that holds no transaction committed the one another task was still writing to"
+    )
+
+
+@pytest.mark.asyncio
 async def test_sqlite_memory_does_not_inherit_an_abandoned_transaction(db_sqlite_memory: TypeDAL):
     """
     A `sqlite:memory` transaction whose task ended without settling it must not be handed to
