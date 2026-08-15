@@ -214,36 +214,10 @@ class AsyncConnectionPool(t.Protocol):
 
 class PostgresAsyncPool:
     """
-    Wraps `psycopg_pool.AsyncConnectionPool` and binds one checked-out connection per asyncio
-    task, so a task's transaction spans its `_async` calls and belongs to it alone.
+    Wrap `psycopg_pool.AsyncConnectionPool` with one connection per asyncio task.
 
-    Two things this deliberately does not do, both of which it used to:
-
-      - it does not let `pool.connection()` run the checkout. That context manager applies
-        "the normal connection context behaviour" (psycopg_pool's own docs) - commit on
-        success, rollback on error - which made every `_async` call its own committed
-        transaction and left `commit()`/`rollback()` with nothing to act on. `getconn()` /
-        `putconn()` hand back the same connection without deciding its transaction, so pydal's
-        contract holds: writes stay open until the caller says otherwise.
-      - it does not keep that connection on the pool object. A `ContextVar` set inside a task
-        is invisible to its siblings and to its parent, which is exactly the per-task boundary
-        an event loop needs and `threading.local()` cannot give it - one event-loop thread
-        serves every concurrent request.
-
-    The `ContextVar` is per instance rather than module-level so two `TypeDAL`s in one process
-    do not hand each other connections. That is unusual - the docs warn against creating them
-    dynamically because they are never garbage collected - but there is one per pool, created
-    once when the pool opens, not one per call.
-
-    A task that neither commits nor rolls back would strand its connection, so checkout also
-    arms a done-callback on the task to roll back and return it. That is a safety net for
-    abandoned work, not the intended path; callers are still expected to end their transaction.
-
-    `_checked_out` is what makes that net safe. The callback cannot read the `ContextVar` to
-    find out what to return - `add_done_callback` runs in the *loop's* context, not the
-    finished task's, so it would see None or, worse, another task's connection. It is handed
-    its connection directly instead, and this set is how it tells "still outstanding" from
-    "already returned by commit()".
+    A task keeps its connection until `commit()` or `rollback()` so its `_async` calls share a
+    transaction. Abandoned task connections are rolled back and returned by a done-callback.
     """
 
     def __init__(self, pool: t.Any) -> None:
@@ -391,36 +365,11 @@ class PostgresAsyncPool:
 
 class SqliteAsyncConnection:
     """
-    Minimal pool-like wrapper around a single aiosqlite connection.
+    Pool-like wrapper around the one connection used for `sqlite:memory`.
 
-    SQLite has no real concept of a connection pool the way Postgres does - pydal itself sets
-    `pool_size = 0` for SQLite (adapters/sqlite.py), one connection is all there is. This
-    gives it the same `.connection()`/`.commit()`/`.rollback()`/`.close()` shape as
-    `PostgresAsyncPool` so `select_async()` etc. don't need to branch on backend.
-
-    `connection()` neither commits nor rolls back on exit. It used to commit, which made every
-    `_async` call its own committed transaction and put it outside anything the caller could
-    undo - a write issued by a request that later raised could not be rolled back, and pydal's
-    contract is that `commit()`/`rollback()` decide. So a write now stays open until the caller
-    ends it, and the table stays locked against other readers and writers until then, pydal's
-    own sync connection included.
-
-    Unlike `PostgresAsyncPool` this cannot give each task its own transaction, and that is a
-    property of the database rather than a gap here. `sqlite:memory` reaches a second
-    connection only through shared-cache mode, and shared-cache answers a concurrent writer
-    with SQLITE_LOCKED, which no busy-timeout retries. Measured on pydal's own synchronous
-    connections, two threads writing to one `sqlite:memory` produce exactly that error, so this
-    is not a limit the async path introduces - pydal is subject to it one thread-boundary over.
-
-    Rather than let coroutines silently merge into one transaction - where one task's
-    `rollback()` destroys another's uncommitted rows - a second task is refused while the first
-    holds an open transaction, raising `ConcurrentTransactionError`. That matches what pydal
-    already does for the same situation, only deliberately and with a message that names the
-    cause. File-backed SQLite has no such limit and does not come here at all; it gets
-    `SqliteAsyncPool` and a real connection per task.
-
-    `_lock` keeps statements from interleaving on the single connection; it is not a
-    transaction boundary and is not a substitute for one. `_owner` is the boundary.
+    Transactions remain open until `commit()` or `rollback()`. Because tasks cannot receive
+    separate transactions, a second task is refused while another owns one. `_lock` serializes
+    statements; `_owner` defines the transaction boundary.
     """
 
     def __init__(self, conn: AsyncConnection) -> None:
@@ -440,16 +389,23 @@ class SqliteAsyncConnection:
         """
         Whether the open transaction belongs to a task other than the calling one.
 
-        No `done()` term, deliberately. A finished owner is settled by
-        `_settle_abandoned_owner()` before anyone gets here, so by this point `_owner` is either
-        absent, the caller's, or a live other task's. Treating a *finished* owner as absent
-        instead - which this used to do - is how the next task ended up inheriting an
-        abandoned transaction and deciding its writes.
+        No `done()` term, deliberately. On the `connection()` path the caller settles a
+        finished owner first; on the direct `commit()`/`rollback()` path a finished owner is
+        still somebody else's transaction and must therefore no-op. Treating a finished owner
+        as absent instead - which this used to do - is how a non-owner ended up committing or
+        rolling back another task's writes.
 
         `asyncio.current_task()` answers None off-task, and None is never stored as an owner,
         so an off-task caller correctly reads any owner as somebody else's.
         """
         return self._owner is not None and self._owner is not asyncio.current_task()
+
+    def _abandoned_owner(self) -> "asyncio.Task[t.Any] | None":
+        """The finished task whose open transaction needs reclaiming, or None."""
+        owner = self._owner
+        if owner is None or owner is asyncio.current_task() or not owner.done():
+            return None
+        return owner
 
     async def _settle_abandoned_owner(self) -> None:
         """
@@ -466,8 +422,7 @@ class SqliteAsyncConnection:
         If the rollback fails, the owner is left set so the next task is refused rather than
         allowed to inherit a transaction that could not be reclaimed.
         """
-        owner = self._owner
-        if owner is None or owner is asyncio.current_task() or not owner.done():
+        if self._abandoned_owner() is None:
             return
 
         try:
@@ -519,33 +474,12 @@ class SqliteAsyncConnection:
 
     def settle_abandoned_sync(self) -> bool:
         """
-        Synchronously roll back a transaction whose owning task ended without committing it.
+        Roll back a finished owner's transaction for synchronous callers.
 
-        The sync counterpart to `_settle_abandoned_owner()`, for callers that cannot await.
-        `TypeDAL._settle_abandoned_async_writes()` runs inside pydal's synchronous execution
-        handler, so it needs this path: scheduling an async rollback and hoping it has run
-        before the sync statement executes is exactly the race that lets `database is locked`
-        out of the driver instead of being reclaimed here.
-
-        A finished owner means no statement from that task is still queued, and `_lock` being
-        free means no other coroutine is mid-statement on this single connection. Under those
-        two conditions the aiosqlite worker thread is idle, so the underlying sqlite3
-        connection can be rolled back directly without going through aiosqlite's queue.
-
-        Idle is only half of what makes that legal. This runs on the event-loop thread against
-        a connection sqlite3 opened on aiosqlite's worker thread, which sqlite3 refuses by
-        default - it works because pydal puts `check_same_thread: False` in `driver_args`
-        (adapters/sqlite.py) and `_connect_sqlite_async()` passes those straight through.
-        Nothing here sets it, so a pydal that stopped would turn this into the caught
-        `ProgrammingError` below, and every reclaim would quietly become a False.
-
-        Returns False when the rollback cannot be done safely right now, or when it fails. The
-        caller must keep the abandoned owner counted: a rollback that did not happen still has
-        an open transaction behind it, and letting the next task inherit that is precisely the
-        failure this class exists to prevent.
+        Return `False` when the connection is busy or rollback fails, so callers continue to
+        treat the async transaction as pending.
         """
-        owner = self._owner
-        if owner is None or owner is asyncio.current_task() or not owner.done():
+        if self._abandoned_owner() is None:
             return True
 
         if self._lock.locked():
@@ -593,31 +527,32 @@ class SqliteAsyncConnection:
                 # and leaving it unowned would let another task walk into it.
                 self._take_ownership_if_in_transaction()
 
-    async def commit(self) -> None:
-        # under the lock so a commit cannot land halfway through another coroutine's
-        # `connection()` block and write out a statement it has not finished issuing.
+    async def _end_transaction(self, end: t.Callable[[], t.Awaitable[None]]) -> None:
+        """
+        End this task's transaction, or no-op when the transaction belongs elsewhere.
+
+        Runs under the lock so a commit cannot land halfway through another coroutine's
+        `connection()` block and write out a statement it has not finished issuing.
+
+        If another task owns the transaction, this does nothing. `PostgresAsyncPool` and
+        `SqliteAsyncPool` already no-op for a task that holds no connection; unlike them, the
+        connection here is shared, so acting anyway would commit or roll back writes the owner
+        has not finished issuing. The guard stays silent rather than raising because both
+        `commit_async()` and `rollback_async()` are what a caller reaches for while cleaning
+        up, often in a `finally`, where raising would mask whatever sent it there.
+        """
         async with self._lock:
             if self._is_owned_elsewhere():
-                # Not this task's transaction to end, so this does nothing - matching what
-                # `PostgresAsyncPool` and `SqliteAsyncPool` do for a task that holds no
-                # connection. Unlike them, the connection here is shared, so acting anyway
-                # would commit or roll back writes the owner has not finished issuing: a
-                # handler that settles up unconditionally on its way out would decide another
-                # request's transaction. Silent rather than an exception because both of these
-                # are what a caller reaches for while cleaning up, often in a `finally`, where
-                # raising would mask whatever sent it there.
                 return
 
-            await self._conn.commit()
+            await end()
             self._owner = None
+
+    async def commit(self) -> None:
+        await self._end_transaction(self._conn.commit)
 
     async def rollback(self) -> None:
-        async with self._lock:
-            if self._is_owned_elsewhere():
-                return
-
-            await self._conn.rollback()
-            self._owner = None
+        await self._end_transaction(self._conn.rollback)
 
     async def close(self) -> None:
         await self._conn.close()

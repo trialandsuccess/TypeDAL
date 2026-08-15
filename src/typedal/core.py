@@ -680,26 +680,12 @@ class TypeDAL(_TypeDALBase):
     @contextlib.contextmanager
     def _mark_async_pending(self) -> t.Iterator[None]:
         """
-        Note, for the duration of a write, that *this task's* async connection holds a
-        transaction the sync side must not step on.
+        Mark this task as holding an async write for the duration of the write.
 
-        Used by the `_async` methods that write rather than by `_get_async_pool()`, because a
-        read leaves nothing behind for the other connection to miss.
-
-        Entered *before* the connection is acquired, not after. Acquiring awaits - on Postgres
-        `getconn()` can take a full round trip - and a plain synchronous write issued by
-        another coroutine during that await would slip past the check `_get_async_pool()` just
-        made, opening exactly the split both guards exist to prevent. So the mark has to be
-        standing before the first await.
-
-        The cost of being early is `ConcurrentTransactionError`, which `sqlite:memory` raises
-        from `connection()` *before* it yields: that caller opened no transaction at all, and
-        leaving it recorded would refuse every sync statement on this instance - the guard is
-        "does any live task hold async writes", not "does mine" - until its task happened to
-        end. So that one exception, and only that one, un-marks. Any other failure may well
-        have left a transaction open: sqlite3 implicitly BEGINs before DML and a statement that
-        raised can still have opened one, which is why `SqliteAsyncConnection` claims ownership
-        in a `finally` too.
+        Entered before connection acquisition so a synchronous write from another coroutine
+        cannot slip in during the await. Only `ConcurrentTransactionError` un-marks because
+        that caller was refused before opening a transaction; any other failure may have left
+        one open.
         """
         owner = self._async_pending_owner()
         # an earlier `_async` write in this same task already marked it, and its transaction is
@@ -716,18 +702,10 @@ class TypeDAL(_TypeDALBase):
 
     async def _release_readonly_connection(self, pool: AsyncConnectionPool) -> None:
         """
-        Return the connection a read-only `_async` call checked out, unless this task still has
-        uncommitted writes on it.
+        Release a connection used only for reading, unless this task has pending writes.
 
-        `select_async`/`count_async` (and read-only `executesql_async`) leave nothing behind, so
-        they must not keep a checked-out Postgres connection until the task ends. The
-        transaction is ended with `rollback()` because that is the pool API for "I am done and
-        do not want to commit", which releases the connection on the per-task backends and
-        clears the shared owner on `sqlite:memory`.
-
-        Cleanup is deliberately best-effort. It runs in a `finally`, where a rollback failure
-        must not replace whatever the statement itself raised; if rollback does fail, the task's
-        done-callback is still armed and reclaims the connection.
+        Rollback is the pool-level release operation. Failures are suppressed because this is
+        `finally` cleanup and the task callback can still reclaim a Postgres connection.
         """
         if self._async_pending_owner() in self._async_pending_owners:
             return
@@ -752,23 +730,10 @@ class TypeDAL(_TypeDALBase):
 
     def _has_pending_async_writes(self) -> bool:
         """
-        Whether any live task holds uncommitted writes on an async connection.
+        Whether any task holds uncommitted async writes.
 
-        Any task, not just the caller's: the sync connection is shared by every coroutine on
-        this thread, so a statement issued from one task is invisible to *another* task's open
-        async transaction just as much as to its own. Both are the split this refuses.
-
-        This is the settle-then-check decision point, kept here rather than in
-        `SyncTransactionTracker`: `sqlite:memory` must first synchronously reclaim a finished
-        task's abandoned transaction, and callers must not be able to ask the predicate without
-        that reclaim having run. If reclaim cannot complete, the async side is still treated as
-        pending and the caller is refused.
-
-        Finished tasks are dropped rather than counted. A task that ended without committing
-        had its connection reclaimed and rolled back (`PostgresAsyncPool._reclaim`), so its
-        writes are never going to become visible to anyone - there is nothing left for the
-        sync side to miss. Pruning here rather than in a callback also keeps the set from
-        growing for the life of the process.
+        Reclaim a finished `sqlite:memory` owner before checking. If reclaim fails, retain the
+        pending state; otherwise discard finished tasks whose abandoned writes were rolled back.
         """
         if not self._settle_abandoned_async_writes():
             return True

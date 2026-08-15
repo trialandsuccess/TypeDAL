@@ -120,6 +120,24 @@ async def db_sqlite_memory() -> t.AsyncIterator[TypeDAL]:
         yield db
 
 
+async def _abandon_async_transaction(table: t.Any) -> None:
+    """Leave a transaction open by inserting a row in a task that ends without settling."""
+    async def insert_and_abandon() -> None:
+        await table.insert_async(name="abandoned")
+
+    await asyncio.create_task(insert_and_abandon())
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+
+
+async def _set_finished_owner(pool: t.Any) -> t.Any:
+    """Make `pool` look like a task finished while still owning its transaction."""
+    finished = asyncio.create_task(asyncio.sleep(0))
+    await finished
+    pool._owner = finished
+    return finished
+
+
 @pytest.mark.asyncio
 async def test_collect_async_matches_sync_collect(db_async: TypeDAL):
     """The core parity claim: async-executed rows must equal sync-executed rows, field for field."""
@@ -1897,16 +1915,24 @@ class _StubAsyncCursor:
         return []
 
 
+class _FailingStubAsyncCursor(_StubAsyncCursor):
+    """A read cursor that raises before a row can be fetched."""
+
+    async def execute(self, _sql: str, _parameters: t.Any = None) -> None:
+        raise RuntimeError("cursor failed")
+
+
 class _StubAsyncConnection:
     """Enough of a psycopg AsyncConnection for `PostgresAsyncPool` to run a read."""
 
-    def __init__(self) -> None:
+    def __init__(self, cursor: _StubAsyncCursor | None = None) -> None:
         self.closed = False
         self.rolled_back = False
+        self._cursor = cursor or _StubAsyncCursor()
 
     @contextlib.asynccontextmanager
     async def cursor(self) -> t.AsyncIterator[_StubAsyncCursor]:
-        yield _StubAsyncCursor()
+        yield self._cursor
 
     async def rollback(self) -> None:
         self.rolled_back = True
@@ -1940,15 +1966,7 @@ async def test_postgres_pool_closes_a_connection_it_cannot_return():
     """
     A connection the pool refuses to take back must be closed, not forgotten.
 
-    This is the branch that made the suite die with `FATAL: sorry, too many clients already`.
-    A task that ends without committing has its connection returned by a done-callback, which
-    runs after the fixture teardown has already closed the pool - so `putconn` fails. The
-    original code re-added the connection to `_checked_out` on that failure, but nothing drains
-    that set once `close()` has run, so the socket stayed open for the life of the process.
-
-    Driven through stubs rather than a real pool: the failure needs `putconn` to raise at a
-    moment that is a race with a real one, and the point being asserted is what this class does
-    with the failure, not that psycopg produces it.
+    Stubs make the pool-return failure deterministic.
     """
     conn = _StubConnection()
     pool = PostgresAsyncPool(_StubPool(conn))
@@ -1969,17 +1987,9 @@ async def test_postgres_pool_closes_a_connection_it_cannot_return():
 @pytest.mark.asyncio
 async def test_postgres_read_only_async_returns_its_connection():
     """
-    `count_async()` and `collect_async()` must not retain a Postgres connection after they
-    return.
+    Read-only async statements must not retain a Postgres connection after they return.
 
-    Both are read-only and leave no uncommitted writes behind, but they run through
-    `PostgresAsyncPool.connection()`, which does not hand the connection back on context exit.
-    A long-lived task that only counts/collects and then awaits unrelated work therefore keeps
-    a checked-out connection until the task itself ends. With `POSTGRES_POOL_MAX_SIZE` capped
-    at 10, eleven such tasks exhaust the pool even though none of them is in a transaction.
-
-    Driven through a stub pool so the test can observe the checkout directly; the public
-    `count_async()` path is what needs to trigger the release.
+    The stub pool exposes each public read path's checkout and release.
     """
     conn = _StubAsyncConnection()
     raw_pool = _ReadOnlyPool(conn)
@@ -2001,7 +2011,56 @@ async def test_postgres_read_only_async_returns_its_connection():
         try:
             assert await AsyncThingReadRelease.count_async() == 0
             assert raw_pool.checked_out == 0, "count_async left its connection checked out"
-            assert raw_pool.returned == 1, "the read-only connection was never returned to the pool"
+            assert raw_pool.returned == 1, "count_async's read-only connection was never returned"
+
+            collected = await AsyncThingReadRelease.where(AsyncThingReadRelease.id > 0).collect_async()
+            assert list(collected) == []
+            assert raw_pool.checked_out == 0, "collect_async left its connection checked out"
+            assert raw_pool.returned == 2, "collect_async's read-only connection was never returned"
+
+            selected = await db.select_async(AsyncThingReadRelease.id > 0, AsyncThingReadRelease.id)
+            assert list(selected) == []
+            assert raw_pool.checked_out == 0, "select_async left its connection checked out"
+            assert raw_pool.returned == 3, "select_async's read-only connection was never returned"
+
+            table_name = AsyncThingReadRelease._table._rname
+            assert await db.executesql_async(f"SELECT id FROM {table_name}") == []
+            assert raw_pool.checked_out == 0, "executesql_async left its connection checked out"
+            assert raw_pool.returned == 4, "executesql_async's read-only connection was never returned"
+        finally:
+            await db.close_async()
+            db.close()
+
+
+@pytest.mark.asyncio
+async def test_postgres_read_only_async_returns_its_connection_when_cursor_fails():
+    """
+    A read that raises must still return its Postgres connection via the read-only `finally`.
+    """
+    conn = _StubAsyncConnection(_FailingStubAsyncCursor())
+    raw_pool = _ReadOnlyPool(conn)
+    pool = PostgresAsyncPool(raw_pool)
+
+    async def fake_pool_factory(_db: TypeDAL) -> PostgresAsyncPool:
+        return pool
+
+    with tempfile.TemporaryDirectory() as directory:
+        db = TypeDAL("sqlite:memory", enable_typedal_caching=False, folder=directory)
+
+        @db.define()
+        class AsyncThingReadReleaseFailure(TypedTable):
+            name: TypedField[str]
+
+        db.commit()
+
+        db._async_pools = AsyncPoolManager(db, factories={"sqlite": fake_pool_factory})
+        try:
+            with pytest.raises(RuntimeError, match="cursor failed"):
+                await AsyncThingReadReleaseFailure.count_async()
+
+            assert raw_pool.checked_out == 0, "a failed read left its connection checked out"
+            assert raw_pool.returned == 1, "a failed read's connection was never returned"
+            assert conn.rolled_back, "a failed read's transaction was not rolled back"
         finally:
             await db.close_async()
             db.close()
@@ -2011,11 +2070,6 @@ async def test_postgres_read_only_async_returns_its_connection():
 async def test_settling_up_twice_is_a_no_op(db_async: TypeDAL):
     """
     `commit_async()`/`rollback_async()` must be safe when this task holds no connection.
-
-    Two ways to get there, both ordinary: calling either twice, or calling one having done no
-    async work at all - a request handler that commits unconditionally on the way out, say.
-    The pools return the connection on the first call, so the second finds nothing; without the
-    guard it would commit on a connection already handed back to the pool.
     """
     db = db_async
 
@@ -2040,13 +2094,7 @@ async def test_settling_up_twice_is_a_no_op(db_async: TypeDAL):
 @pytest.mark.asyncio
 async def test_sqlite_pool_reclaim_yields_to_whoever_claimed_first():
     """
-    `_reclaim` schedules its work, so the connection can be gone by the time that work runs.
-
-    The done-callback checks `_open` when it fires, but the coroutine it starts runs later -
-    after `close()` or `_release()` may have taken the same connection. Both claim by removing
-    from `_open` before their first await, so the loser has to notice and do nothing; closing a
-    connection twice is harmless, but rolling back one that has been handed to another task is
-    not.
+    A scheduled reclaim must do nothing when another path already claimed the connection.
     """
     with tempfile.TemporaryDirectory() as directory:
         db = TypeDAL(f"sqlite://{Path(directory) / 'reclaim.db'}", enable_typedal_caching=False, folder=directory)
@@ -2071,82 +2119,72 @@ async def test_sqlite_pool_reclaim_yields_to_whoever_claimed_first():
 
 
 @pytest.mark.asyncio
-async def test_sqlite_memory_commit_and_rollback_only_act_for_the_owning_task(db_sqlite_memory: TypeDAL):
-    """
-    On `sqlite:memory`, `rollback_async()` from a task that owns no transaction must not
-    destroy the one another task is holding open.
-
-    `SqliteAsyncConnection` refuses a second task at `connection()`
-    (`_refuse_if_owned_elsewhere`) precisely so one task's rollback cannot decide another's
-    rows - that is what its class docstring gives as the reason the refusal exists. But
-    `commit()`/`rollback()` never go through `connection()`: `commit_async()`/`rollback_async()`
-    (core.py) reach the pool directly, on purpose, so that settling up cannot be the thing that
-    opens a connection. On the two per-task backends that is harmless - `PostgresAsyncPool` and
-    `SqliteAsyncPool` both no-op when the calling task holds no connection - but
-    `SqliteAsyncConnection` acts on the single shared connection unconditionally.
-
-    So the refusal only covers the path that writes, not the path that decides. A request
-    handler that rolls back unconditionally on its way out, on a task that did no async work at
-    all, ends someone else's transaction.
-
-    `sqlite:memory` only: it is the one backend where two tasks share a connection, so it is
-    the only one where a non-owner *has* anything to end.
-
-    The two coroutines, pinned with events rather than sleeps:
-      - `keeper` inserts `keep` and waits to commit until the outsider has had its turn
-      - `outsider` does no async work of its own and calls `rollback_async()`
-
-    Ownership-guarded, `keep` survives: the outsider's rollback had nothing of its own to end.
-    Unguarded, it rolls back the keeper's insert, and the keeper's later commit commits an
-    empty transaction.
-    """
-    db = db_sqlite_memory
-
-    @db.define()
-    class AsyncThingForeignRollback(TypedTable):
-        name: TypedField[str]
-
-    db.commit()
-
-    keeper_wrote = asyncio.Event()
-    outsider_settled = asyncio.Event()
-
-    async def keeper() -> None:
-        await AsyncThingForeignRollback.insert_async(name="keep")
-        keeper_wrote.set()
-        await asyncio.wait_for(outsider_settled.wait(), timeout=5)
-        await db.commit_async()
-
-    async def outsider() -> None:
-        await asyncio.wait_for(keeper_wrote.wait(), timeout=5)
-        # nothing of this task's own is open - on every other backend this is a no-op
-        await db.rollback_async()
-        outsider_settled.set()
-
-    await asyncio.gather(keeper(), outsider())
-
-    assert [row.name for row in await AsyncThingForeignRollback.collect_async()] == ["keep"], (
-        "a task that holds no transaction rolled back the one another task was still writing to"
-    )
+async def test_sqlite_pool_close_closes_open_connections():
+    """`close()` must roll back and close connections still checked out."""
+    with tempfile.TemporaryDirectory() as directory:
+        db = TypeDAL(f"sqlite://{Path(directory) / 'close.db'}", enable_typedal_caching=False, folder=directory)
+        try:
+            pool = await db._get_async_pool()
+            await pool._acquire()
+            await pool.close()
+            assert not pool._open
+        finally:
+            await db.close_async()
+            db.close()
 
 
 @pytest.mark.asyncio
-async def test_sqlite_memory_non_owner_commit_does_not_make_another_tasks_row_durable(db_sqlite_memory: TypeDAL):
-    """
-    `commit_async()` from a task that owns no transaction must not commit the one another task
-    is still holding open.
+async def test_sqlite_pool_reclaim_closes_an_abandoned_connection():
+    """`_reclaim`'s scheduled coroutine must roll back and close an abandoned connection."""
+    with tempfile.TemporaryDirectory() as directory:
+        db = TypeDAL(f"sqlite://{Path(directory) / 'reclaim.db'}", enable_typedal_caching=False, folder=directory)
+        try:
+            pool = await db._get_async_pool()
+            conn = await pool._acquire()
+            pool._reclaim(conn)
+            await asyncio.sleep(0.1)
+            assert not pool._open
+        finally:
+            await db.close_async()
+            db.close()
 
-    This is the commit-side counterpart to
-    `test_sqlite_memory_commit_and_rollback_only_act_for_the_owning_task`. The guard is harder
-    to observe than the rollback case because a wrongly committed row would still be visible
-    after the owner's later commit. The owner therefore rolls back instead: a guarded outsider
-    no-op leaves the rollback able to discard the row, while an unguarded outsider commit makes
-    that row durable first.
+
+@pytest.mark.parametrize(
+    ("foreign_settle", "keeper_settle", "expected_rows", "message"),
+    [
+        (
+            "rollback_async",
+            "commit_async",
+            ["keep"],
+            "a task that holds no transaction rolled back the one another task was still writing to",
+        ),
+        (
+            "commit_async",
+            "rollback_async",
+            [],
+            "a task that holds no transaction committed the one another task was still writing to",
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_sqlite_memory_non_owner_settlement_is_a_no_op(
+    db_sqlite_memory: TypeDAL,
+    foreign_settle: str,
+    keeper_settle: str,
+    expected_rows: list[str],
+    message: str,
+):
+    """
+    A task that owns no transaction must not commit or roll back the one another task holds.
+
+    Before the ownership guard, `SqliteAsyncConnection.commit()`/`rollback()` acted on the
+    single shared connection unconditionally; now `_end_transaction()` no-ops for a non-owner.
+    The keeper writes and then settles its own way after the outsider has had its turn.
     """
     db = db_sqlite_memory
 
     @db.define()
-    class AsyncThingForeignCommit(TypedTable):
+    class AsyncThingForeignSettle(TypedTable):
         name: TypedField[str]
 
     db.commit()
@@ -2155,22 +2193,19 @@ async def test_sqlite_memory_non_owner_commit_does_not_make_another_tasks_row_du
     outsider_settled = asyncio.Event()
 
     async def keeper() -> None:
-        await AsyncThingForeignCommit.insert_async(name="keep")
+        await AsyncThingForeignSettle.insert_async(name="keep")
         keeper_wrote.set()
         await asyncio.wait_for(outsider_settled.wait(), timeout=5)
-        await db.rollback_async()
+        await getattr(db, keeper_settle)()
 
     async def outsider() -> None:
         await asyncio.wait_for(keeper_wrote.wait(), timeout=5)
-        # nothing of this task's own is open - on every other backend this is a no-op
-        await db.commit_async()
+        await getattr(db, foreign_settle)()
         outsider_settled.set()
 
     await asyncio.gather(keeper(), outsider())
 
-    assert list(await AsyncThingForeignCommit.collect_async()) == [], (
-        "a task that holds no transaction committed the one another task was still writing to"
-    )
+    assert [row.name for row in await AsyncThingForeignSettle.collect_async()] == expected_rows, message
 
 
 @pytest.mark.asyncio
@@ -2179,21 +2214,10 @@ async def test_sqlite_memory_does_not_inherit_an_abandoned_transaction(db_sqlite
     A `sqlite:memory` transaction whose task ended without settling it must not be handed to
     the next task.
 
-    Both per-task backends arm a done-callback at checkout to roll back and dispose of a
-    connection its task abandoned (`PostgresAsyncPool._reclaim`, `SqliteAsyncPool._reclaim`).
-    `SqliteAsyncConnection` has no such path, so `_owner` keeps pointing at the finished task
-    with its transaction still open. `_refuse_if_owned_elsewhere()` then lets the next task
-    straight in - its `not self._owner.done()` term is false for a finished owner - and that
-    task lands inside the abandoned transaction. Its `commit_async()` is now deciding the
-    previous task's writes.
-
-    Asserted as the outcome rather than by poking at `_owner`, because the outcome is what a
-    caller can be surprised by: `abandoned` was never committed by anyone, and committing
-    `mine` must not make it durable.
-
-    The sleeps are `sleep(0)` yields, not waits: a done-callback cannot await, so any reclaim
-    it schedules runs as a task on the next pass of the loop, and the assertion has to be made
-    after that has had its turn.
+    `SqliteAsyncConnection` reclaims through `_settle_abandoned_owner()` on the next
+    `connection()` and through the `_reclaim` done-callback armed by
+    `_take_ownership_if_in_transaction()`; `settle_abandoned_sync()` is the sync-side path.
+    Asserted as the outcome rather than by poking at `_owner`.
     """
     db = db_sqlite_memory
 
@@ -2203,14 +2227,7 @@ async def test_sqlite_memory_does_not_inherit_an_abandoned_transaction(db_sqlite
 
     db.commit()
 
-    async def abandons_its_transaction() -> None:
-        # ends without commit_async()/rollback_async() - the case the two pools' done-callbacks
-        # exist for
-        await AsyncThingAbandoned.insert_async(name="abandoned")
-
-    await asyncio.create_task(abandons_its_transaction())
-    await asyncio.sleep(0)
-    await asyncio.sleep(0)
+    await _abandon_async_transaction(AsyncThingAbandoned)
 
     await AsyncThingAbandoned.insert_async(name="mine")
     await db.commit_async()
@@ -2224,20 +2241,11 @@ async def test_sqlite_memory_does_not_inherit_an_abandoned_transaction(db_sqlite
 @pytest.mark.asyncio
 async def test_sqlite_memory_abandoned_transaction_does_not_lock_out_the_sync_side(db_sqlite_memory: TypeDAL):
     """
-    The sync connection must not be waved through while an abandoned async transaction is still
-    holding the table.
+    The sync connection must not be refused after an abandoned async transaction is reclaimed.
 
-    `TypeDAL._has_pending_async_writes()` (core.py) prunes owners whose task has finished, and
-    says why in its own comment: a task that ended without committing "had its connection
-    reclaimed and rolled back (`PostgresAsyncPool._reclaim`)", so there is nothing left for the
-    sync side to miss. That reasoning holds for both per-task backends and not for
-    `SqliteAsyncConnection`, which has no reclaim path - the transaction is still open, and on
-    `sqlite:memory` shared-cache mode it is still holding the table against pydal's own
-    connection.
-
-    The guard therefore fails open exactly where it was supposed to raise, and what the caller
-    gets instead is the driver's `database table is locked` after the busy timeout - which is
-    the outcome `TransactionSplitError` was introduced to replace.
+    `SqliteAsyncConnection` reclaims abandoned owners through `settle_abandoned_sync()`
+    (invoked by `TypeDAL._has_pending_async_writes()`) and through
+    `_settle_abandoned_owner()` on the next `connection()`, so the sync side is free to run.
     """
     db = db_sqlite_memory
 
@@ -2247,15 +2255,8 @@ async def test_sqlite_memory_abandoned_transaction_does_not_lock_out_the_sync_si
 
     db.commit()
 
-    async def abandons_its_transaction() -> None:
-        await AsyncThingAbandonedLock.insert_async(name="abandoned")
+    await _abandon_async_transaction(AsyncThingAbandonedLock)
 
-    await asyncio.create_task(abandons_its_transaction())
-    await asyncio.sleep(0)
-    await asyncio.sleep(0)
-
-    # nobody is going to make those writes visible, so the sync side has nothing to miss and
-    # must be free to run - which requires the abandoned transaction to have been reclaimed
     AsyncThingAbandonedLock.insert(name="sync")
     db.commit()
 
@@ -2272,10 +2273,7 @@ async def test_sqlite_memory_async_connection_settles_a_finished_owner(db_sqlite
     """
     db = db_sqlite_memory
     pool = await db._get_async_pool()
-
-    finished = asyncio.create_task(asyncio.sleep(0))
-    await finished
-    pool._owner = finished
+    finished = await _set_finished_owner(pool)
 
     async with pool.connection():
         pass
@@ -2302,9 +2300,7 @@ async def test_sqlite_memory_sync_side_stays_refused_while_async_lock_is_held(db
     db.commit()
 
     pool = await db._get_async_pool()
-    finished = asyncio.create_task(asyncio.sleep(0))
-    await finished
-    pool._owner = finished
+    finished = await _set_finished_owner(pool)
 
     entered = asyncio.Event()
     leave = asyncio.Event()
@@ -2331,33 +2327,12 @@ async def test_sqlite_memory_sync_side_stays_refused_while_async_lock_is_held(db
 @pytest.mark.asyncio
 async def test_refused_task_is_not_recorded_as_holding_async_writes(db_sqlite_memory: TypeDAL):
     """
-    A task refused with `ConcurrentTransactionError` opened no transaction, and must not be
+    A task refused with `ConcurrentTransactionError` opened no transaction and must not be
     recorded as holding one.
 
-    `_mark_async_pending()` is called before entering `pool.connection()` (`insert_async`,
-    `update_async`, `executesql_async` in core.py, `base_delete_async` in
-    async_execution.py). On `sqlite:memory` that context manager can raise before it ever
-    yields, so the refused task ends up in `_async_pending_owners` having done nothing at all.
-
-    Nothing clears it: the entry is only dropped by that task's own `commit_async()`/
-    `rollback_async()`, which a caller who just got told "you were refused" has no reason to
-    call, or by the pruning in `_has_pending_async_writes()` once the task ends. Until then the
-    guard is global - `SyncTransactionTracker.before_execute` asks "does *any* live task hold
-    async writes" - so one refused task refuses every sync statement on the instance, including
-    those of tasks that were never involved.
-
-    Ordering, pinned with events:
-      - `holder` writes and keeps its transaction open, then commits once the refusal happened
-      - `refused` is turned away, waits for the holder to settle, and only then looks
-
-    By that point the one real async transaction is committed and gone, so the correct answer
-    is "nothing pending" and a plain sync INSERT that runs.
-
-    Note this is not merely an ordering nit to be fixed by moving the call inside the `async
-    with`: on Postgres `_acquire()` awaits `getconn()`, and a sync write issued by another
-    coroutine during that await would slip past the check `_get_async_pool()` already made. The
-    mark has to stay ahead of that await and be undone when - and only when - the connection
-    was refused before any statement ran.
+    `_mark_async_pending()` marks before connection acquisition, so it must un-mark when and
+    only when the connection was refused before any statement ran. Pins the holder/refused
+    ordering and the final unrelated sync insert.
     """
     db = db_sqlite_memory
 
