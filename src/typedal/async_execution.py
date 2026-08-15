@@ -125,7 +125,8 @@ class SyncTransactionTracker(ExecutionHandler):
             raise TransactionSplitError(
                 "The async connection has uncommitted writes, which this synchronous statement "
                 "would not see. Call `await db.commit_async()` or `await db.rollback_async()` "
-                "first.",
+                "first. If those writes belong to another task, wait for it to settle them: "
+                "neither call ends a transaction this task does not own.",
             )
 
         if command.lstrip().upper().startswith(WRITE_STATEMENTS):
@@ -531,6 +532,13 @@ class SqliteAsyncConnection:
         two conditions the aiosqlite worker thread is idle, so the underlying sqlite3
         connection can be rolled back directly without going through aiosqlite's queue.
 
+        Idle is only half of what makes that legal. This runs on the event-loop thread against
+        a connection sqlite3 opened on aiosqlite's worker thread, which sqlite3 refuses by
+        default - it works because pydal puts `check_same_thread: False` in `driver_args`
+        (adapters/sqlite.py) and `_connect_sqlite_async()` passes those straight through.
+        Nothing here sets it, so a pydal that stopped would turn this into the caught
+        `ProgrammingError` below, and every reclaim would quietly become a False.
+
         Returns False when the rollback cannot be done safely right now, or when it fails. The
         caller must keep the abandoned owner counted: a rollback that did not happen still has
         an open transaction behind it, and letting the next task inherit that is precisely the
@@ -544,7 +552,9 @@ class SqliteAsyncConnection:
             return False
 
         try:
-            self._conn._conn.rollback()  # type: ignore[attr-defined]
+            # aiosqlite's own `in_transaction` reaches through `_conn` the same way; this is
+            # the sqlite3 connection behind the queue, not the aiosqlite wrapper.
+            self._conn._conn.rollback()  # type: ignore[attr-defined] # ty: ignore[unresolved-attribute]
         except Exception:  # pragma: no cover - a hard rollback failure is not reachable through the public API
             return False
 
