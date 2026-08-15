@@ -225,7 +225,7 @@ class TableMeta(type):
         """
         Async twin of `insert()`.
 
-        Mirrors pydal's `Table.insert()` (objects.py:960-968): the field normalization
+        Mirrors pydal's `Table.insert()` (objects.py): the field normalization
         (`_fields_and_values_for_insert`) and `_before_insert`/`_after_insert` hooks stay
         exactly as they are (pure/sync), only the adapter-level execute step
         (`table._db.insert_async(...)`) is async.
@@ -262,7 +262,7 @@ class TableMeta(type):
         """
         Async twin of `bulk_insert()`.
 
-        pydal's `Table.bulk_insert()` (objects.py:1113-1124) only exists to hand the whole batch
+        pydal's `Table.bulk_insert()` (objects.py) only exists to hand the whole batch
         to `adapter.bulk_insert()`, which for every backend TypeDAL supports asynchronously is
         itself a loop over `insert()` - so looping `insert_async()` here loses nothing and keeps
         the hook/normalization dance in one place.
@@ -327,7 +327,7 @@ class TableMeta(type):
         """
         Turn `update_or_insert`'s three input shapes (DEFAULT / dict / Query) into one Query.
 
-        Mirrors pydal's `Table.update_or_insert()` (objects.py:1067-1073): no query means
+        Mirrors pydal's `Table.update_or_insert()` (objects.py): no query means
         "match on the values you were going to write", a dict means "match on these fields".
         """
         table = self._ensure_table_defined()
@@ -368,7 +368,7 @@ class TableMeta(type):
         """
         Async twin of `validate_and_insert()`.
 
-        Mirrors pydal's `Table.validate_and_insert()` (objects.py:1039-1042): `_validate_fields()`
+        Mirrors pydal's `Table.validate_and_insert()` (objects.py): `_validate_fields()`
         is pure (no I/O), so only the insert step needs an async twin.
         """
         table = self._ensure_table_defined()
@@ -411,7 +411,7 @@ class TableMeta(type):
         """
         Async twin of `validate_and_update()`.
 
-        Mirrors pydal's `Table.validate_and_update()` (objects.py:1044-1065): fetch the record,
+        Mirrors pydal's `Table.validate_and_update()` (objects.py): fetch the record,
         validate against it (pure), then update. Both DB steps go through the async path.
         """
         table = self._ensure_table_defined()
@@ -1553,14 +1553,14 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
         """
         Async twin of `update_record()`.
 
-        Mirrors pydal's `RecordUpdater` (helpers/classes.py:349-359): drop anything that isn't a
+        Mirrors pydal's `RecordUpdater` (helpers/classes.py): drop anything that isn't a
         writable column of this table, update by primary key, then mirror the new values onto the
         in-memory row/instance - `_update()` does that last part for both the sync and async path.
 
-        Including `ignore_common_filters=True`, which `RecordUpdater` passes (classes.py:357):
+        Including `ignore_common_filters=True`, which `RecordUpdater` passes (classes.py):
         a record you already hold must always be writable back, even when the table has a
         common filter that excludes it - a soft-deleted row, say. Without it `adapter._update()`
-        re-applies that filter (adapters/base.py:566-568 via `use_common_filters`) and the
+        re-applies that filter (adapters/base.py via `use_common_filters`) and the
         update silently matches zero rows.
         """
         require_permission(getattr(self, "_permissions", None), "update")
@@ -1571,7 +1571,7 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
         new_fields = {k: v for k, v in fields.items() if k in table.fields and table[k].type != "id"}
 
         query = t.cast(Query, table._id == row[table._id.name])
-        # what `db(query, ignore_common_filters=True)` does under the hood (objects.py:2775-2779);
+        # what `db(query, ignore_common_filters=True)` does under the hood (objects.py);
         # set on the Query itself because that object is what reaches `adapter._update()`:
         query.ignore_common_filters = True
 
@@ -1605,7 +1605,7 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
         """
         Async twin of `delete_record()`.
 
-        Mirrors pydal's `RecordDeleter` (helpers/classes.py:362-364) plus `_delete_record()`'s
+        Mirrors pydal's `RecordDeleter` (helpers/classes.py) plus `_delete_record()`'s
         own bookkeeping: the instance is emptied afterwards, since the row is no more.
         """
         require_permission(getattr(self, "_permissions", None), "delete")

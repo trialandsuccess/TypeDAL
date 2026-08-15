@@ -27,7 +27,7 @@ if t.TYPE_CHECKING:
 
 # What pydal's `adapter._insert()` leaves behind to record whether the statement it just built
 # carries a RETURNING clause: `(table._id, 1)` when it does, `None` when it does not
-# (adapters/postgres.py:149-158). Backends without the concept never set it at all, hence None.
+# (adapters/postgres.py). Backends without the concept never set it at all, hence None.
 type LastInsert = tuple[pydal.objects.Field, int] | None
 
 
@@ -59,7 +59,7 @@ class AsyncCursor(t.Protocol):
     async def fetchone(self) -> t.Any: ...
 
     # `Iterable`, not `Sequence`: aiosqlite declares `fetchall() -> Iterable[sqlite3.Row]`
-    # (aiosqlite/cursor.py:66), so requiring a Sequence here would reject it.
+    # (aiosqlite/cursor.py), so requiring a Sequence here would reject it.
     async def fetchall(self) -> t.Iterable[t.Any]: ...
 
 
@@ -142,7 +142,7 @@ class SqliteAsyncConnection:
     Minimal pool-like wrapper around a single aiosqlite connection.
 
     SQLite has no real concept of a connection pool the way Postgres does - pydal itself sets
-    `pool_size = 0` for SQLite (adapters/sqlite.py:26), one connection is all there is. This
+    `pool_size = 0` for SQLite (adapters/sqlite.py), one connection is all there is. This
     gives it the same `.connection()`/`.commit()`/`.rollback()`/`.close()` shape as
     `PostgresAsyncPool` so `select_async()` etc. don't need to branch on backend.
 
@@ -157,7 +157,7 @@ class SqliteAsyncConnection:
     same time would share one transaction and the first to exit would decide for both -
     committing the other's half-finished write, or rolling back a write that had succeeded.
     psycopg_pool avoids this by handing out a different connection per caller; that is not an
-    option here (pydal itself runs SQLite at `pool_size = 0`, adapters/sqlite.py:26), and for
+    option here (pydal itself runs SQLite at `pool_size = 0`, adapters/sqlite.py), and for
     `sqlite:memory` it would actively break, since shared-cache mode answers a second
     concurrent writer with SQLITE_LOCKED, which no busy-timeout retries. Serializing costs
     concurrency SQLite does not have for writes anyway - it allows exactly one writer.
@@ -224,12 +224,12 @@ async def open_sqlite_async_connection(db: "TypeDAL") -> AsyncConnectionPool:
         ) from e
 
     adapter = db._adapter
-    # Reuse pydal's own path/URI resolution and connect kwargs (adapters/sqlite.py:25-38) - in
+    # Reuse pydal's own path/URI resolution and connect kwargs (adapters/sqlite.py) - in
     # particular the memory-mode shared-cache URI, so this connection sees the same in-memory
     # database as pydal's own sync connection.
     conn = await aiosqlite.connect(adapter.dbpath, **adapter.driver_args)
 
-    # Mirror SQLite.after_connection() (adapters/sqlite.py:82-86): custom functions and PRAGMA
+    # Mirror SQLite.after_connection() (adapters/sqlite.py): custom functions and PRAGMA
     # are per-connection state, and this connection is not the one pydal set those up on.
     await conn.create_function("web2py_extract", 2, adapter.web2py_extract)
     await conn.create_function("REGEXP", 2, adapter.web2py_regexp)
@@ -336,13 +336,13 @@ async def postgres_lastrowid_async(
     last_insert: LastInsert,
 ) -> int | None:
     """
-    Async twin of `Postgre.lastrowid()` (pydal adapters/postgres.py:142-147).
+    Async twin of `Postgre.lastrowid()` (pydal adapters/postgres.py).
 
     `last_insert` is the value `adapter._insert()` set as a side effect of building the INSERT
-    statement (postgres.py:149-162, set whenever the table has a standard `_id` column), passed
+    statement (postgres.py, set whenever the table has a standard `_id` column), passed
     in by `insert_async()` rather than read back off the adapter here. It has to be passed:
     `adapter._last_insert` is a property over `THREAD_LOCAL._pydal_last_insert_`
-    (postgres.py:128-133), and every coroutine on this path shares one thread, so reading it
+    (postgres.py), and every coroutine on this path shares one thread, so reading it
     after the intervening awaits would see whichever insert touched it last.
 
     Truthy means the id is already in the RETURNING result of the statement just executed, read
@@ -367,7 +367,7 @@ async def sqlite_lastrowid_async(
     _last_insert: LastInsert,
 ) -> int | None:
     """
-    Async twin of the base `SQLAdapter.lastrowid()` (pydal adapters/base.py:529-530), used by
+    Async twin of the base `SQLAdapter.lastrowid()` (pydal adapters/base.py), used by
     SQLite (no override there). `cursor.lastrowid` is a plain attribute, not awaitable, and
     needs no `last_insert` - it takes the argument only to share one strategy signature.
     """
@@ -387,7 +387,7 @@ LASTROWID_STRATEGIES: dict[
 
 async def base_delete_async(db: "TypeDAL", table: pydal.objects.Table, query: pydal.objects.Query) -> int | None:
     """
-    Async twin of the base `SQLAdapter.delete()` (pydal adapters/base.py:604-610): plain
+    Async twin of the base `SQLAdapter.delete()` (pydal adapters/base.py): plain
     build/execute sandwich, no cascade handling. Used directly for Postgres (no override
     there), and internally by `sqlite_delete_async` for the actual delete statement -
     mirroring how `SQLite.delete()` itself calls `super().delete()` for that part.
@@ -401,14 +401,14 @@ async def base_delete_async(db: "TypeDAL", table: pydal.objects.Table, query: py
         try:
             return cur.rowcount
         except Exception:  # pragma: no cover
-            # defensive, mirroring `adapter.delete()` (adapters/base.py:607-610):
+            # defensive, mirroring `adapter.delete()` (adapters/base.py):
             # neither driver's `rowcount` actually raises, it is a plain property.
             return None
 
 
 async def sqlite_delete_async(db: "TypeDAL", table: pydal.objects.Table, query: pydal.objects.Query) -> int | None:
     """
-    Async twin of `SQLite.delete()` (pydal adapters/sqlite.py:93-104) - NOT a plain sandwich:
+    Async twin of `SQLite.delete()` (pydal adapters/sqlite.py) - NOT a plain sandwich:
     selects affected ids first, deletes, then recurses per cascaded FK with
     `ondelete=CASCADE`. Recursion goes through `db.delete_async()` again (not this function
     directly), so a cascaded delete on another table gets the dbengine-appropriate treatment

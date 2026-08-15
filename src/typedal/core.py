@@ -610,8 +610,8 @@ class TypeDAL(_TypeDALBase):
         """
         Async twin of `db(query).select(*fields, **attributes)`.
 
-        Mirrors `Set.select()` (pydal objects.py:2961-2971) and `SQLAdapter.select()`/
-        `_select_aux()` (adapters/base.py:905-910, 864-891): build via pydal's own
+        Mirrors `Set.select()` (pydal objects.py) and `SQLAdapter.select()`/
+        `_select_aux()` (adapters/base.py): build via pydal's own
         `tables()`/`expand_all()`/`_select_wcols()` (pure, no I/O), execute via the async
         driver for this backend (the only I/O, on our own connection, not pydal's; see
         `ASYNC_POOL_FACTORIES`), parse via pydal's own `parse()` (pure).
@@ -646,7 +646,7 @@ class TypeDAL(_TypeDALBase):
         """
         Async twin of `db(query).count(distinct)`.
 
-        Mirrors `SQLAdapter.count()` (adapters/base.py:937-939): build via pydal's own
+        Mirrors `SQLAdapter.count()` (adapters/base.py): build via pydal's own
         `_count()` (pure), execute via the async driver for this backend, read the first
         column of the first (only) row.
         """
@@ -668,7 +668,7 @@ class TypeDAL(_TypeDALBase):
     ) -> t.Optional[int]:
         """
         Async twin of the adapter-level step of `Set.update()`
-        (`adapter.update()`, adapters/base.py:581-593).
+        (`adapter.update()`, adapters/base.py).
 
         `fields` is the already-normalized `[(Field, value), ...]` list (`row.op_values()`),
         same shape as `insert_async`'s `fields` - the before_update/after_update hooks and
@@ -688,7 +688,7 @@ class TypeDAL(_TypeDALBase):
             try:
                 return cur.rowcount
             except Exception:  # pragma: no cover
-                # defensive, mirroring `adapter.update()` (adapters/base.py:590-593):
+                # defensive, mirroring `adapter.update()` (adapters/base.py):
                 # neither driver's `rowcount` actually raises, it is a plain property.
                 return None
 
@@ -702,7 +702,7 @@ class TypeDAL(_TypeDALBase):
 
         Dispatches per backend via `DELETE_STRATEGIES`: SQLite's isn't a plain
         build/execute/parse call - it selects affected ids first and recurses for
-        ON DELETE CASCADE (adapters/sqlite.py:93-104) - Postgres's is.
+        ON DELETE CASCADE (adapters/sqlite.py) - Postgres's is.
         """
         return await DELETE_STRATEGIES[self._adapter.dbengine](self, table, query)
 
@@ -713,7 +713,7 @@ class TypeDAL(_TypeDALBase):
     ) -> t.Any:
         """
         Async twin of the adapter-level step of `table.insert(**fields)`
-        (`adapter.insert()`, adapters/base.py:541-563).
+        (`adapter.insert()`, adapters/base.py).
 
         `fields` is the already-normalized `[(Field, value), ...]` list (`row.op_values()`),
         the same shape pydal's own `Table.insert()` passes to the adapter - the field-name-to-
@@ -725,7 +725,7 @@ class TypeDAL(_TypeDALBase):
 
         # Capture `_last_insert` here, synchronously, right after the `_insert()` that set it:
         # on Postgres it is a property over `THREAD_LOCAL._pydal_last_insert_` (pydal
-        # adapters/postgres.py:128-133), and coroutines share one thread, so that thread-local
+        # adapters/postgres.py), and coroutines share one thread, so that thread-local
         # provides no isolation at all on this path. Reading it after the awaits below would
         # read whichever concurrent insert_async() touched it last, not our own.
         last_insert = getattr(adapter, "_last_insert", None)
@@ -735,7 +735,7 @@ class TypeDAL(_TypeDALBase):
             try:
                 await cur.execute(query)
             except Exception as e:
-                # mirrors `adapter.insert()` (adapters/base.py:544-549), same as `update_async`:
+                # mirrors `adapter.insert()` (adapters/base.py), same as `update_async`:
                 if hasattr(table, "_on_insert_error"):
                     return table._on_insert_error(table, fields, e)  # ty: ignore[call-non-callable]
                 raise
@@ -748,13 +748,13 @@ class TypeDAL(_TypeDALBase):
             row_id = await LASTROWID_STRATEGIES[adapter.dbengine](adapter, table, cur, last_insert)
 
         # a table with a single custom primarykey reports its id as a `{name: value}` dict
-        # instead of a bare int, matching `adapter.insert()` (adapters/base.py:556-563):
+        # instead of a bare int, matching `adapter.insert()` (adapters/base.py):
         primarykey = getattr(table, "_primarykey", None)
         if primarykey is not None and len(primarykey) == 1:  # pragma: no cover
             # unreachable on both supported backends: pydal makes `_primarykey` columns NOT
             # NULL, so an insert omitting the pk fails in the database before the id it would
             # have filled in here could ever be read back. Kept to match `adapter.insert()`
-            # (adapters/base.py:556-559) for backends that can generate one.
+            # (adapters/base.py) for backends that can generate one.
             return {table._primarykey[0]: row_id}  # ty: ignore[not-subscriptable]
 
         if not isinstance(row_id, int):  # pragma: no cover
@@ -778,7 +778,7 @@ class TypeDAL(_TypeDALBase):
         """
         Async twin of `executesql(...)`.
 
-        Mirrors pydal's own `DAL.executesql()` (base.py:872-990): execute via the async
+        Mirrors pydal's own `DAL.executesql()` (base.py): execute via the async
         driver for this backend (the only I/O), then the same as_dict/fields/colnames
         branching pydal itself does, calling pydal's own `adapter.parse()` (pure) for the
         fields/colnames case, unmodified. Only the plain-tuples path (no as_dict, no

@@ -510,7 +510,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable]:
         Async twin of `delete()`.
 
         `delete()` delegates the before_delete/after_delete hook dance to pydal's own
-        `Set.delete()` (objects.py:3010-3017); since pydal has no async version of that to
+        `Set.delete()` (objects.py); since pydal has no async version of that to
         delegate to, it's replicated here, same reasoning as `insert_async` - only the
         adapter-level execute step (`db.delete_async(...)`) is async.
         """
