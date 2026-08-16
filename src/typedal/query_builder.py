@@ -12,6 +12,7 @@ from collections import defaultdict
 
 import pydal.objects
 
+from .asynchronous import run_async
 from .constants import DEFAULT_JOIN_OPTION, JOIN_OPTIONS
 from .core import TypeDAL
 from .fields import TypedField, is_typed_field
@@ -1368,6 +1369,141 @@ class QueryBuilder[T_MetaInstance: _TypedTable](pydal.objects.Select):
         """
         require_permission(self._permissions, "read")
         return self.first(verbose=verbose) or throw(exception or ValueError("Nothing found!"))
+
+    ###############
+    # async twins #
+    ###############
+    # Every method below offloads its *whole* sync counterpart to a worker thread
+    # (see `typedal.asynchronous`), so relationships, caching, hooks and permissions behave
+    # identically - there is no second implementation of any of it. Outside an
+    # `async with db.session()` block each call commits on its own; inside one they all share
+    # the session's connection and transaction.
+
+    async def delete_async(self) -> list[int]:
+        """
+        Async twin of `delete()`.
+        """
+        return await run_async(self._get_db(), self.delete)
+
+    async def update_async(self, **fields: t.Any) -> list[int]:
+        """
+        Async twin of `update()`.
+        """
+        return await run_async(self._get_db(), self.update, **fields)
+
+    async def execute_async(self, add_id: bool = False) -> Rows:
+        """
+        Async twin of `execute()`.
+        """
+        return await run_async(self._get_db(), self.execute, add_id=add_id)
+
+    async def collect_async(
+        self,
+        verbose: bool = False,
+        _to: t.Type["TypedRows[t.Any]"] | None = None,
+        add_id: bool = True,
+        _into: t.Type[_TypedTable] | None = None,
+        _init: t.Callable[[_TypedTable, Row], None] | None = None,
+    ) -> TypedRows[T_MetaInstance]:
+        """
+        Async twin of `collect()`.
+        """
+        return await run_async(
+            self._get_db(),
+            self.collect,
+            verbose=verbose,
+            _to=_to,
+            add_id=add_id,
+            _into=_into,
+            _init=_init,
+        )
+
+    async def collect_into_async[T_Into: _TypedTable](
+        self,
+        into: t.Type[T_Into],
+        verbose: bool = False,
+        add_id: bool = True,
+        init: t.Callable[[T_Into, Row], None] | None = None,
+    ) -> TypedRows[T_Into]:
+        """
+        Async twin of `collect_into()`.
+        """
+        return await run_async(  # ty: ignore[invalid-return-type]
+            self._get_db(),
+            self.collect_into,
+            into,
+            verbose=verbose,
+            add_id=add_id,
+            init=init,
+        )
+
+    async def collect_or_fail_async(self, exception: t.Optional[Exception] = None) -> TypedRows[T_MetaInstance]:
+        """
+        Async twin of `collect_or_fail()`.
+        """
+        return await self.collect_async() or throw(exception or ValueError("Nothing found!"))
+
+    async def column_async[T: t.Any](self, field: TypedField[T] | T, **options: t.Unpack[SelectKwargs]) -> list[T]:
+        """
+        Async twin of `column()`.
+        """
+        # `column` is overloaded, which a ParamSpec cannot bind to:
+        column = t.cast(t.Callable[..., list[T]], self.column)
+        return await run_async(self._get_db(), column, field, **options)
+
+    async def count_async(self, distinct: t.Optional[bool] = None) -> int:
+        """
+        Async twin of `count()`.
+        """
+        return await run_async(self._get_db(), self.count, distinct)
+
+    async def exists_async(self) -> bool:
+        """
+        Async twin of `exists()`.
+        """
+        return await run_async(self._get_db(), self.exists)
+
+    async def paginate_async(self, limit: int, page: int = 1, verbose: bool = False) -> "PaginatedRows[T_MetaInstance]":
+        """
+        Async twin of `paginate()`.
+        """
+        return await run_async(self._get_db(), self.paginate, limit=limit, page=page, verbose=verbose)
+
+    async def chunk_async(self, chunk_size: int) -> t.AsyncGenerator[TypedRows[T_MetaInstance], None]:
+        """
+        Async twin of `chunk()`.
+
+        One page per await. Outside a session each page is its own transaction, so a concurrent
+        writer can be visible halfway through the iteration; wrap it in `db.session()` if you
+        need every page to come from the same snapshot.
+        """
+        require_permission(self._permissions, "read")
+        db = self._get_db()
+        page = 1
+
+        def fetch_page(number: int) -> TypedRows[T_MetaInstance]:
+            # on the worker thread: `__paginate` runs a count query of its own
+            return self.__paginate(chunk_size, number).collect()
+
+        while rows := await run_async(db, fetch_page, page):
+            yield rows
+            page += 1
+
+    async def first_async(self, verbose: bool = False) -> T_MetaInstance | None:
+        """
+        Async twin of `first()`.
+        """
+        return await run_async(self._get_db(), self.first, verbose=verbose)
+
+    async def first_or_fail_async(
+        self,
+        exception: t.Optional[BaseException] = None,
+        verbose: bool = False,
+    ) -> T_MetaInstance:
+        """
+        Async twin of `first_or_fail()`.
+        """
+        return await self.first_async(verbose=verbose) or throw(exception or ValueError("Nothing found!"))
 
 
 # note: these imports exist at the bottom of this file to prevent circular import issues:

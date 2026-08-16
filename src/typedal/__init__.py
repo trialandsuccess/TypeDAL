@@ -2,6 +2,7 @@
 TypeDAL Library.
 """
 
+from .asynchronous import AsyncSession
 from .core import TypeDAL
 from .fields import TypedField
 from .helpers import sql_expression
@@ -18,6 +19,7 @@ except ImportError:  # pragma: no cover
     P4W_DAL = None
 
 __all__ = [
+    "AsyncSession",
     "PaginatedRows",
     "QueryBuilder",
     "Ref",
