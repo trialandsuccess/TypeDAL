@@ -71,7 +71,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](pydal.objects.Select):
 
     def _compile(
         self,
-        outer_scoped: list[t.Any] = None,  # noqa ARG002 - inherit from Select
+        outer_scoped: list[t.Any] | None = None,  # noqa ARG002 - inherit from Select
         with_alias: bool = False,  # noqa ARG002 - inherit from Select
         cte_collector: t.Any = None,  # noqa ARG002 - inherit from Select
     ) -> tuple[list[t.Any], str]:
@@ -1271,7 +1271,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](pydal.objects.Select):
             return self.count()
 
         db = self._get_db()
-        query = self.__count(db, distinct=self.model.id, include_left_for_distinct=False)
+        query = self.__count(db, distinct=self.model.id, include_left_for_distinct=False)  # ty: ignore[invalid-argument-type]
         return db(query).count(self.model.id)
 
     def __paginate(

@@ -101,7 +101,7 @@ def evaluate_forward_reference_312(fw_ref: ForwardRef, namespace: dict[str, type
     """
     return t.cast(
         type,
-        fw_ref._evaluate(
+        fw_ref._evaluate(  # ty: ignore[deprecated]
             localns=locals(),
             globalns=globals() | namespace,
             recursive_guard=frozenset(),
@@ -117,7 +117,7 @@ def evaluate_forward_reference_313(fw_ref: ForwardRef, namespace: dict[str, type
     """
     return t.cast(
         type,
-        fw_ref._evaluate(
+        fw_ref._evaluate(  # ty: ignore[deprecated]
             localns=locals(),
             globalns=globals() | namespace,
             recursive_guard=frozenset(),
@@ -165,7 +165,7 @@ def resolve_annotation_313(ftype: str, namespace: dict[str, type] | None = None)
 
     Variant for Python 3.13
     """
-    fw_ref: ForwardRef = t.get_args(t.Type[ftype])[0]
+    fw_ref: ForwardRef = t.get_args(t.Type[ftype])[0]  # ty: ignore[invalid-type-form]
     return evaluate_forward_reference(fw_ref, namespace=namespace)
 
 
@@ -244,7 +244,7 @@ class TypeDAL(_TypeDALBase):
     def __init__(
         self,
         uri: Optional[str] = None,  # default from config or 'sqlite:memory'
-        pool_size: int = None,  # default 1 if sqlite else 3
+        pool_size: int | None = None,  # default 1 if sqlite else 3
         folder: Optional[str | Path] = None,  # default 'databases' in config
         db_codec: str = "UTF-8",
         check_reserved: Optional[list[str]] = None,
@@ -261,12 +261,12 @@ class TypeDAL(_TypeDALBase):
         debug: bool = False,
         lazy_tables: bool = False,
         db_uid: Optional[str] = None,
-        after_connection: t.Callable[..., t.Any] = None,
+        after_connection: t.Callable[..., t.Any] | None = None,
         tables: Optional[list[str]] = None,
         ignore_field_case: bool = True,
         entity_quoting: bool = True,
         table_hash: Optional[str] = None,
-        enable_typedal_caching: bool = None,
+        enable_typedal_caching: bool | None = None,
         use_pyproject: bool | str = True,
         use_env: bool | str = True,
         connection: Optional[str] = None,
@@ -397,7 +397,7 @@ class TypeDAL(_TypeDALBase):
         self._async_workers.shutdown()
         adapter = self._adapter
         try:
-            super().close()
+            super().close()  # ty: ignore[unresolved-attribute]
         finally:
             for model in set(self._builder.class_map.values()):
                 model.unbind()
@@ -524,7 +524,7 @@ class TypeDAL(_TypeDALBase):
 
         return wrapper
 
-    def __call__(self, *_args: T_Query, **kwargs: t.Any) -> "TypedSet":
+    def __call__(self, *_args: T_Query, **kwargs: t.Any) -> "TypedSet":  # ty: ignore[invalid-method-override]
         """
         A db instance can be called directly to perform a query.
 
@@ -557,7 +557,7 @@ class TypeDAL(_TypeDALBase):
         Example:
             db['users'] -> user
         """
-        return t.cast(Table, super().__getitem__(str(key)))
+        return t.cast(Table, super().__getitem__(str(key)))  # ty: ignore[unresolved-attribute]
 
     def find_model(self, table_name: str) -> t.Type["TypedTable"] | None:
         """
@@ -637,7 +637,7 @@ class TypeDAL(_TypeDALBase):
         if SYSTEM_SUPPORTS_TEMPLATES and isinstance(query, Template):  # pragma: no cover
             query = sql_escape_template(self, query)
 
-        rows: list[t.Any] = super().executesql(
+        rows: list[t.Any] = super().executesql(  # ty: ignore[unresolved-attribute]
             query,
             placeholders=placeholders,
             as_dict=as_dict,
@@ -696,7 +696,7 @@ class TypeDAL(_TypeDALBase):
         Returns:
             Cached result or fresh computation
         """
-        return memoize(self, func, *args, key=key, ttl=ttl, **kwargs)
+        return memoize(self, func, *args, key=key, ttl=ttl, **kwargs)  # ty: ignore[invalid-argument-type]
 
     def as_typescript(self, *tables: str | type[TypedTable]) -> str:
         """

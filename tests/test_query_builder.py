@@ -1,8 +1,7 @@
 import pytest
 from pydal.objects import Field, Query
 
-from src.typedal import TypeDAL, TypedField, TypedTable, relationship
-from src.typedal import QueryBuilder
+from src.typedal import QueryBuilder, TypeDAL, TypedField, TypedTable, relationship
 from src.typedal.fields import rname
 
 db = TypeDAL("sqlite:memory")
@@ -679,10 +678,14 @@ def test_paginate_inner_joins_with_raw_orderby_psql(dal_psql: TypeDAL):
     db.commit()
 
     rank_expression = "CASE WHEN 1 = 1 THEN 1 ELSE 0 END"
-    page = RankedParent.join("children", method="inner").select(
-        f"({rank_expression}) AS search_rank",
-        orderby=f"({rank_expression}) DESC",
-    ).paginate(page=1, limit=1)
+    page = (
+        RankedParent.join("children", method="inner")
+        .select(
+            f"({rank_expression}) AS search_rank",
+            orderby=f"({rank_expression}) DESC",
+        )
+        .paginate(page=1, limit=1)
+    )
 
     assert len(page) == 1
 
@@ -712,10 +715,14 @@ def test_paginate_inner_joins_with_raw_orderby_nulls_last_psql(dal_psql: TypeDAL
     db.commit()
 
     rank_expression = "CASE WHEN 1 = 1 THEN NULL ELSE 0 END"
-    page = NullRankedParent.join("children", method="inner").select(
-        f"({rank_expression}) AS search_rank",
-        orderby=f"({rank_expression}) DESC NULLS LAST",
-    ).paginate(page=1, limit=1)
+    page = (
+        NullRankedParent.join("children", method="inner")
+        .select(
+            f"({rank_expression}) AS search_rank",
+            orderby=f"({rank_expression}) DESC NULLS LAST",
+        )
+        .paginate(page=1, limit=1)
+    )
 
     assert len(page) == 1
 

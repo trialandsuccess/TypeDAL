@@ -2,8 +2,8 @@ import enum
 import gc
 import re
 import sys
-import typing
 import types
+import typing
 import weakref
 from contextlib import contextmanager
 from copy import copy
@@ -66,6 +66,7 @@ def test_database_is_garbage_collected_after_context_manager():
 
     def in_scope():
         with typedal_context() as db:
+
             @db.define
             class RelatedTable(TypedTable):
                 value = TypedField(str)

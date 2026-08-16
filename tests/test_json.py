@@ -1,8 +1,8 @@
 import datetime as dt
 import json
 
-from src.typedal.serializers.as_json import SerializedJson, encode
 from src.typedal.helpers import utcnow
+from src.typedal.serializers.as_json import SerializedJson, encode
 
 
 class CustomClass:
