@@ -20,6 +20,13 @@ if t.TYPE_CHECKING:
 
 LazyPolicy = t.Literal["forbid", "warn", "ignore", "tolerate", "allow"]
 
+ASYNC_WORKER_FLOOR = 4
+
+
+def default_async_workers(pool_size: int | None) -> int:
+    """One worker is one connection, with a floor so async stays usable at pool_size 0 or 1."""
+    return max(ASYNC_WORKER_FLOOR, pool_size or 0)
+
 
 class TypeDALConfig(TypedConfig):
     """
@@ -35,6 +42,7 @@ class TypeDALConfig(TypedConfig):
     pyproject: str
     connection: str = "default"
     lazy_policy: LazyPolicy = "tolerate"
+    async_workers: int = ASYNC_WORKER_FLOOR  # load_config raises this to max(floor, pool_size)
 
     # pydal2sql:
     input: str = ""
@@ -206,6 +214,7 @@ DEFAULTS: dict[str, t.Any | t.Callable[[AnyDict], t.Any]] = {
         f"{db_folder}/flags" if (db_folder := (data.get("folder") or data.get("db_folder"))) else "/flags"
     ),
     "pool_size": lambda data: 1 if data.get("dialect", "sqlite") == "sqlite" else 3,
+    "async_workers": lambda data: default_async_workers(data.get("pool_size")),
 }
 
 

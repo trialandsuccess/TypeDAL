@@ -129,6 +129,9 @@ is bounded: it defaults to `max(4, pool_size)` and can be set per database.
 db = TypeDAL("postgres://...", pool_size=10, async_workers=10)
 ```
 
+It is an ordinary config option, so `pyproject.toml`, `.env` and `TYPEDAL_ASYNC_WORKERS` set it too
+(see [7. Configuration](./7_configuration.md)); the keyword above wins over all of them.
+
 A session holds its worker for as long as it holds its transaction, so the number of *simultaneously
 open* sessions cannot exceed `async_workers`; further sessions wait for one to be freed. Size the
 pool to your concurrency, the way you would size any connection pool.

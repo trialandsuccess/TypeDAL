@@ -6,6 +6,7 @@ import tempfile
 import uuid
 from datetime import datetime
 from pathlib import Path
+from textwrap import dedent
 
 import pytest
 from contextlib_chdir import chdir
@@ -104,10 +105,10 @@ def test_converting(at_temp_dir):
 
 
 def test_typescript_output_from_toml(at_temp_dir):
-    Path("pyproject.toml").write_text("""
-[tool.typedal]
-typescript_output = "types/models.ts"
-""")
+    Path("pyproject.toml").write_text(dedent("""
+    [tool.typedal]
+    typescript_output = "types/models.ts"
+    """))
 
     config = load_config()
     assert config.typescript_output == "types/models.ts"
@@ -118,6 +119,68 @@ def test_environ(at_temp_dir):
     config = load_config(False, True)
 
     assert config.database == "sqlite:///tmp/db.sqlite"
+
+
+def test_async_workers_has_a_config_default_matching_the_constructor(at_temp_dir):
+    """Unset, the config carries the same `max(4, pool_size)` the constructor has always used."""
+    config = load_config()
+
+    assert config.pool_size == 1  # sqlite
+    assert config.async_workers == 4  # the floor, not the pool size
+
+    db = TypeDAL("sqlite:memory", attempts=1)
+    assert db._async_workers._max_workers == config.async_workers == 4
+
+    # above the floor it follows `pool_size`:
+    Path("pyproject.toml").write_text(dedent("""
+    [tool.typedal]
+    database = "postgres://user:pass@localhost:9631/postgres"
+    pool_size = 10
+    """))
+
+    assert load_config().async_workers == 10
+
+
+def test_async_workers_from_pyproject(at_temp_dir):
+    """A value in `[tool.typedal]` reaches the pool, exactly like `pool_size` does."""
+    Path("pyproject.toml").write_text(dedent("""
+    [tool.typedal]
+    database = "sqlite:memory"
+    async_workers = 7
+    """))
+
+    assert load_config().async_workers == 7
+
+    db = TypeDAL(attempts=1)
+    assert db._async_workers._max_workers == 7
+
+
+def test_async_workers_from_env(at_temp_dir, monkeypatch):
+    """`TYPEDAL_ASYNC_WORKERS` too, and as an int - env values arrive as strings."""
+    monkeypatch.setenv("TYPEDAL_ASYNC_WORKERS", "9")
+
+    config = load_config(_use_pyproject=False)
+
+    assert config.async_workers == 9
+    assert isinstance(config.async_workers, int)
+
+    db = TypeDAL("sqlite:memory", attempts=1, use_pyproject=False)
+    assert db._async_workers._max_workers == 9
+
+
+def test_async_workers_kwarg_wins_from_the_config(at_temp_dir):
+    """The keyword stays the last layer, as it is for every other setting."""
+    Path("pyproject.toml").write_text(dedent("""
+    [tool.typedal]
+    database = "sqlite:memory"
+    async_workers = 7
+    """))
+
+    db = TypeDAL(attempts=1, async_workers=2)
+
+    assert db._async_workers._max_workers == 2
+    # via the config, like `pool_size` and `lazy_policy`, so the config is not left lying:
+    assert db._config.async_workers == 2
 
 
 def test_expand_env_vars():

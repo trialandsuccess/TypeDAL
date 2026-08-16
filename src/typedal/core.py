@@ -16,7 +16,7 @@ from typing import Optional
 import pydal
 
 from .asynchronous import AsyncSession, ConnectionWorkerPool, current_session, run_async
-from .config import LazyPolicy, TypeDALConfig, load_config
+from .config import LazyPolicy, TypeDALConfig, default_async_workers, load_config
 from .helpers import (
     SYSTEM_SUPPORTS_TEMPLATES,
     default_representer,
@@ -272,7 +272,7 @@ class TypeDAL(_TypeDALBase):
         connection: Optional[str] = None,
         config: Optional[TypeDALConfig] = None,
         lazy_policy: LazyPolicy | None = None,
-        async_workers: Optional[int] = None,  # default: max(4, pool_size)
+        async_workers: Optional[int] = None,  # default: `default_async_workers(pool_size)`
     ) -> None:
         """
         Adds some internal tables after calling pydal's default init.
@@ -280,6 +280,9 @@ class TypeDAL(_TypeDALBase):
         Set enable_typedal_caching to False to disable this behavior.
         """
         config = config or load_config(connection, _use_pyproject=use_pyproject, _use_env=use_env)
+        # nobody named `async_workers`, so it is still derived from `pool_size` - which the
+        # update below may change.
+        derived_workers = config.async_workers == default_async_workers(config.pool_size)
         config.update(
             database=uri,
             dialect=uri.split(":")[0] if uri and ":" in uri else None,
@@ -289,7 +292,11 @@ class TypeDAL(_TypeDALBase):
             caching=enable_typedal_caching,
             pool_size=pool_size,
             lazy_policy=lazy_policy,
+            async_workers=async_workers,
         )
+
+        if async_workers is None and derived_workers:
+            config.update(async_workers=default_async_workers(config.pool_size))
 
         self._config = config
         self.db = self
@@ -304,7 +311,7 @@ class TypeDAL(_TypeDALBase):
         # `pool_size` is only a floor: with fewer workers than concurrently open sessions, a
         # session that awaits another one (a child task, say) waits for a worker that is only
         # released when it itself finishes. no threads are started until the first async call.
-        self._async_workers = ConnectionWorkerPool(self, async_workers or max(4, config.pool_size))
+        self._async_workers = ConnectionWorkerPool(self, config.async_workers)
 
         if config.folder:
             Path(config.folder).mkdir(exist_ok=True)

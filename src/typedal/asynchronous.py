@@ -91,7 +91,7 @@ class ConnectionWorkerPool:
     """
     A bounded set of `ConnectionWorker`s for one `TypeDAL`.
 
-    Worker count is connection count, so the bound defaults to the database's `pool_size`.
+    Worker count is connection count, so the bound defaults to `max(4, pool_size)`.
     Hand-over uses a plain `concurrent.futures.Future` rather than an asyncio primitive, so one
     pool can serve several event loops (tests get a fresh loop per test).
     """

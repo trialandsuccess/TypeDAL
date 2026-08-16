@@ -14,6 +14,7 @@ folder = "databases"
 caching = true
 pool_size = 0
 lazy_policy = "tolerate"
+async_workers = 4
 # keys may also be written as pool-size, lazy-policy
 ```
 
@@ -28,6 +29,8 @@ lazy_policy = "tolerate"
 - **`lazy_policy`**: Default policy for implicit relationship loading.
   Values: `forbid`, `warn`, `ignore`, `tolerate`, `allow` (default: `"tolerate"`).
   Can be overridden per relationship. See [4. Relationships](./4_relationships.md) for details.
+- **`async_workers`**: Worker threads (and thus connections) behind the async API
+  (default: `max(4, pool_size)`). See [11. Async](./11_async.md).
 
 ## Migrations
 
