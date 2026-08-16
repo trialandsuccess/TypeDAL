@@ -3,11 +3,13 @@ Both py4web and web2py can share this Auth User table definition.
 """
 
 import datetime as dt
+import typing as t
 
 from pydal.validators import CRYPT, IS_EMAIL, IS_NOT_EMPTY, IS_NOT_IN_DB, IS_STRONG
 
 from . import TypeDAL, TypedField, TypedTable
 from .fields import PasswordField
+from .types import Validator
 
 
 class AuthUser(TypedTable):
@@ -35,10 +37,11 @@ class AuthUser(TypedTable):
         """
         super().__on_define__(db)
 
-        cls.email.requires = [
+        requires = [
             IS_EMAIL(),
             IS_NOT_IN_DB(
                 db,
                 "auth_user.email",
             ),
         ]
+        cls.email.requires = t.cast(list[Validator], requires)

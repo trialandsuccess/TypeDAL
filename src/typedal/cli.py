@@ -3,10 +3,9 @@ Typer CLI for TypeDAL.
 """
 
 import sys
-import typing
+import typing as t
 import warnings
 from pathlib import Path
-from typing import Optional
 
 import tomli
 from configuraptor import asdict
@@ -34,7 +33,6 @@ except ImportError as e:
     )
     exit(127)  # command not found
 
-from typing import Never
 
 from pydal2sql.typer_support import IS_DEBUG, with_exit_code
 from pydal2sql.types import (
@@ -59,12 +57,12 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
-questionary_types: dict[typing.Hashable, Optional[AnyDict]] = {
+questionary_types: dict[t.Hashable, AnyDict | None] = {
     str: {
         "type": "text",
         "validate": lambda text: True if len(text) > 0 else "Please enter a value",
     },
-    Optional[str]: {
+    str | None: {
         "type": "text",
         # no validate because it's optional
     },
@@ -109,11 +107,11 @@ questionary_types: dict[typing.Hashable, Optional[AnyDict]] = {
 notfound = object()
 
 
-def _get_question[T](prop: str, annotation: typing.Type[T]) -> Optional[AnyDict]:  # pragma: no cover
+def _get_question[T](prop: str, annotation: t.Type[T]) -> AnyDict | None:  # pragma: no cover
     question = questionary_types.get(prop, notfound)
     if question is notfound:
         # None means skip the question, notfound means use the type default!
-        question = questionary_types.get(annotation)  # type: ignore
+        question = questionary_types.get(annotation)
 
     if not question:
         return None
@@ -121,7 +119,7 @@ def _get_question[T](prop: str, annotation: typing.Type[T]) -> Optional[AnyDict]
     return question.copy()  # type: ignore
 
 
-def get_question[T](prop: str, annotation: typing.Type[T], default: T | None) -> Optional[T]:  # pragma: no cover
+def get_question[T](prop: str, annotation: t.Type[T], default: T | None) -> T | None:  # pragma: no cover
     """
     Generate a question based on a config property and prompt the user for it.
     """
@@ -130,19 +128,19 @@ def get_question[T](prop: str, annotation: typing.Type[T], default: T | None) ->
 
     question["name"] = prop
     question["message"] = question.get("message", f"{prop}? ")
-    default = typing.cast(T, default or question.get("default") or "")
+    default = t.cast(T, default or question.get("default") or "")
 
     if annotation is int:
-        default = typing.cast(T, str(default))
+        default = t.cast(T, str(default))
 
     response = questionary.unsafe_prompt([question], default=default)[prop]
-    return typing.cast(T, response)
+    return t.cast(T, response)
 
 
 @app.command()
 @with_exit_code(hide_tb=IS_DEBUG)
 def setup(
-    config_file: typing.Annotated[Optional[str], typer.Option("--config", "-c")] = None,
+    config_file: t.Annotated[str | None, typer.Option("--config", "-c")] = None,
     minimal: bool = False,
 ) -> None:  # pragma: no cover
     """
@@ -202,7 +200,7 @@ def setup(
 
         _fill_defaults(data, prop, data.get(prop))
         default_value = data.get(prop, None)
-        answer: typing.Any = get_question(prop, annotation, default_value)
+        answer: t.Any = get_question(prop, annotation, default_value)
 
         if isinstance(answer, str):
             answer = answer.strip()
@@ -212,7 +210,7 @@ def setup(
         elif annotation is int:
             answer = int(answer)
 
-        config.update(**{prop: answer})
+        config.update(**{prop: t.cast(t.Any, answer)})
         data[prop] = answer
 
     for prop in TypeDALConfig.__annotations__:
@@ -239,16 +237,16 @@ def setup(
 @app.command(name="migrations.generate")
 @with_exit_code(hide_tb=IS_DEBUG)
 def generate_migrations(
-    connection: typing.Annotated[str, typer.Option("--connection", "-c")] = None,
+    connection: t.Annotated[str | None, typer.Option("--connection", "-c")] = None,
     filename_before: OptionalArgument[str] = None,
     filename_after: OptionalArgument[str] = None,
     dialect: DBType_Option = None,
     tables: Tables_Option = None,
-    magic: Optional[bool] = None,
-    noop: Optional[bool] = None,
-    function: Optional[str] = None,
+    magic: bool | None = None,
+    noop: bool | None = None,
+    function: str | None = None,
     output_format: OutputFormat_Option = None,
-    output_file: Optional[str] = None,
+    output_file: str | None = None,
     dry_run: bool = False,
 ) -> bool:  # pragma: no cover
     """
@@ -310,18 +308,18 @@ def generate_migrations(
 @app.command(name="migrations.run")
 @with_exit_code(hide_tb=IS_DEBUG)
 def run_migrations(
-    connection: typing.Annotated[str, typer.Option("--connection", "-c")] = None,
+    connection: t.Annotated[str | None, typer.Option("--connection", "-c")] = None,
     migrations_file: OptionalArgument[str] = None,
-    db_uri: Optional[str] = None,
-    db_folder: Optional[str] = None,
-    schema_version: Optional[str] = None,
-    redis_host: Optional[str] = None,
-    migrate_cat_command: Optional[str] = None,
-    database_to_restore: Optional[str] = None,
-    migrate_table: Optional[str] = None,
-    flag_location: Optional[str] = None,
-    schema: Optional[str] = None,
-    create_flag_location: Optional[bool] = None,
+    db_uri: str | None = None,
+    db_folder: str | None = None,
+    schema_version: str | None = None,
+    redis_host: str | None = None,
+    migrate_cat_command: str | None = None,
+    database_to_restore: str | None = None,
+    migrate_table: str | None = None,
+    flag_location: str | None = None,
+    schema: str | None = None,
+    create_flag_location: bool | None = None,
     dry_run: bool = False,
 ) -> bool:  # pragma: no cover
     """
@@ -368,13 +366,13 @@ def run_migrations(
 @app.command(name="migrations.fake")
 @with_exit_code(hide_tb=IS_DEBUG)
 def fake_migrations(
-    names: typing.Annotated[list[str], typer.Argument()] = None,
+    names: t.Annotated[list[str] | None, typer.Argument()] = None,
     all: bool = False,  # noqa: A002
-    connection: typing.Annotated[str, typer.Option("--connection", "-c")] = None,
-    migrations_file: Optional[str] = None,
-    db_uri: Optional[str] = None,
-    db_folder: Optional[str] = None,
-    migrate_table: Optional[str] = None,
+    connection: t.Annotated[str | None, typer.Option("--connection", "-c")] = None,
+    migrations_file: str | None = None,
+    db_uri: str | None = None,
+    db_folder: str | None = None,
+    migrate_table: str | None = None,
     dry_run: bool = False,
 ) -> int:  # pragma: no cover
     """
@@ -425,8 +423,7 @@ def fake_migrations(
 
     previously_migrated = (
         db(
-            db.ewh_implemented_features.name.belongs(to_fake)
-            & (db.ewh_implemented_features.installed == True),  # noqa E712
+            db.ewh_implemented_features.name.belongs(to_fake) & (db.ewh_implemented_features.installed == True),  # noqa E712
         )
         .select(db.ewh_implemented_features.name)
         .column("name")
@@ -453,12 +450,12 @@ def fake_migrations(
 @app.command(name="migrations.stub")
 @with_exit_code(hide_tb=IS_DEBUG)
 def migrations_stub(
-    migration_name: typing.Annotated[str, typer.Argument()] = "stub_migration",
-    connection: typing.Annotated[str, typer.Option("--connection", "-c")] = None,
+    migration_name: t.Annotated[str, typer.Argument()] = "stub_migration",
+    connection: t.Annotated[str | None, typer.Option("--connection", "-c")] = None,
     output_format: OutputFormat_Option = None,
-    output_file: Optional[str] = None,
-    dry_run: typing.Annotated[bool, typer.Option("--dry", "--dry-run")] = False,
-    is_pydal: typing.Annotated[bool, typer.Option("--pydal", "-p")] = False,
+    output_file: str | None = None,
+    dry_run: t.Annotated[bool, typer.Option("--dry", "--dry-run")] = False,
+    is_pydal: t.Annotated[bool, typer.Option("--pydal", "-p")] = False,
     # defaults to is_typedal of course
 ) -> int:
     """
@@ -485,12 +482,12 @@ def migrations_stub(
 @app.command(name="typescript.generate")
 @with_exit_code(hide_tb=IS_DEBUG)
 def generate_typescript(
-    connection: typing.Annotated[str, typer.Option("--connection", "-c")] = None,
+    connection: t.Annotated[str | None, typer.Option("--connection", "-c")] = None,
     filename: OptionalArgument[str] = None,
     tables: Tables_Option = None,
-    magic: Optional[bool] = None,
-    function: Optional[str] = None,
-    output_file: Optional[str] = None,
+    magic: bool | None = None,
+    function: str | None = None,
+    output_file: str | None = None,
 ) -> bool:
     """
     Generate TypeScript interfaces from TypeDAL table definitions.
@@ -564,10 +561,10 @@ def tabulate_data(data: AnyNestedDict) -> None:
     print(tabulate(flattened_data, headers="keys"))
 
 
-type FormatOptions = typing.Literal["plaintext", "json", "yaml", "toml"]
+type FormatOptions = t.Literal["plaintext", "json", "yaml", "toml"]
 
 
-def get_output_format(fmt: FormatOptions) -> typing.Callable[[AnyNestedDict], None]:
+def get_output_format(fmt: FormatOptions) -> t.Callable[[AnyNestedDict], None]:
     """
     This function takes a format option as input and \
         returns a function that can be used to output data in the specified format.
@@ -597,7 +594,7 @@ def get_output_format(fmt: FormatOptions) -> typing.Callable[[AnyNestedDict], No
                 print(tomli_w.dumps(_data))
 
         case _:
-            options = typing.get_args(FormatOptions)
+            options = t.get_args(FormatOptions)
             raise ValueError(f"Invalid format '{fmt}'. Please choose one of {options}.")
 
     return output
@@ -606,11 +603,9 @@ def get_output_format(fmt: FormatOptions) -> typing.Callable[[AnyNestedDict], No
 @app.command(name="cache.stats")
 @with_exit_code(hide_tb=IS_DEBUG)
 def cache_stats(
-    identifier: typing.Annotated[str, typer.Argument()] = "",
-    connection: typing.Annotated[str, typer.Option("--connection", "-c")] = None,
-    fmt: typing.Annotated[
-        str, typer.Option("--format", "--fmt", "-f", help="plaintext (default) or json")
-    ] = "plaintext",
+    identifier: t.Annotated[str, typer.Argument()] = "",
+    connection: t.Annotated[str | None, typer.Option("--connection", "-c")] = None,
+    fmt: t.Annotated[str, typer.Option("--format", "--fmt", "-f", help="plaintext (default) or json")] = "plaintext",
 ) -> None:  # pragma: no cover
     """
     Collect caching stats.
@@ -623,7 +618,7 @@ def cache_stats(
     config = load_config(connection)
     db = TypeDAL(config=config, migrate=False, fake_migrate=False)
 
-    output = get_output_format(typing.cast(FormatOptions, fmt))
+    output = get_output_format(t.cast(FormatOptions, fmt))
 
     data: AnyDict
     parts = identifier.split(".")
@@ -652,8 +647,8 @@ def cache_stats(
 @app.command(name="cache.clear")
 @with_exit_code(hide_tb=IS_DEBUG)
 def cache_clear(
-    connection: typing.Annotated[str, typer.Option("--connection", "-c")] = None,
-    purge: typing.Annotated[bool, typer.Option("--all", "--purge", "-p")] = False,
+    connection: t.Annotated[str | None, typer.Option("--connection", "-c")] = None,
+    purge: t.Annotated[bool, typer.Option("--all", "--purge", "-p")] = False,
 ) -> None:  # pragma: no cover
     """
     Clear (expired) items from the cache.
@@ -675,7 +670,7 @@ def cache_clear(
     db.commit()
 
 
-def version_callback() -> Never:
+def version_callback() -> t.Never:
     """
     --version requested!
     """
@@ -684,7 +679,7 @@ def version_callback() -> Never:
     raise typer.Exit(0)
 
 
-def config_callback() -> Never:
+def config_callback() -> t.Never:
     """
     --show-config requested.
     """

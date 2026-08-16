@@ -191,7 +191,7 @@ def filter_out[K, V, T](mut_dict: dict[K, V], _type: type[T]) -> dict[K, T]:
 
     Modifies mut_dict and returns everything of type _type.
     """
-    return {k: mut_dict.pop(k) for k, v in list(mut_dict.items()) if looks_like(v, _type)}
+    return t.cast(dict[K, T], {k: mut_dict.pop(k) for k, v in list(mut_dict.items()) if looks_like(v, _type)})
 
 
 def unwrap_type(_type: type) -> type:
@@ -311,7 +311,7 @@ def get_table(table: "TypedTable | Table") -> "Table":
     """
     Get the underlying pydal table for a typedal table.
     """
-    return t.cast("Table", table._table)
+    return t.cast("Table", table._table)  # ty: ignore[unresolved-attribute]
 
 
 def get_field(field: "TypedField[t.Any] | Field") -> "Field":

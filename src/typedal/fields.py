@@ -195,7 +195,7 @@ class TypedField[T_Value](Expression):  # pragma: no cover
         Bind the right db/table/field info to this class, so queries can be made using `Class.field == ...`.
         """
         self._table = table
-        self._field = field
+        self._field = t.cast(Field, field)
 
     def unbind(self) -> None:
         """Remove references to the pydal objects created during ``bind``."""
@@ -219,37 +219,37 @@ class TypedField[T_Value](Expression):  # pragma: no cover
         # try on actual field:
         return getattr(self._field, key)
 
-    def __eq__(self, other: t.Any) -> Query:
+    def __eq__(self, other: t.Any) -> Query:  # ty: ignore[invalid-method-override]
         """
         Performing == on a Field will result in a Query.
         """
         return t.cast(Query, self._field == other)
 
-    def __ne__(self, other: t.Any) -> Query:
+    def __ne__(self, other: t.Any) -> Query:  # ty: ignore[invalid-method-override]
         """
         Performing != on a Field will result in a Query.
         """
         return t.cast(Query, self._field != other)
 
-    def __gt__(self, other: t.Any) -> Query:
+    def __gt__(self, other: t.Any) -> Query:  # ty: ignore[invalid-method-override]
         """
         Performing > on a Field will result in a Query.
         """
         return t.cast(Query, self._field > other)
 
-    def __lt__(self, other: t.Any) -> Query:
+    def __lt__(self, other: t.Any) -> Query:  # ty: ignore[invalid-method-override]
         """
         Performing < on a Field will result in a Query.
         """
         return t.cast(Query, self._field < other)
 
-    def __ge__(self, other: t.Any) -> Query:
+    def __ge__(self, other: t.Any) -> Query:  # ty: ignore[invalid-method-override]
         """
         Performing >= on a Field will result in a Query.
         """
         return t.cast(Query, self._field >= other)
 
-    def __le__(self, other: t.Any) -> Query:
+    def __le__(self, other: t.Any) -> Query:  # ty: ignore[invalid-method-override]
         """
         Performing <= on a Field will result in a Query.
         """
@@ -604,7 +604,7 @@ def safe_encode_native_point(value: tuple[str, str] | tuple[float, float] | str)
             return ""
         value_tup = tuple(float(x.strip()) for x in value.split(","))
     else:
-        value_tup = value  # type: ignore
+        value_tup = value
 
     # Validate and format
     if len(value_tup) != 2:

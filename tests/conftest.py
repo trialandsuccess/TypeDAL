@@ -21,10 +21,12 @@ def psql(request):
     request.addfinalizer(postgres.stop)
     postgres.start()
 
+
 @pytest.fixture
 def dal_psql_uri(psql) -> str:
     conn_str = postgres.get_connection_url()
     return "postgres://" + conn_str.split("://")[-1]
+
 
 @pytest.fixture
 def dal_psql(dal_psql_uri: str):

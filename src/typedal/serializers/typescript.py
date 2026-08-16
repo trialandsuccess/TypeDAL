@@ -9,10 +9,13 @@ import warnings
 
 from configuraptor import Singleton
 
-try:  # optional dependency
+if t.TYPE_CHECKING:
     import typtyp
-except ImportError:  # pragma: no cover
-    typtyp = None  # type: ignore
+else:
+    try:  # optional dependency
+        import typtyp
+    except ImportError:  # pragma: no cover
+        typtyp = None
 
 
 def is_supported() -> bool:
@@ -34,20 +37,22 @@ class TypedDictRegistry(Singleton):
     @property
     def world(self) -> "typtyp.World | None":
         """Return the shared typtyp world instance, if typtyp is installed."""
+        # no `typtyp is None` check: __init__ already stores None in that case, so re-testing
+        # the import here would only duplicate it - and leave a branch nothing can reach.
         return self._world
 
     def get(self, model: type) -> type[dict[str, t.Any]] | None:
         """Return the registered TypedDict for a model, or None if absent."""
         return self._types.get(model)
 
-    def create(self, model: type, fields: dict[str, t.Any] = None, name: str = "") -> type[dict[str, t.Any]]:
+    def create(self, model: type, fields: dict[str, t.Any] | None = None, name: str = "") -> type[dict[str, t.Any]]:
         """
         Create/register a TypedDict for a model and add it to the shared world.
 
         If the world is unavailable (typtyp not installed), registration is local only.
         """
         name = name or model.__name__
-        raw_typed_dict = t.TypedDict(name, fields or {})
+        raw_typed_dict = t.TypedDict(name, fields or {})  # ty: ignore[invalid-argument-type, mismatched-type-name]
         typed_dict = t.cast(type[dict[str, t.Any]], raw_typed_dict)
         self._types[model] = typed_dict
         self.add_to_world(typed_dict, name=name)

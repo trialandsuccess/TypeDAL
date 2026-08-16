@@ -167,6 +167,11 @@ feat = "minor"
 fix = "patch"
 perf = "patch"
 
+[tool.edwh.test]
+# measure coverage over src/ only, matching su6
+directory = "src"
+
+### required in every su6 pyproject: ###
 [tool.su6]
 directory = "src"
 stop-after-first-failure = true
@@ -226,6 +231,14 @@ target-version = "py314"
 line-length = 120
 
 extend-exclude = ["*.bak/", "venv*/", "tests/", "example_*.py"]
+
+[tool.ty.src]
+include = ["src"]
+
+[tool.ty.environment]
+python = "./venv"
+python-version = "3.14"
+
 [tool.ruff.lint]
 
 select = [

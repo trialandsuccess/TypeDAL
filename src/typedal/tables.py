@@ -15,6 +15,7 @@ import uuid
 
 import pydal.objects
 from pydal._globals import DEFAULT
+from pydal.helpers.classes import SQLCallableList
 
 from .constants import JOIN_OPTIONS
 from .core import TypeDAL
@@ -71,7 +72,7 @@ def reorder_fields(
         # Start with desired fields, then append the rest
         new_order.extend(f for f in table._fields if f not in desired)
 
-    table._fields = new_order
+    table._fields = t.cast(SQLCallableList, new_order)
 
 
 class TableMeta(type):
@@ -230,7 +231,7 @@ class TableMeta(type):
 
     def update_or_insert(
         self: t.Type[T_MetaInstance],
-        query: T_Query | AnyDict = DEFAULT,
+        query: T_Query | AnyDict | t.Callable[[], None] = DEFAULT,
         **values: t.Any,
     ) -> T_MetaInstance:
         """
@@ -492,11 +493,11 @@ class TableMeta(type):
     def import_from_csv_file(
         self,
         csvfile: t.TextIO,
-        id_map: dict[str, str] = None,
+        id_map: dict[str, str] | None = None,
         null: t.Any = "<NULL>",
         unique: str = "uuid",
-        id_offset: dict[str, int] = None,  # id_offset used only when id_map is None
-        transform: t.Callable[[dict[t.Any, t.Any]], dict[t.Any, t.Any]] = None,
+        id_offset: dict[str, int] | None = None,  # id_offset used only when id_map is None
+        transform: t.Callable[[dict[t.Any, t.Any]], dict[t.Any, t.Any]] | None = None,
         validate: bool = False,
         encoding: str = "utf-8",
         delimiter: str = ",",
@@ -703,6 +704,7 @@ class TableMeta(type):
                 - True (default): keep other fields at the end, in their original order.
                 - False: remove other fields (only keep what's specified).
         """
+        assert cls._table is not None, "TypedTable.reorder_fields() requires a bound table"
         return reorder_fields(cls._table, fields, keep_others=keep_others)
 
 
@@ -934,7 +936,7 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
 
     def __new__(
         cls,
-        row_or_id: t.Union[Row, Query, pydal.objects.Set, int, str, None, "TypedTable"] = None,
+        row_or_id: t.Union[Row, Query, pydal.objects.Set, int, str, "TypedTable", None] = None,
         **filters: t.Any,
     ) -> t.Self:
         """
@@ -965,7 +967,7 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
         if not row:
             return None  # type: ignore
 
-        inst._row = row
+        inst._row = t.cast(Row, row)
 
         if hasattr(row, "id"):
             inst.__dict__.update(row)
@@ -984,7 +986,7 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
         row = self._ensure_matching_row()
         yield from iter(row)
 
-    def __getitem__(self, item: str) -> t.Any:
+    def __getitem__(self, item: str) -> t.Any:  # ty: ignore[invalid-method-override]
         """
         Allows dictionary notation to get columns.
         """
@@ -1255,7 +1257,7 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
 
     def _as_json(
         self,
-        default: t.Callable[[t.Any], t.Any] = None,
+        default: t.Callable[[t.Any], t.Any] | None = None,
         indent: t.Optional[int] = None,
         **kwargs: t.Any,
     ) -> str:
@@ -1382,9 +1384,9 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
         except ImportError as e:  # pragma: no cover
             raise RuntimeError("Can not generate SQL without the 'migration' extra or `pydal2sql` installed!") from e
 
-        return pydal2sql.generate_sql(cls)
+        return pydal2sql.generate_sql(cls)  # ty: ignore[invalid-argument-type]
 
-    def render(self, fields: list[Field] = None, compact: bool = False) -> t.Self:
+    def render(self, fields: list[Field] | None = None, compact: bool = False) -> t.Self:
         """
         Renders a copy of the object with potentially modified values.
 
@@ -1395,6 +1397,9 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
         Returns:
             A copy of the object with potentially modified values.
         """
+        assert self._db is not None, "TypedTable.render() requires a bound database"
+        assert self._table is not None, "TypedTable.render() requires a bound table"
+        assert self._relationships is not None, "TypedTable.render() requires relationship metadata"
         row = copy.deepcopy(self)
         keys = list(row)
         if not fields:
@@ -1416,6 +1421,7 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
                 relation_table = relation.table
                 if isinstance(relation_table, str):
                     relation_table = self._db[relation_table]
+                assert relation_table is not None, f"Relationship {relation_name!r} has no table"
 
                 relation_row = row[relation_name]
 
@@ -1428,7 +1434,7 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
                     for related_og in relation_row:
                         related = copy.deepcopy(related_og)
                         for fieldname in related:
-                            field = relation_table[fieldname]
+                            field = relation_table[fieldname]  # ty: ignore[not-subscriptable]
                             related[field.name] = self._db.represent(
                                 "rows_render",
                                 field,
@@ -1440,8 +1446,9 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
                     row[relation_name] = combined
                 else:
                     # 1 row
+                    assert relation_row is not None, f"Relationship {relation_name!r} has no row"
                     for fieldname in relation_row:
-                        field = relation_table[fieldname]
+                        field = relation_table[fieldname]  # ty: ignore[not-subscriptable]
                         row[relation_name][fieldname] = self._db.represent(
                             "rows_render",
                             field,

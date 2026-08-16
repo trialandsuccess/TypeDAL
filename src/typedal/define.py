@@ -37,7 +37,7 @@ try:
     from annotationlib import ForwardRef
 except ImportError:  # pragma: no cover
     # python 3.13-
-    from typing import ForwardRef
+    from typing import ForwardRef  # special case, keep `from typing`
 
 
 class IS_IN_ENUM(Validator):
@@ -49,7 +49,7 @@ class IS_IN_ENUM(Validator):
         self.etype = etype
         self.error_message = error_message
 
-    def validate(self, value: t.Any, _record_id: int | None = None) -> t.Any:
+    def validate(self, value: t.Any, _record_id: int | None = None) -> t.Any:  # ty: ignore[invalid-method-override]
         """Validate and normalize an enum-compatible value."""
         if value not in self.etype:
             raise ValidationError(self.translator(self.error_message))
@@ -102,8 +102,8 @@ class TableDefinitionBuilder:
         relationships |= {
             k: new_relationship
             for k in reference_field_keys
-            if k not in relationships and (new_relationship := to_relationship(cls, k, annotations[k]))
-        }
+            if k not in relationships and (new_relationship := to_relationship(cls, k, annotations[k]))  # ty: ignore[invalid-argument-type]
+        }  # ty: ignore[unsupported-operator]
 
         cache_dependency = self.db._config.caching and kwargs.pop("cache_dependency", True)
         table: Table = self.db.define_table(tablename, *fields.values(), **kwargs)
@@ -131,7 +131,7 @@ class TableDefinitionBuilder:
 
             table._after_insert.append(lambda _row, _id: remove_cache_for_table(tablename))
             table._before_update.append(lambda s, _: _remove_cache(s, tablename))
-            table._before_delete.append(lambda s: _remove_cache(s, tablename))
+            table._before_delete.append(lambda s: _remove_cache(s, tablename))  # ty: ignore[invalid-argument-type]
 
         return cls
 
