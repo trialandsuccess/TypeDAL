@@ -234,7 +234,6 @@ def get_expire(
 
 
 def _insert_cache_entry(
-    db: "TypeDAL",
     key: str,
     data: t.Any,
     expires_at: dt.datetime | None,
@@ -242,6 +241,12 @@ def _insert_cache_entry(
 ) -> None:
     """
     Shared internal function to insert cache entry and dependencies.
+
+    Deliberately does not commit. Filling the cache is a side effect of a read, and the transaction
+    it happens to run in belongs to the caller: committing here would commit everything the caller
+    had written so far, which turns a `db.session()` block or a `run_sync` unit that later fails
+    into a half-applied one. The entry lands with the caller's own next commit instead - and is
+    rolled back with everything else when there isn't one, which is the correct outcome for a cache.
     """
     entry = _TypedalCache.insert(
         key=key,
@@ -250,8 +255,6 @@ def _insert_cache_entry(
     )
 
     _TypedalCacheDependency.bulk_insert([{"entry": entry, "table": table, "idx": idx} for table, idx in deps])
-
-    db.commit()
 
 
 def save_to_cache[T_TypedTable: TypedTable](
@@ -265,12 +268,11 @@ def save_to_cache[T_TypedTable: TypedTable](
 
     You can call .cache(...) with dependent fields (e.g. User.id) or this function will determine them automatically.
     """
-    db = rows.db
     if (c := instance.metadata.get("cache", {})) and c.get("enabled") and (key := c.get("key")):
         expires_at = get_expire(expires_at=expires_at, ttl=ttl) or c.get("expires_at")
         deps = _determine_dependencies(instance, rows, c["depends_on"])
 
-        _insert_cache_entry(db, key, instance, expires_at, deps)
+        _insert_cache_entry(key, instance, expires_at, deps)
 
         instance.metadata["cache"]["status"] = "fresh"
     return instance
@@ -620,6 +622,6 @@ def memoize[T: t.Any](
     else:
         expires_at = get_expire(ttl=ttl)
 
-    _insert_cache_entry(db, hashed_key, result, expires_at, deps)
+    _insert_cache_entry(hashed_key, result, expires_at, deps)
 
     return result, "fresh"

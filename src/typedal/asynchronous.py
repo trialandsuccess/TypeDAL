@@ -20,6 +20,7 @@ binding is stamped with the task that created it and ignored anywhere else.
 
 import asyncio
 import concurrent.futures
+import contextlib
 import contextvars
 import functools
 import threading
@@ -60,9 +61,19 @@ class ConnectionWorker:
         return await asyncio.wrap_future(self._executor.submit(fn))
 
     def shutdown(self) -> None:
-        """Close this worker's connection on its own thread, then stop the thread."""
-        self._executor.submit(self._close_connection)
-        self._executor.shutdown(wait=True)
+        """
+        Close this worker's connection on its own thread, then stop the thread.
+
+        The close runs on the worker because the connection is that thread's thread local, and its
+        result is collected rather than dropped: this is the one path whose whole job is to release
+        that connection, so a close that fails has to be heard rather than disappear. The thread is
+        stopped either way - a connection that will not close is still not worth a live thread.
+        """
+        future = self._executor.submit(self._close_connection)
+        try:
+            future.result()
+        finally:
+            self._executor.shutdown(wait=True)
 
     def _close_connection(self) -> None:
         adapter = getattr(self._db, "_adapter", None)
@@ -130,19 +141,41 @@ class ConnectionWorkerPool:
 
             self._idle.append(worker)
 
+    def discard(self, worker: ConnectionWorker) -> None:
+        """
+        Drop a worker whose connection can no longer be trusted, freeing its slot in the pool.
+
+        For the connection that can settle neither way: releasing it would hand an open, unsettleable
+        transaction to the next borrower, and holding on to it would shrink the pool for good.
+        """
+        with self._lock:
+            self._created -= 1
+
+        worker.shutdown()
+
     def shutdown(self) -> None:
         """
         Close every idle worker's connection and stop its thread. Blocking; safe from sync code.
 
         Workers currently held by a session are left alone: their owner is still using them, and
         killing a thread mid-transaction is worse than a late shutdown.
+
+        Every worker is shut down even when one of them fails to close, so a single bad connection
+        cannot strand the rest; the failures are raised together once they all have been tried.
         """
         with self._lock:
             workers, self._idle = self._idle, []
             self._created -= len(workers)
 
+        errors: list[Exception] = []
         for worker in workers:
-            worker.shutdown()
+            try:
+                worker.shutdown()
+            except Exception as e:  # pragma: no cover - needs a connection that refuses to close
+                errors.append(e)
+
+        if errors:  # pragma: no cover - same
+            raise ExceptionGroup("closing async worker connections failed", errors)
 
 
 class SessionBinding(t.NamedTuple):
@@ -207,7 +240,7 @@ class AsyncSession:
 
         try:
             if exc_type is None:
-                await self.commit()
+                await self._commit_or_rollback()
             else:
                 await self.rollback()
         finally:
@@ -240,15 +273,47 @@ class AsyncSession:
 
         return self._worker
 
+    async def _commit_or_rollback(self) -> None:
+        """
+        Commit, falling back to a rollback so the scope never ends with the transaction open.
+
+        A commit can fail on its own - SQLITE_BUSY, a deferred constraint, a connection that died
+        between the last statement and this one - and the transaction is then still there. The
+        caller gets the commit error either way; what changes is the state it leaves behind.
+        """
+        try:
+            await self.commit()
+        except BaseException:
+            try:
+                await self.rollback()
+            except Exception:
+                # neither commit nor rollback got through: this connection is not fit to be reused.
+                await self._discard_worker()
+            raise
+
     async def _settle(self, action: t.Callable[[], None]) -> None:
-        worker, self._worker = self._worker, None
+        worker = self._worker
         if worker is None:
             return
 
-        try:
-            await worker.run(action)
-        finally:
-            self._db._async_workers.release(worker)
+        # the worker is released only once the transaction is actually settled: giving it back
+        # while the transaction is still open would hand it to the next borrower mid-write, and
+        # clearing `self._worker` first would leave this session unable to try again.
+        await worker.run(action)
+
+        self._worker = None
+        self._db._async_workers.release(worker)
+
+    async def _discard_worker(self) -> None:
+        worker, self._worker = self._worker, None
+        if worker is None:  # pragma: no cover - only reached from a failed settle, which held one
+            return
+
+        loop = asyncio.get_running_loop()
+        # shutting a worker down blocks on its thread, and closing a connection this broken may
+        # well fail too - neither belongs on the event loop or on top of the error being raised.
+        with contextlib.suppress(Exception):
+            await loop.run_in_executor(None, self._db._async_workers.discard, worker)
 
 
 async def run_async[**P, T](db: "TypeDAL", fn: t.Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> T:
@@ -273,12 +338,24 @@ async def run_async[**P, T](db: "TypeDAL", fn: t.Callable[P, T], *args: P.args, 
 
 
 def run_and_commit[T](db: "TypeDAL", call: t.Callable[[], T]) -> T:
-    """Run `call` on the worker's thread and settle its transaction: commit, or rollback on error."""
+    """
+    Run `call` on the worker's thread and settle its transaction: commit, or rollback on error.
+
+    The commit is guarded too, not just the call: it can fail on its own and leave the transaction
+    open behind it. `run_async` gives the worker back regardless, so anything still open at that
+    point becomes the next borrower's problem - a different task, in a different transaction,
+    reading and then committing writes that were never theirs.
+    """
     try:
         result = call()
     except BaseException:
         db.rollback()
         raise
 
-    db.commit()
+    try:
+        db.commit()
+    except BaseException:
+        db.rollback()
+        raise
+
     return result

@@ -26,7 +26,20 @@ import pytest
 import pytest_asyncio
 
 from src.typedal import TypeDAL, TypedField, TypedTable
+from src.typedal.asynchronous import ConnectionWorker
 from src.typedal.fields import DecimalField, JSONField
+
+
+class AsyncThingCached(TypedTable):
+    """
+    Model for the caching tests, at module level because the cache stores rows with `dill`.
+
+    `dill` only pickles a class by reference when it can import it back by name; a class defined
+    inside a test function is pickled by value instead, which drags the whole `TypeDAL` (and its
+    thread locals) into the pickle and fails. Every other model here can stay local.
+    """
+
+    qty: TypedField[int]
 
 
 @contextlib.asynccontextmanager
@@ -87,6 +100,22 @@ async def db_concurrent(request: pytest.FixtureRequest, dal_psql: TypeDAL) -> t.
     """Same, restricted to the backends where a second connection can read during a write."""
     async with _DB_FACTORIES[request.param](dal_psql) as db:
         yield db
+
+
+@pytest_asyncio.fixture
+async def db_cached() -> t.AsyncIterator[TypeDAL]:
+    """
+    A database with TypeDAL's own caching layer left *on*, which every other fixture here disables.
+
+    File-backed, because the point of these tests is what the cache does to a real open
+    transaction, and `sqlite:memory` cannot hold one across two connections.
+    """
+    with tempfile.TemporaryDirectory() as d:
+        db = TypeDAL(f"sqlite://{Path(d) / 'async-cached.db'}", enable_typedal_caching=True, folder=d)
+        try:
+            yield db
+        finally:
+            db.close()
 
 
 ##########
@@ -1238,3 +1267,229 @@ async def test_an_open_async_transaction_does_not_block_a_sync_thread(dal_psql: 
         for source in ("thread", "session")
     }
     assert counts == {"thread": rounds, "session": rounds}
+
+
+########################
+# settlement failures  #
+########################
+
+
+@pytest.mark.asyncio
+async def test_a_failed_flat_commit_rolls_back_before_the_worker_is_released(db_async: TypeDAL):
+    """
+    A statement can succeed and the *commit* still fail: SQLITE_BUSY, a deferred constraint,
+    a connection that died between the two.
+
+    `run_and_commit` only rolls back when `call()` raises, so a failing `db.commit()` skips the
+    rollback entirely and `run_async`'s `finally` hands the worker back to the pool with the
+    transaction still open. The next borrower - a different task, doing something unrelated -
+    inherits those rows: it can read them, and its own commit will commit them.
+    """
+    db = db_async
+
+    @db.define()
+    class AsyncThingCommitFailure(TypedTable):
+        qty: TypedField[int]
+
+    real_commit = db.commit
+    attempts = itertools.count()
+
+    def failing_commit() -> None:
+        if next(attempts) == 0:
+            raise RuntimeError("commit failed")
+        real_commit()
+
+    db.commit = failing_commit
+    try:
+        with pytest.raises(RuntimeError):
+            await AsyncThingCommitFailure.insert_async(qty=1)
+    finally:
+        db.commit = real_commit
+
+    # the insert never committed, so it must not be observable - not by the next borrower of that
+    # worker, and not after that borrower commits its own (empty) transaction either.
+    assert await AsyncThingCommitFailure.count_async() == 0
+
+    db.rollback()
+    assert AsyncThingCommitFailure.count() == 0
+
+
+def _failing_once_commit(db: TypeDAL) -> t.Callable[[], None]:
+    """A `db.commit` that raises the first time and behaves after that."""
+    real_commit = db.commit
+    attempts = itertools.count()
+
+    def failing_commit() -> None:
+        if next(attempts) == 0:
+            raise RuntimeError("commit failed")
+        real_commit()
+
+    return failing_commit
+
+
+@pytest.mark.asyncio
+async def test_a_failed_session_commit_keeps_the_worker_and_lets_the_caller_roll_back(db_async: TypeDAL):
+    """
+    The same hole in `AsyncSession._settle`, where it costs more.
+
+    `_settle` clears `self._worker` *before* running the commit, so a commit that raises leaves the
+    session without its handle: the worker goes back to the pool mid-transaction, and the caller's
+    `await session.rollback()` finds `self._worker is None` and returns silently. They are told the
+    commit failed and then have no way at all to settle the transaction they still own.
+
+    An explicit commit inside the block, checked at the moment it fails: that is the only point
+    where the invariant is visible, since leaving the block settles the transaction one way or
+    another (the test below) and frees the worker for real.
+    """
+    db = db_async
+
+    @db.define()
+    class AsyncThingSessionCommitFailure(TypedTable):
+        qty: TypedField[int]
+
+    real_commit = db.commit
+    session = db.session()
+
+    db.commit = _failing_once_commit(db)
+    try:
+        with pytest.raises(RuntimeError):
+            async with session:
+                await AsyncThingSessionCommitFailure.insert_async(qty=1)
+                try:
+                    await session.commit()
+                except RuntimeError:
+                    # the commit did not go through, so the transaction is still open and still
+                    # this session's: it keeps its worker, and nobody else may be handed it.
+                    assert session._worker is not None
+                    assert db._async_workers._idle == []
+                    raise
+    finally:
+        db.commit = real_commit
+
+    assert await AsyncThingSessionCommitFailure.count_async() == 0
+
+
+@pytest.mark.asyncio
+async def test_a_failed_commit_at_scope_exit_still_settles_the_transaction(db_async: TypeDAL):
+    """
+    The other half: when the *implicit* commit at the end of the block fails.
+
+    There is no caller left to settle it - the block is over and the scope raises - so the session
+    has to fall back to a rollback itself. Whatever it does, what it must not do is what it does
+    today: release the worker with the transaction still open, and then have `__aexit__`'s own
+    rollback quietly do nothing because the handle is already gone.
+    """
+    db = db_async
+
+    @db.define()
+    class AsyncThingExitCommitFailure(TypedTable):
+        qty: TypedField[int]
+
+    real_commit = db.commit
+
+    db.commit = _failing_once_commit(db)
+    try:
+        with pytest.raises(RuntimeError):
+            async with db.session():
+                await AsyncThingExitCommitFailure.insert_async(qty=1)
+    finally:
+        db.commit = real_commit
+
+    assert await AsyncThingExitCommitFailure.count_async() == 0
+
+    db.rollback()
+    assert AsyncThingExitCommitFailure.count() == 0
+
+
+###########
+# caching #
+###########
+
+
+@pytest.mark.asyncio
+async def test_a_cached_collect_does_not_commit_the_session_transaction(db_cached: TypeDAL):
+    """
+    Caching is a side effect of a read, and it must not end the caller's transaction.
+
+    `_insert_cache_entry` (`src/typedal/caching.py`) finishes with `db.commit()`. Inside a session
+    that commit is not the cache's own - it is the caller's, and it commits every write made in
+    the block so far. The session then rolls back to nothing, and the writes it promised to undo
+    are already durable.
+    """
+    db = db_cached
+    db.define(AsyncThingCached)
+
+    class Boom(Exception):
+        pass
+
+    with pytest.raises(Boom):
+        async with db.session():
+            await AsyncThingCached.insert_async(qty=1)
+
+            rows = await AsyncThingCached.where(AsyncThingCached.qty > 0).cache(ttl=60).collect_async()
+            assert len(rows) == 1  # the cached read sees the session's own uncommitted write
+
+            raise Boom
+
+    assert await AsyncThingCached.count_async() == 0
+
+
+@pytest.mark.asyncio
+async def test_a_cached_collect_does_not_commit_a_run_sync_unit(db_cached: TypeDAL):
+    """
+    Same defect through `run_sync`, which is the documented way to keep a unit of work atomic.
+
+    The callback is one transaction by contract; a `.cache()` anywhere inside it splits that
+    transaction in two, and the first half survives a failure of the second.
+    """
+    db = db_cached
+    db.define(AsyncThingCached)
+
+    def unit() -> None:
+        AsyncThingCached.insert(qty=1)
+        AsyncThingCached.where(AsyncThingCached.qty > 0).cache(ttl=60).collect()
+        raise RuntimeError("second half failed")
+
+    with pytest.raises(RuntimeError):
+        await db.run_sync(unit)
+
+    assert await AsyncThingCached.count_async() == 0
+
+
+###################
+# worker shutdown #
+###################
+
+
+@pytest.mark.asyncio
+async def test_worker_shutdown_surfaces_a_failed_connection_close(db_async: TypeDAL):
+    """
+    `ConnectionWorker.shutdown` submits `_close_connection` and never looks at the future.
+
+    A connection that fails to close - a rollback the server refuses, a socket already gone -
+    therefore disappears without a trace, on the one code path whose entire job is to release
+    that connection. Failing to close must be loud; whether that is a raise or a log is the call
+    to make, but silence is not one of the options.
+    """
+    worker = ConnectionWorker(db_async, "typedal-async-shutdown-failure")
+    await worker.run(lambda: None)
+
+    def failing_close() -> None:
+        raise RuntimeError("close failed")
+
+    worker._close_connection = failing_close  # ty: ignore[invalid-assignment]
+
+    with pytest.raises(RuntimeError):
+        worker.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_shutting_down_a_worker_that_never_ran_a_statement_is_safe(db_async: TypeDAL):
+    """
+    The companion to the test above: a worker created but never used has no connection to close.
+
+    Green today only because `shutdown` swallows everything. It must stay green once failures are
+    surfaced - `_close_connection` closing a connection that was never opened is not an error.
+    """
+    worker = ConnectionWorker(db_async, "typedal-async-unused")
+    worker.shutdown()
