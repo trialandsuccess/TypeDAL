@@ -333,3 +333,5 @@ person.delete_record()
 
 Need less-common query patterns (for example, using `QueryBuilder` on old-style pyDAL tables)?
 See [10. Advanced APIs](./10_advanced_apis.md).
+
+Calling these from async code? Every execution method has a non-blocking `*_async` twin - see [11. Async](./11_async.md).

@@ -3,7 +3,8 @@
 Every method that talks to the database has an `*_async` twin: `collect_async()`, `insert_async()`,
 `count_async()`, and so on. They do exactly what their sync counterparts do (same arguments, same
 return values, same relationships, caching, hooks and permissions), except that they do not block
-the event loop while the database is busy.
+the event loop while the database is busy. The one exception is lazy loading, which has no async
+form at all - see [Lazy loading is not async](#lazy-loading-is-not-async).
 
 ```python
 from typedal import TypeDAL, TypedTable, TypedField
@@ -84,6 +85,18 @@ async with db.session() as session:
 ```
 
 `db.run_sync(fn)` does the same outside a session: offloaded, and committed on return.
+
+### Lazy loading is not async
+
+Lazy loading is the one part of the ORM without an async twin, and it cannot get one: it is
+triggered by *attribute access*, and attribute access cannot be awaited. So `post.author.name` or
+`post.tags` after `first_async()` still issues its follow-up query on the calling thread, and in a
+handler that thread is the event loop, which then stalls for the round trip - no error, and no
+warning beyond the usual `lazy` one. Only the non-querying modes (`"forbid"`, `"warn"`, `"ignore"`;
+see [4. Relationships](./4_relationships.md#lazy-loading-and-explicit-relationships)) are safe to
+touch from a coroutine. For the rest there are two places to be: either join the relationship up
+front (`Post.join("author", "tags").first_async()` - one query instead of N, async or not), or do
+the access inside `run_sync`, where blocking is what the worker thread is for.
 
 ### Sessions belong to one task
 
