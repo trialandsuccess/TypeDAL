@@ -26,7 +26,7 @@ import pytest
 import pytest_asyncio
 
 from src.typedal import TypeDAL, TypedField, TypedTable
-from src.typedal.asynchronous import ConnectionWorker
+from src.typedal.asynchronous import AsyncSession, ConnectionWorker
 from src.typedal.fields import DecimalField, JSONField
 
 
@@ -81,10 +81,8 @@ _DB_FACTORIES: dict[str, t.Callable[[TypeDAL], t.AsyncContextManager[TypeDAL]]] 
     "sqlite-file": _sqlite_file_db,
 }
 
-# the backends where a second connection can read while another one holds an open write.
-# shared-cache `sqlite:memory` cannot: its table locks turn the reader away outright. That is
-# sqlite's limit and it applies to plain threads just as much, so those tests skip it rather
-# than pretend the engine can route around it.
+# backends where a second connection can read during an open write; shared-cache
+# `sqlite:memory` cannot, so those tests skip it.
 _CONCURRENT_DB_FACTORIES = ["postgres", "sqlite-file"]
 
 
@@ -1200,15 +1198,83 @@ async def test_a_session_cancelled_during_its_commit_returns_its_worker(db_async
 
 
 @pytest.mark.asyncio
-async def test_discarding_a_worker_frees_its_slot_for_a_queued_caller(db_async: TypeDAL):
-    """
-    `discard()` frees a slot, so whoever is queued for one must be served.
+async def test_a_worker_abandoned_with_an_unsettleable_connection_is_discarded(db_async: TypeDAL):
+    """A worker whose abandon rollback fails too is discarded, slot and all."""
+    db = db_async
+    pool = db._async_workers
+    pool._max_workers = 1
 
-    `release()` is the only thing that drains `_waiters`, and `discard()` lowers `_created` without
-    going near it. New workers are created in `acquire()`, which a queued caller has already passed.
-    So discarding the last busy worker of a saturated pool strands everyone behind it: the slot is
-    free, the queue is not, and no `release()` is ever coming.
-    """
+    @db.define()
+    class AsyncThingAbandonUnsettleable(TypedTable):
+        qty: TypedField[int]
+
+    loop = asyncio.get_running_loop()
+    committing = asyncio.Event()
+    real_commit, real_rollback = db.commit, db.rollback
+
+    def slow_commit() -> None:
+        loop.call_soon_threadsafe(committing.set)
+        time.sleep(0.2)
+        real_commit()
+
+    def slow_failing_rollback() -> None:
+        # slow, so the second cancellation lands *inside* the fallback rollback rather than after
+        # it; failing, so both the fallback and the abandon's own rollback give up.
+        time.sleep(0.2)
+        raise RuntimeError("rollback failed")
+
+    async def work() -> None:
+        async with db.session():
+            await AsyncThingAbandonUnsettleable.insert_async(qty=1)
+            db.commit = slow_commit  # ty: ignore[invalid-assignment]
+            db.rollback = slow_failing_rollback  # ty: ignore[invalid-assignment]
+
+    task = asyncio.create_task(work())
+    try:
+        await committing.wait()
+
+        task.cancel()  # lands on the commit; `_commit_or_rollback` falls back to the rollback
+        await asyncio.sleep(0.05)
+        task.cancel()  # lands on that fallback, leaving `__aexit__` to abandon the worker
+
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        # discarded, not released: nobody inherits the open transaction.
+        await _wait_until(lambda: pool._created == 0)
+        assert pool._idle == []
+    finally:
+        db.commit, db.rollback = real_commit, real_rollback  # ty: ignore[invalid-assignment]
+
+    # and the slot came back with it, so the next call simply opens a fresh worker.
+    await asyncio.wait_for(AsyncThingAbandonUnsettleable.insert_async(qty=2), timeout=5)
+    assert pool._created == 1
+
+
+@pytest.mark.asyncio
+async def test_abandoning_a_worker_whose_thread_is_already_gone_does_not_raise():
+    """Abandoning must not raise, even when the worker's thread is already gone."""
+    # own database: the dropped worker's slot stays counted, and `db_async` postgres is shared.
+    async with _sqlite_db() as db:
+        pool = db._async_workers
+
+        session = AsyncSession(db)
+        worker = await session._acquire()
+        await worker.run(lambda: None)
+
+        worker.shutdown()  # the thread disappears underneath the session
+
+        session._abandon_worker()  # must not raise
+
+        assert session._worker is None
+
+        assert pool._created == 1
+        assert pool._idle == []
+
+
+@pytest.mark.asyncio
+async def test_discarding_a_worker_frees_its_slot_for_a_queued_caller(db_async: TypeDAL):
+    """`discard()` frees a slot, so whoever is queued for one is served."""
     db = db_async
     pool = db._async_workers
     pool._max_workers = 1
@@ -1257,6 +1323,30 @@ async def test_pool_shutdown_does_not_strand_queued_callers(db_async: TypeDAL):
     try:
         with pytest.raises((asyncio.CancelledError, RuntimeError)):
             await asyncio.wait_for(queued, timeout=5)
+    finally:
+        pool.release(worker)
+
+
+@pytest.mark.asyncio
+async def test_pool_shutdown_tells_queued_callers_why_they_are_not_getting_a_worker(db_async: TypeDAL):
+    """Queued callers get a `RuntimeError` naming the shutdown, not a bare cancellation."""
+    db = db_async
+    pool = db._async_workers
+    pool._max_workers = 1
+
+    worker = await pool.acquire_async()  # saturates the pool
+    await worker.run(lambda: None)
+
+    queued = [asyncio.ensure_future(pool.acquire_async()) for _ in range(3)]
+    await asyncio.sleep(0.05)
+    assert len(pool._waiters) == 3
+
+    await asyncio.get_running_loop().run_in_executor(None, pool.shutdown)
+
+    try:
+        for future in queued:
+            with pytest.raises(RuntimeError, match="shutting down"):
+                await asyncio.wait_for(future, timeout=5)
     finally:
         pool.release(worker)
 
