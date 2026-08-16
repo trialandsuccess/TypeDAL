@@ -119,10 +119,10 @@ TYPEDAL_DATABASE="psql://user:password@host:5432/database"
 
 TypeDAL loads configuration in this order (highest priority last):
 
-1. **`pyproject.toml`** — Base configuration
-2. **`.env` file** — Environment-specific overrides
-3. **Environment variables** — System env vars with `TYPEDAL_` prefix (override `.env`)
-4. **`TypeDAL()` kwargs** — Runtime arguments passed to the constructor
+1. **`pyproject.toml`**: Base configuration
+2. **`.env` file**: Environment-specific overrides
+3. **Environment variables**: System env vars with `TYPEDAL_` prefix (override `.env`)
+4. **`TypeDAL()` kwargs**: Runtime arguments passed to the constructor
 
 Example with all layers:
 
