@@ -1121,3 +1121,26 @@ def test_relationship_self():
     assert rows.value == "two"
     assert len(rows.related_directly) == 2
     assert set(row.value for row in rows.related_directly) == {"two"}
+
+def test_relationship_labels():
+
+    @db.define
+    class RelationshipTarget(TypedTable):
+        gid: str
+
+    @db.define
+    class TableWithRelationship(TypedTable):
+        other_gid = TypedField(str, label="Relationship Reference")
+        some_field = TypedField(str)
+
+        target = relationship(RelationshipTarget, lambda self, other: self.other_gid == other.gid, label="Other Gid")
+        other_rel = relationship(RelationshipTarget, lambda self, other: self.other_gid == other.gid)
+
+    # defaults, derived:
+    assert TableWithRelationship.some_field.label == "Some Field"
+    assert TableWithRelationship.other_rel.label == "Other Rel"
+
+    # custom:
+    assert TableWithRelationship.other_gid.label == "Relationship Reference"
+    assert TableWithRelationship.target.label == "Other Gid"
+
