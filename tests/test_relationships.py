@@ -314,7 +314,8 @@ def test_typedal_way():
     author1 = User.where(id=4).join("articles").first()
 
     assert (
-        len(author1.as_dict()["articles"]) == len(author1.__dict__["articles"]) == len(dict(author1)["articles"]) == 2
+            len(author1.as_dict()["articles"]) == len(author1.__dict__["articles"]) == len(
+        dict(author1)["articles"]) == 2
     )
 
 
@@ -484,12 +485,12 @@ def test_caching():
     cached_user_only2 = User.join().cache(User.id).collect_or_fail()
 
     assert (
-        len(uncached2)
-        == len(uncached)
-        == len(cached2)
-        == len(cached)
-        == len(cached_user_only2)
-        == len(cached_user_only)
+            len(uncached2)
+            == len(uncached)
+            == len(cached2)
+            == len(cached)
+            == len(cached_user_only2)
+            == len(cached_user_only)
     )
 
     assert uncached.as_json() == uncached2.as_json() == cached.as_json() == cached2.as_json()
@@ -497,9 +498,9 @@ def test_caching():
     assert cached.first().gid == cached2.first().gid
 
     assert (
-        [_.name for _ in uncached2.first().roles]
-        == [_.name for _ in cached.first().roles]
-        == [_.name for _ in cached2.first().roles]
+            [_.name for _ in uncached2.first().roles]
+            == [_.name for _ in cached.first().roles]
+            == [_.name for _ in cached2.first().roles]
     )
 
     assert not uncached2.metadata.get("cache", {}).get("enabled")
@@ -827,7 +828,6 @@ def test_memoize_with_empty_table():
 
 def test_illegal():
     with pytest.raises(ValueError), pytest.warns(UserWarning):
-
         class HasRelationship:
             something = relationship("...", condition=lambda: 1, on=lambda: 2)
 
@@ -1079,3 +1079,45 @@ def test_nested_join_with_shared_foreign_key():
             f"Office {idx}: expected 'San Francisco', got '{office.city_alternative.name}'"
         )
         assert office.city_alternative.id == san_francisco.id, f"Office {idx}: city id mismatch"
+
+
+def test_relationship_self():
+    @db.define()
+    class IntermediateTable(TypedTable):
+        left: str
+        right: str
+
+    @db.define()
+    class SelfReferencing(TypedTable):
+        key: str
+        value: str
+
+        related_directly = relationship(list["SelfReferencing"],
+                                        lambda self, other: self.value == other.value
+                                        )
+
+        related_indirectly = relationship(list["SelfReferencing"],
+                                          on=lambda self, other: [
+                                              via := IntermediateTable.unique_alias(),
+                                              via.on(via.left == self.value),
+                                              other.on(via.right == other.value)
+                                          ])
+
+    IntermediateTable.insert(left="two", right="two")
+    IntermediateTable.insert(left="three", right="one")
+
+    _first = SelfReferencing.insert(key="one", value="two")
+    _second = SelfReferencing.insert(key="two", value="two")
+    _third = SelfReferencing.insert(key="three", value="three")
+
+    rows = SelfReferencing.join("related_indirectly").where(key="one").first_or_fail()
+
+    assert rows.value == "two"
+    assert len(rows.related_indirectly) == 2
+    assert set(row.value for row in rows.related_indirectly) == {"two"}
+
+    rows = SelfReferencing.join("related_directly").where(key="one").first_or_fail()
+
+    assert rows.value == "two"
+    assert len(rows.related_directly) == 2
+    assert set(row.value for row in rows.related_directly) == {"two"}
