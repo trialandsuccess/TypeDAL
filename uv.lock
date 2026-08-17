@@ -2561,7 +2561,7 @@ wheels = [
 
 [[package]]
 name = "typedal"
-version = "4.9.14"
+version = "4.9.15"
 source = { editable = "." }
 dependencies = [
     { name = "configurable-json" },
