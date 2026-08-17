@@ -2,6 +2,16 @@
 
 <!--next-version-placeholder-->
 
+## v4.9.16 (2026-08-17)
+
+### Fix
+* allow setting 'label' in relationships
+
+## v4.9.15 (2026-08-17)
+
+### Fix
+* support `relationship` to current table, both directly and via junction table
+
 ## v4.9.14 (2026-08-10)
 
 ### Fix

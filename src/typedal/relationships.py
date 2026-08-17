@@ -39,6 +39,7 @@ class Relationship[To_Type]:
     explicit: bool
     name: str | None = None  # set by __set_name__
     _owner: t.Type["TypedTable"] | None = None
+    label: str
 
     def __init__(
         self,
@@ -50,6 +51,7 @@ class Relationship[To_Type]:
         nested: dict[str, t.Self] | None = None,
         lazy: LazyPolicy | None = None,
         explicit: bool = False,
+        label: str = "",
     ):
         """
         Should not be called directly, use relationship() instead!
@@ -67,6 +69,7 @@ class Relationship[To_Type]:
         self.on = on
         self.condition_and = condition_and
         self._lazy = lazy
+        self.label = label
 
         if args := t.get_args(_type):
             self.table = unwrap_type(args[0])
@@ -134,6 +137,9 @@ class Relationship[To_Type]:
         """Called automatically when assigned to a class attribute."""
         self._owner = owner
         self.name = name
+
+        if not self.label:
+            self.label = self.name.replace("_", " ").title()
 
     def get_table(self, db: "TypeDAL") -> t.Type["TypedTable"]:
         """
@@ -325,6 +331,7 @@ def relationship(
     on: OnQuery = None,
     lazy: LazyPolicy | None = None,
     explicit: bool = False,
+    label: str = "",
 ) -> "Relationship[list[To_Type]]":
     """
     Define a relationship that returns a list of related instances.
@@ -346,6 +353,7 @@ def relationship(
     on: OnQuery = None,
     lazy: LazyPolicy | None = None,
     explicit: bool = False,
+    label: str = "",
 ) -> "Relationship[To_Type]":
     """
     Define a relationship that returns a single related instance (never None with inner join).
@@ -367,6 +375,7 @@ def relationship(
     on: OnQuery = None,
     lazy: LazyPolicy | None = None,
     explicit: bool = False,
+    label: str = "",
 ) -> "Relationship[To_Type | None]":
     """
     Define a relationship that returns a single optional related instance.
@@ -386,6 +395,7 @@ def relationship(
     on: OnQuery = None,
     lazy: LazyPolicy | None = None,
     explicit: bool = False,
+    label: str = "",
 ) -> "Relationship[list[To_Type]] | Relationship[To_Type] | Relationship[To_Type | None]":
     """
     Define a relationship to another table, when its id is not stored in the current table.
@@ -407,6 +417,7 @@ def relationship(
         explicit: If True, this relationship is only joined when explicitly requested
                   (e.g. User.join("tags")). Bare User.join() calls will skip it.
                   Useful for expensive or rarely-needed relationships. Defaults to False.
+        label: Human-readable/UI label for this relationship
 
     Example:
         class User(TypedTable):
@@ -436,7 +447,7 @@ def relationship(
     """
     return t.cast(
         Relationship[list[To_Type]] | Relationship[To_Type] | Relationship[To_Type | None],
-        Relationship(_type, condition, join, on, lazy=lazy, explicit=explicit),
+        Relationship(_type, condition, join, on, lazy=lazy, explicit=explicit, label=label),
     )
 
 

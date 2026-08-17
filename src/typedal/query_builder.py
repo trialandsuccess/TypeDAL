@@ -944,13 +944,22 @@ class QueryBuilder[T_MetaInstance: _TypedTable](pydal.objects.Select):
 
         select_fields = ", ".join([str(_) for _ in select_args])
         pre_alias = str(other)
+        # Self-referencing relationship: 'other' is the same table as 'parent_table', so the
+        # name-based helpers below can't tell their fields apart. Alias upfront and skip them.
+        is_self_reference = other is parent_table
 
-        # Ensure required fields are selected
-        select_args = self._ensure_relationship_fields(select_args, other, select_fields)
+        if is_self_reference:
+            other = other.with_alias(f"{key}_{hash(relation)}")
+            select_args = [*select_args, other.ALL]
+        else:
+            # Ensure required fields are selected
+            select_args = self._ensure_relationship_fields(select_args, other, select_fields)
 
         # Build join condition
         if relation.on:
             # Custom .on condition - always left join
+            # (for is_self_reference, 'other' was already aliased above so the on() callback
+            # receives distinguishable tables for both sides of the join)
             on = relation.on(parent_table, other)  # ty: ignore[invalid-argument-type]
             if not isinstance(on, list):
                 on = [on]
@@ -959,7 +968,8 @@ class QueryBuilder[T_MetaInstance: _TypedTable](pydal.objects.Select):
             left_joins.extend(on)  # ty: ignore[invalid-argument-type]
         elif method == "left":
             # Generate left join condition
-            other = other.with_alias(f"{key}_{hash(relation)}")
+            if not is_self_reference:
+                other = other.with_alias(f"{key}_{hash(relation)}")
             condition = t.cast(Query, relation.condition(parent_table, other))  # ty: ignore[call-non-callable, invalid-argument-type]
 
             if callable(relation.condition_and):
@@ -968,10 +978,12 @@ class QueryBuilder[T_MetaInstance: _TypedTable](pydal.objects.Select):
             left_joins.append(other.on(condition))
         else:
             # Inner join (handled in _build_inner_joins)
-            other = other.with_alias(f"{key}_{hash(relation)}")
+            if not is_self_reference:
+                other = other.with_alias(f"{key}_{hash(relation)}")
 
         # Handle aliasing in select_args
-        select_args = self._update_select_args_with_alias(select_args, pre_alias, other)
+        if not is_self_reference:
+            select_args = self._update_select_args_with_alias(select_args, pre_alias, other)
 
         # Process nested relationships
         for nested_name, nested in relation.nested.items():
