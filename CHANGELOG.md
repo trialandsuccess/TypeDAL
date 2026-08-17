@@ -2,6 +2,11 @@
 
 <!--next-version-placeholder-->
 
+## v4.9.16 (2026-08-17)
+
+### Fix
+* allow setting 'label' in relationships
+
 ## v4.9.15 (2026-08-17)
 
 ### Fix
