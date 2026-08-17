@@ -49,6 +49,7 @@ class ConnectionWorker:
     """
 
     def __init__(self, db: "TypeDAL", name: str) -> None:
+        """Set up the worker's single-thread executor; the connection appears on its first job."""
         self._db = db
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix=name)
 
@@ -97,6 +98,7 @@ class ConnectionWorkerPool:
     """
 
     def __init__(self, db: "TypeDAL", max_workers: int) -> None:
+        """Set up an empty pool that lazily creates up to `max_workers` workers."""
         self._db = db
         self._max_workers = max(1, max_workers)
         self._lock = threading.Lock()
@@ -193,6 +195,8 @@ class ConnectionWorkerPool:
 
 
 class SessionBinding(t.NamedTuple):
+    """A session paired with the task that bound it."""
+
     session: "AsyncSession"
     task: "asyncio.Task[t.Any] | None"
 
@@ -223,6 +227,7 @@ class AsyncSession:
     """
 
     def __init__(self, db: "TypeDAL") -> None:
+        """Create an unentered session for `db`; no worker is claimed yet."""
         self._db = db
         self._worker: ConnectionWorker | None = None
         self._token: contextvars.Token[dict[int, SessionBinding]] | None = None
