@@ -421,7 +421,7 @@ class BlockingAccessHandler(ExecutionHandler):
     Installed by `TypeDAL.execution_handlers`; drop it from that list to disable the guard.
     """
 
-    def before_execute(self, _command: str) -> None:
+    def before_execute(self, command: str) -> None:
         """Complain if this thread should have offloaded the statement instead of running it."""
         try:
             asyncio.get_running_loop()
@@ -431,7 +431,7 @@ class BlockingAccessHandler(ExecutionHandler):
         warnings.warn(
             "Database statement executed on a thread with a running event loop, which blocks it. "
             "Use the `*_async` twin, `await db.run_sync(...)`, or join the relationship to avoid "
-            "the extra query.",
+            f"the extra query. command: {command}",
             category=BlockingDatabaseAccessWarning,
             skip_file_prefixes=_SKIP_FRAMES,
         )
