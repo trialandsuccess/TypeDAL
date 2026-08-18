@@ -1,10 +1,15 @@
 # 11. Async
 
-Every method that talks to the database has an `*_async` twin: `collect_async()`, `insert_async()`,
-`count_async()`, and so on. They do exactly what their sync counterparts do (same arguments, same
-return values, same relationships, caching, hooks and permissions), except that they do not block
-the event loop while the database is busy. The one exception is lazy loading, which has no async
-form at all - see [Lazy loading is not async](#lazy-loading-is-not-async).
+Every query method has an `*_async` twin: `collect_async()`, `insert_async()`, `count_async()`,
+`update_async()`, `delete_async()`, and so on. They do exactly what their sync counterparts do
+(same arguments, same return values, same relationships, caching, hooks and permissions), except
+that they do not block the event loop while the database is busy.
+
+What has no twin is schema work (`truncate`, `drop`, `create_index`, `drop_index`,
+`import_from_csv_file`) and the caching helpers - startup and maintenance operations, not things a
+request handler does - and lazy loading, which cannot get one at all: see
+[Lazy loading is not async](#lazy-loading-is-not-async). Anything sync you run from a coroutine
+warns; see [Blocking access is not silent](#blocking-access-is-not-silent).
 
 ```python
 from typedal import TypeDAL, TypedTable, TypedField
@@ -91,12 +96,46 @@ async with db.session() as session:
 Lazy loading is the one part of the ORM without an async twin, and it cannot get one: it is
 triggered by *attribute access*, and attribute access cannot be awaited. So `post.author.name` or
 `post.tags` after `first_async()` still issues its follow-up query on the calling thread, and in a
-handler that thread is the event loop, which then stalls for the round trip - no error, and no
-warning beyond the usual `lazy` one. Only the non-querying modes (`"forbid"`, `"warn"`, `"ignore"`;
-see [4. Relationships](./4_relationships.md#lazy-loading-and-explicit-relationships)) are safe to
-touch from a coroutine. For the rest there are two places to be: either join the relationship up
-front (`Post.join("author", "tags").first_async()` - one query instead of N, async or not), or do
-the access inside `run_sync`, where blocking is what the worker thread is for.
+handler that thread is the event loop, which then stalls for the round trip. This holds for plain
+reference fields too: without a `relationship()`, `post.author` is a pydal `Reference` whose
+attribute access runs its own `SELECT`, and `lazy_policy` never sees that path.
+
+Only the non-querying modes (`"forbid"`, `"warn"`, `"ignore"`; see
+[4. Relationships](./4_relationships.md#lazy-loading-and-explicit-relationships)) are safe to touch
+from a coroutine. For the rest there are two places to be: either join the relationship up front
+(`Post.join("author", "tags").first_async()` - one query instead of N, async or not), or do the
+access inside `run_sync`, where blocking is what the worker thread is for.
+
+### Blocking access is not silent
+
+Every statement that runs on a thread with a running event loop raises a
+`BlockingDatabaseAccessWarning`, pointing at the line that caused it. That covers the lazy loading
+above, a forgotten `*_async`, `update_record()`, a `define()` at request time - anything that
+reaches the database from a coroutine. Offloaded code is silent by construction: worker threads,
+`run_sync`, `run_in_executor` and plain sync code have no running loop to block.
+
+Severity is yours to choose, with the `warnings` module rather than a TypeDAL setting:
+
+```python
+import warnings
+from typedal import BlockingDatabaseAccessWarning
+
+warnings.filterwarnings("error", category=BlockingDatabaseAccessWarning)  # strict, for CI
+warnings.filterwarnings("ignore", category=BlockingDatabaseAccessWarning)  # opt out entirely
+
+with warnings.catch_warnings():  # local escape hatch
+    warnings.simplefilter("ignore", BlockingDatabaseAccessWarning)
+    ...
+```
+
+Warnings are deduplicated per callsite, so a hot handler complains once instead of per statement.
+To remove the guard altogether:
+
+```python
+from typedal import BlockingAccessHandler, TypeDAL
+
+TypeDAL.execution_handlers.remove(BlockingAccessHandler)
+```
 
 ### Sessions belong to one task
 
