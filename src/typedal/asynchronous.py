@@ -20,10 +20,15 @@ import concurrent.futures
 import contextlib
 import contextvars
 import functools
+import os
 import threading
 import typing as t
+import warnings
 from collections import deque
 from types import TracebackType
+
+import pydal
+from pydal.helpers.classes import ExecutionHandler
 
 if t.TYPE_CHECKING:  # pragma: no cover
     from .core import TypeDAL
@@ -31,6 +36,8 @@ if t.TYPE_CHECKING:  # pragma: no cover
 __all__ = [
     "ACTIVE_SESSIONS",
     "AsyncSession",
+    "BlockingAccessHandler",
+    "BlockingDatabaseAccessWarning",
     "ConnectionWorker",
     "ConnectionWorkerPool",
     "SessionBinding",
@@ -385,6 +392,49 @@ async def run_async[**P, T](db: "TypeDAL", fn: t.Callable[P, T], *args: P.args, 
         return await worker.run(functools.partial(run_and_commit, db, call))
     finally:
         pool.release(worker)
+
+
+class BlockingDatabaseAccessWarning(RuntimeWarning):
+    """
+    A database statement ran on a thread with a running event loop, blocking it.
+
+    Severity is yours to pick, with the `warnings` machinery you already have:
+    `warnings.filterwarnings("error", category=BlockingDatabaseAccessWarning)` for CI,
+    `"ignore"` to opt out, `warnings.catch_warnings()` for a local escape hatch.
+    """
+
+
+# attribute the warning to the caller instead of to this module: it names the offending line, and
+# it puts the per-callsite dedup registry in the user's module rather than in this one.
+_SKIP_FRAMES = (os.path.dirname(__file__), os.path.dirname(pydal.__file__))
+
+
+class BlockingAccessHandler(ExecutionHandler):
+    """
+    Warn whenever a statement executes on a thread that is running an event loop.
+
+    pydal runs every statement through its execution handlers, so this one place catches the
+    forgotten `*_async` call, lazy relationships and bare pydal `Reference` lookups alike.
+    Detection needs no flag or contextvar: worker threads, `run_in_executor` and plain sync code
+    have no running loop, so `get_running_loop()` fails there and the handler stays silent.
+
+    Installed by `TypeDAL.execution_handlers`; drop it from that list to disable the guard.
+    """
+
+    def before_execute(self, _command: str) -> None:
+        """Complain if this thread should have offloaded the statement instead of running it."""
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return  # no loop on this thread: sync code, worker thread or executor. nothing to block.
+
+        warnings.warn(
+            "Database statement executed on a thread with a running event loop, which blocks it. "
+            "Use the `*_async` twin, `await db.run_sync(...)`, or join the relationship to avoid "
+            "the extra query.",
+            category=BlockingDatabaseAccessWarning,
+            skip_file_prefixes=_SKIP_FRAMES,
+        )
 
 
 def run_and_commit[T](db: "TypeDAL", call: t.Callable[[], T]) -> T:

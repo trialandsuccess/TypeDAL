@@ -2,7 +2,7 @@
 TypeDAL Library.
 """
 
-from .asynchronous import AsyncSession
+from .asynchronous import AsyncSession, BlockingAccessHandler, BlockingDatabaseAccessWarning
 from .core import TypeDAL
 from .fields import TypedField
 from .helpers import sql_expression
@@ -20,6 +20,8 @@ except ImportError:  # pragma: no cover
 
 __all__ = [
     "AsyncSession",
+    "BlockingAccessHandler",
+    "BlockingDatabaseAccessWarning",
     "PaginatedRows",
     "QueryBuilder",
     "Ref",

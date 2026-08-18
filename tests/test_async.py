@@ -19,6 +19,7 @@ import tempfile
 import threading
 import time
 import typing as t
+import warnings
 from decimal import Decimal
 from pathlib import Path
 
@@ -26,7 +27,7 @@ import pytest
 import pytest_asyncio
 
 from src.typedal import TypeDAL, TypedField, TypedTable
-from src.typedal.asynchronous import AsyncSession, ConnectionWorker
+from src.typedal.asynchronous import AsyncSession, BlockingDatabaseAccessWarning, ConnectionWorker
 from src.typedal.fields import DecimalField, JSONField
 
 
@@ -725,6 +726,28 @@ async def test_async_calls_do_not_block_the_event_loop(db_async: TypeDAL):
 
     gaps = [b - a for a, b in itertools.pairwise(ticks)]
     assert max(gaps) < 0.05, f"event loop was blocked: max gap between ticks was {max(gaps) * 1000:.1f}ms"
+
+
+@pytest.mark.asyncio
+async def test_typed_rows_update_and_delete_async_match_their_sync_twins(db_async: TypeDAL):
+    """`TypedRows.update/delete` operate on an already-collected set, so they need twins of their own."""
+    db = db_async
+
+    @db.define()
+    class AsyncThingRowsUpdate(TypedTable):
+        qty: TypedField[int]
+
+    for qty in (1, 2, 3):
+        AsyncThingRowsUpdate.insert(qty=qty)
+    db.commit()
+
+    rows = await AsyncThingRowsUpdate.where(AsyncThingRowsUpdate.qty > 1).collect_async()
+
+    assert await rows.update_async(qty=99) is True
+    assert sorted(row.qty for row in await AsyncThingRowsUpdate.collect_async()) == [1, 99, 99]
+
+    assert await rows.delete_async() is True
+    assert await AsyncThingRowsUpdate.count_async() == 1
 
 
 ################
@@ -1760,3 +1783,108 @@ async def test_shutting_down_a_worker_that_never_ran_a_statement_is_safe(db_asyn
     """
     worker = ConnectionWorker(db_async, "typedal-async-unused")
     worker.shutdown()
+
+
+@pytest_asyncio.fixture
+async def db_guard() -> t.AsyncIterator[TypeDAL]:
+    """One in-memory database for the guard tests; the guard is backend-independent."""
+    async with _sqlite_db() as db:
+        yield db
+
+
+def _blocking(records: list[warnings.WarningMessage]) -> list[warnings.WarningMessage]:
+    return [r for r in records if issubclass(r.category, BlockingDatabaseAccessWarning)]
+
+
+@pytest.mark.asyncio
+async def test_blocking_database_access_on_the_event_loop_warns(db_guard: TypeDAL):
+    """
+    Both ways to block the loop, at the one place every statement passes through.
+
+    The second is the one `lazy_policy` cannot see: `post.author` is a
+    `pydal.helpers.classes.Reference`, and touching an attribute on it runs a `SELECT` without
+    ever reaching `Relationship.__get__`.
+    """
+    db = db_guard
+
+    @db.define()
+    class AsyncGuardAuthor(TypedTable):
+        name: TypedField[str]
+
+    @db.define()
+    class AsyncGuardPost(TypedTable):
+        title: TypedField[str]
+        author: AsyncGuardAuthor
+
+    author = AsyncGuardAuthor.insert(name="terry")
+    AsyncGuardPost.insert(title="post", author=author)
+    db.commit()
+
+    with pytest.warns(BlockingDatabaseAccessWarning) as records:
+        post = AsyncGuardPost.first()
+
+    assert "event loop" in str(records[0].message)
+
+    post = await AsyncGuardPost.first_async()
+
+    with pytest.warns(BlockingDatabaseAccessWarning):
+        assert post.author.name == "terry"
+
+
+@pytest.mark.asyncio
+async def test_offloaded_database_access_does_not_warn(db_guard: TypeDAL):
+    """
+    Every sanctioned path is silent by construction: none of these threads runs an event loop.
+
+    So there is no flag and no contextvar to keep in sync - `run_in_executor` covers the py4web
+    shape (sync handlers on threads next to a loop) and plain sync code by the same mechanism.
+    """
+    db = db_guard
+
+    @db.define()
+    class AsyncGuardQuiet(TypedTable):
+        qty: TypedField[int]
+
+    with warnings.catch_warnings(record=True) as records:
+        warnings.simplefilter("always")
+
+        await AsyncGuardQuiet.insert_async(qty=1)
+        await AsyncGuardQuiet.where(AsyncGuardQuiet.qty > 0).collect_async()
+
+        async with db.session():
+            await AsyncGuardQuiet.insert_async(qty=2)
+
+        await db.run_sync(AsyncGuardQuiet.count)
+        await asyncio.get_running_loop().run_in_executor(None, AsyncGuardQuiet.count)
+
+    assert not _blocking(records)
+
+
+@pytest.mark.asyncio
+async def test_the_blocking_warning_is_configurable_through_the_warnings_module(db_guard: TypeDAL):
+    """
+    Forbid/warn/allow comes for free, globally or per scope - hence no `blocking_policy` knob.
+
+    Subclassing `RuntimeWarning` also means an existing `-W error::RuntimeWarning` covers it.
+    """
+    db = db_guard
+
+    assert issubclass(BlockingDatabaseAccessWarning, RuntimeWarning)
+
+    @db.define()
+    class AsyncGuardStrict(TypedTable):
+        qty: TypedField[int]
+
+    await AsyncGuardStrict.insert_async(qty=1)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", BlockingDatabaseAccessWarning)
+        with pytest.raises(BlockingDatabaseAccessWarning):
+            AsyncGuardStrict.first()
+
+    with warnings.catch_warnings(record=True) as records:
+        warnings.simplefilter("always")
+        warnings.simplefilter("ignore", BlockingDatabaseAccessWarning)
+        AsyncGuardStrict.first()
+
+    assert not _blocking(records)

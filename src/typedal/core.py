@@ -14,8 +14,15 @@ from pathlib import Path
 from typing import Optional
 
 import pydal
+from pydal.helpers.classes import ExecutionHandler
 
-from .asynchronous import AsyncSession, ConnectionWorkerPool, current_session, run_async
+from .asynchronous import (
+    AsyncSession,
+    BlockingAccessHandler,
+    ConnectionWorkerPool,
+    current_session,
+    run_async,
+)
 from .config import LazyPolicy, TypeDALConfig, default_async_workers, load_config
 from .helpers import (
     SYSTEM_SUPPORTS_TEMPLATES,
@@ -240,6 +247,12 @@ class TypeDAL(_TypeDALBase):
 
     # thread offload engine backing every `*_async` method (see typedal.asynchronous):
     _async_workers: ConnectionWorkerPool
+
+    # pydal runs these around every statement; drop BlockingAccessHandler to disable the guard.
+    execution_handlers: t.ClassVar[list[type[ExecutionHandler]]] = [
+        *pydal.DAL.execution_handlers,
+        BlockingAccessHandler,
+    ]
 
     def __init__(
         self,
