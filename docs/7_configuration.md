@@ -14,6 +14,7 @@ folder = "databases"
 caching = true
 pool_size = 0
 lazy_policy = "tolerate"
+async_workers = 4
 # keys may also be written as pool-size, lazy-policy
 ```
 
@@ -28,6 +29,8 @@ lazy_policy = "tolerate"
 - **`lazy_policy`**: Default policy for implicit relationship loading.
   Values: `forbid`, `warn`, `ignore`, `tolerate`, `allow` (default: `"tolerate"`).
   Can be overridden per relationship. See [4. Relationships](./4_relationships.md) for details.
+- **`async_workers`**: Worker threads (and thus connections) behind the async API
+  (default: `max(4, pool_size)`). See [11. Async](./11_async.md).
 
 ## Migrations
 
@@ -119,10 +122,10 @@ TYPEDAL_DATABASE="psql://user:password@host:5432/database"
 
 TypeDAL loads configuration in this order (highest priority last):
 
-1. **`pyproject.toml`** — Base configuration
-2. **`.env` file** — Environment-specific overrides
-3. **Environment variables** — System env vars with `TYPEDAL_` prefix (override `.env`)
-4. **`TypeDAL()` kwargs** — Runtime arguments passed to the constructor
+1. **`pyproject.toml`**: Base configuration
+2. **`.env` file**: Environment-specific overrides
+3. **Environment variables**: System env vars with `TYPEDAL_` prefix (override `.env`)
+4. **`TypeDAL()` kwargs**: Runtime arguments passed to the constructor
 
 Example with all layers:
 

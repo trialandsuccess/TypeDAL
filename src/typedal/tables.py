@@ -17,6 +17,7 @@ import pydal.objects
 from pydal._globals import DEFAULT
 from pydal.helpers.classes import SQLCallableList
 
+from .asynchronous import run_async
 from .constants import JOIN_OPTIONS
 from .core import TypeDAL
 from .helpers import all_dict, classproperty, filter_out, throw
@@ -150,6 +151,11 @@ class TableMeta(type):
         if not self._table:
             raise EnvironmentError("@define or db.define is not called on this class yet!")
         return self._table
+
+    def _ensure_db(self) -> TypeDAL:
+        if not self._db:
+            raise EnvironmentError("@define or db.define is not called on this class yet!")
+        return self._db
 
     def __iter__(self) -> t.Generator[Field, None, None]:
         """
@@ -443,6 +449,155 @@ class TableMeta(type):
         See QueryBuilder.collect_into!
         """
         return QueryBuilder(self).collect_into(into=into, verbose=verbose, init=init)
+
+    ###############
+    # async twins #
+    ###############
+    # See `typedal.asynchronous`: the sync method itself runs on a worker thread. Outside an
+    # `async with db.session()` block each call commits on its own; inside one they share the
+    # session's connection and transaction.
+
+    async def all_async(self: t.Type[T_MetaInstance]) -> "TypedRows[T_MetaInstance]":
+        """
+        Async twin of `all()`.
+        """
+        return await QueryBuilder(self).collect_async()
+
+    async def insert_async(self: t.Type[T_MetaInstance], **fields: t.Any) -> T_MetaInstance:
+        """
+        Async twin of `insert()`.
+        """
+        return await run_async(self._ensure_db(), self.insert, **fields)  # ty: ignore[invalid-return-type]
+
+    async def bulk_insert_async(self: t.Type[T_MetaInstance], items: list[AnyDict]) -> "TypedRows[T_MetaInstance]":
+        """
+        Async twin of `bulk_insert()`.
+        """
+        return await run_async(self._ensure_db(), self.bulk_insert, items)  # ty: ignore[invalid-return-type]
+
+    async def update_or_insert_async(
+        self: t.Type[T_MetaInstance],
+        query: T_Query | AnyDict | t.Callable[[], None] = DEFAULT,
+        **values: t.Any,
+    ) -> T_MetaInstance:
+        """
+        Async twin of `update_or_insert()`.
+        """
+        return await run_async(  # ty: ignore[invalid-return-type]
+            self._ensure_db(),
+            self.update_or_insert,
+            query,
+            **values,
+        )
+
+    async def validate_and_insert_async(
+        self: t.Type[T_MetaInstance],
+        **fields: t.Any,
+    ) -> tuple[t.Optional[T_MetaInstance], t.Optional[dict[str, str]]]:
+        """
+        Async twin of `validate_and_insert()`.
+        """
+        return await run_async(self._ensure_db(), self.validate_and_insert, **fields)  # ty: ignore[invalid-return-type]
+
+    async def validate_and_update_async(
+        self: t.Type[T_MetaInstance],
+        query: Query,
+        **fields: t.Any,
+    ) -> tuple[t.Optional[T_MetaInstance], t.Optional[dict[str, str]]]:
+        """
+        Async twin of `validate_and_update()`.
+        """
+        return await run_async(  # ty: ignore[invalid-return-type]
+            self._ensure_db(),
+            self.validate_and_update,
+            query,
+            **fields,
+        )
+
+    async def validate_and_update_or_insert_async(
+        self: t.Type[T_MetaInstance],
+        query: Query,
+        **fields: t.Any,
+    ) -> tuple[t.Optional[T_MetaInstance], t.Optional[dict[str, str]]]:
+        """
+        Async twin of `validate_and_update_or_insert()`.
+        """
+        return await run_async(  # ty: ignore[invalid-return-type]
+            self._ensure_db(),
+            self.validate_and_update_or_insert,
+            query,
+            **fields,
+        )
+
+    async def column_async[T: t.Any, T_MetaInstance: _TypedTable](
+        self: t.Type[T_MetaInstance],
+        field: T | TypedField[T],
+        **options: t.Unpack[SelectKwargs],
+    ) -> list[T]:
+        """
+        Async twin of `column()`.
+        """
+        return await QueryBuilder(self).select(field, **options).column_async(field)
+
+    async def paginate_async(
+        self: t.Type[T_MetaInstance],
+        limit: int,
+        page: int = 1,
+    ) -> "PaginatedRows[T_MetaInstance]":
+        """
+        Async twin of `paginate()`.
+        """
+        return await QueryBuilder(self).paginate_async(limit=limit, page=page)
+
+    def chunk_async(
+        self: t.Type[T_MetaInstance],
+        chunk_size: int,
+    ) -> t.AsyncGenerator["TypedRows[T_MetaInstance]", None]:
+        """
+        Async twin of `chunk()`.
+        """
+        return QueryBuilder(self).chunk_async(chunk_size)
+
+    async def count_async(self: t.Type[T_MetaInstance]) -> int:
+        """
+        Async twin of `count()`.
+        """
+        return await QueryBuilder(self).count_async()
+
+    async def exists_async(self: t.Type[T_MetaInstance]) -> bool:
+        """
+        Async twin of `exists()`.
+        """
+        return await QueryBuilder(self).exists_async()
+
+    async def first_async(self: t.Type[T_MetaInstance]) -> T_MetaInstance | None:
+        """
+        Async twin of `first()`.
+        """
+        return await QueryBuilder(self).first_async()
+
+    async def first_or_fail_async(self: t.Type[T_MetaInstance]) -> T_MetaInstance:
+        """
+        Async twin of `first_or_fail()`.
+        """
+        return await QueryBuilder(self).first_or_fail_async()
+
+    async def collect_async(self: t.Type[T_MetaInstance], verbose: bool = False) -> "TypedRows[T_MetaInstance]":
+        """
+        Async twin of `collect()`.
+        """
+        return await QueryBuilder(self).collect_async(verbose=verbose)
+
+    async def collect_into_async[T_Into: _TypedTable](
+        self: t.Type[_TypedTable],
+        into: t.Type[T_Into],
+        verbose: bool = False,
+        init: t.Callable[[T_Into, Row], None] | None = None,
+    ) -> "TypedRows[T_Into]":
+        """
+        Async twin of `collect_into()`.
+        """
+        return await QueryBuilder(self).collect_into_async(into=into, verbose=verbose, init=init)
 
     @property
     def ALL(cls) -> pydal.objects.SQLALL:
@@ -1339,6 +1494,27 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
         Will be replaced on instance creation!
         """
         return self._delete_record()
+
+    @classmethod
+    async def update_async(cls: t.Type[T_MetaInstance], query: Query, **fields: t.Any) -> T_MetaInstance | None:
+        """
+        Async twin of the `update()` classmethod.
+        """
+        # `cls` is typed as the model, whose metaclass `__getattr__` shadows `update` for mypy:
+        update = t.cast(t.Callable[..., T_MetaInstance | None], cls.update)
+        return await run_async(cls._ensure_db(), update, query, **fields)
+
+    async def update_record_async(self: T_MetaInstance, **fields: t.Any) -> T_MetaInstance:
+        """
+        Async twin of `update_record()`.
+        """
+        return await run_async(type(self)._ensure_db(), self.update_record, **fields)
+
+    async def delete_record_async(self) -> int:
+        """
+        Async twin of `delete_record()`.
+        """
+        return await run_async(type(self)._ensure_db(), self.delete_record)
 
     # __del__ is also called on the end of a scope so don't remove records on every del!!
 

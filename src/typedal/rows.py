@@ -10,6 +10,7 @@ import typing as t
 
 import pydal.objects
 
+from .asynchronous import run_async
 from .core import TypeDAL
 from .helpers import mktable
 from .query_builder import QueryBuilder
@@ -322,6 +323,18 @@ class TypedRows(t.Collection[T_MetaInstance], Rows):
         ids = set(self.column("id"))
         query = table.id.belongs(ids)
         return bool(self.db(query).delete())
+
+    async def update_async(self, **new_values: t.Any) -> bool:
+        """
+        Async twin of `update()`.
+        """
+        return await run_async(self.db, self.update, **new_values)
+
+    async def delete_async(self) -> bool:
+        """
+        Async twin of `delete()`.
+        """
+        return await run_async(self.db, self.delete)
 
     def join(
         self,

@@ -373,7 +373,7 @@ class PydanticMixin(Mixin):
             if isinstance(value, dict):
                 return value
             if isinstance(value, int):
-                # Raw foreign-key integer — represent as minimal record with just the id
+                # Raw foreign-key integer: represent as minimal record with just the id
                 return {"id": value}
             if isinstance(value, _PRIMITIVES) or value is None:
                 return value
@@ -482,7 +482,7 @@ class PydanticMixin(Mixin):
         def make_field(field_name: str, field_type: t.Any) -> t.Any:
             inner = cls._field_core_schema(field_type, handler)
             if field_name in _required_fields:
-                # Always computed — keep required and non-nullable for clean TS types
+                # Always computed: keep required and non-nullable for clean TS types
                 return core_schema.typed_dict_field(inner, required=True)
             # DB fields / relationships: TypeDAL can return partial rows, so allow None when present,
             # but keep missing fields absent (don't auto-fill null/default values).
@@ -490,7 +490,7 @@ class PydanticMixin(Mixin):
 
         schema_fields = {field_name: make_field(field_name, field_type) for field_name, field_type in fields.items()}
 
-        # Shallow (nested) schemas are inlined — no $defs entry, no ugly suffix in OpenAPI.
+        # Shallow (nested) schemas are inlined: no $defs entry, no ugly suffix in OpenAPI.
         # Full schemas use the clean class name so OpenAPI shows "Song", not "Song_rel_True...".
         ref = None if is_shallow else f"{cls.__module__}.{cls.__qualname__}"
 
@@ -510,7 +510,7 @@ class PydanticMixin(Mixin):
             include_properties=True,
         )
 
-        # Properties are always computed — they must stay required + non-nullable
+        # Properties are always computed: they must stay required + non-nullable
         # so the generated TypeScript types don't become `string | null | undefined`.
         full_dict = all_dict(cls)
         property_names = {

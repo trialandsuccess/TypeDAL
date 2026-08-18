@@ -92,6 +92,7 @@ dev = [
     "su6[all]>=1.9.0",
     # "pytest-mypy-testing",
     "pytest-typing",
+    "pytest-asyncio",
     "pyright < 1.1.400",
     "contextlib-chdir",
     "testcontainers",
@@ -196,6 +197,11 @@ extend-exclude = '''
   venv.+|.+\.bak   # idk why it suddenly works, let's not touch it
 )
 '''
+
+[tool.coverage.run]
+# measure src/ only, whatever invokes coverage: `su6 pytest` passes `--cov src` itself, but a
+# bare `pytest --cov` would otherwise measure the whole tree (tests, tasks.py, example_*.py).
+source = ["src"]
 
 [tool.coverage.report]
 exclude_also = [

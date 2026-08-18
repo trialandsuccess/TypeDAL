@@ -5,6 +5,7 @@ Core functionality of TypeDAL.
 from __future__ import annotations
 
 # noinspection PyUnusedImports
+import asyncio
 import datetime as dt
 import sys
 import typing as t
@@ -13,8 +14,16 @@ from pathlib import Path
 from typing import Optional
 
 import pydal
+from pydal.helpers.classes import ExecutionHandler
 
-from .config import LazyPolicy, TypeDALConfig, load_config
+from .asynchronous import (
+    AsyncSession,
+    BlockingAccessHandler,
+    ConnectionWorkerPool,
+    current_session,
+    run_async,
+)
+from .config import LazyPolicy, TypeDALConfig, default_async_workers, load_config
 from .helpers import (
     SYSTEM_SUPPORTS_TEMPLATES,
     default_representer,
@@ -236,6 +245,15 @@ class TypeDAL(_TypeDALBase):
     _before_execute: list[t.Callable[["QueryBuilder[t.Any]"], None]]
     _after_execute: list[t.Callable[["QueryBuilder[t.Any]", "Rows"], None]]
 
+    # thread offload engine backing every `*_async` method (see typedal.asynchronous):
+    _async_workers: ConnectionWorkerPool
+
+    # pydal runs these around every statement; drop BlockingAccessHandler to disable the guard.
+    execution_handlers: t.ClassVar[list[type[ExecutionHandler]]] = [
+        *pydal.DAL.execution_handlers,
+        BlockingAccessHandler,
+    ]
+
     def __init__(
         self,
         uri: Optional[str] = None,  # default from config or 'sqlite:memory'
@@ -267,6 +285,7 @@ class TypeDAL(_TypeDALBase):
         connection: Optional[str] = None,
         config: Optional[TypeDALConfig] = None,
         lazy_policy: LazyPolicy | None = None,
+        async_workers: Optional[int] = None,  # default: `default_async_workers(pool_size)`
     ) -> None:
         """
         Adds some internal tables after calling pydal's default init.
@@ -274,6 +293,9 @@ class TypeDAL(_TypeDALBase):
         Set enable_typedal_caching to False to disable this behavior.
         """
         config = config or load_config(connection, _use_pyproject=use_pyproject, _use_env=use_env)
+        # nobody named `async_workers`, so it is still derived from `pool_size` - which the
+        # update below may change.
+        derived_workers = config.async_workers == default_async_workers(config.pool_size)
         config.update(
             database=uri,
             dialect=uri.split(":")[0] if uri and ":" in uri else None,
@@ -283,7 +305,11 @@ class TypeDAL(_TypeDALBase):
             caching=enable_typedal_caching,
             pool_size=pool_size,
             lazy_policy=lazy_policy,
+            async_workers=async_workers,
         )
+
+        if async_workers is None and derived_workers:
+            config.update(async_workers=default_async_workers(config.pool_size))
 
         self._config = config
         self.db = self
@@ -293,6 +319,12 @@ class TypeDAL(_TypeDALBase):
         self._after_collect = []
         self._before_execute = []
         self._after_execute = []
+
+        # one worker thread is one pydal connection, so the bound is the connection bound.
+        # `pool_size` is only a floor: with fewer workers than concurrently open sessions, a
+        # session that awaits another one (a child task, say) waits for a worker that is only
+        # released when it itself finishes. no threads are started until the first async call.
+        self._async_workers = ConnectionWorkerPool(self, config.async_workers)
 
         if config.folder:
             Path(config.folder).mkdir(exist_ok=True)
@@ -327,8 +359,62 @@ class TypeDAL(_TypeDALBase):
             self.try_define(_TypedalCache)
             self.try_define(_TypedalCacheDependency)
 
+    def session(self) -> AsyncSession:
+        """
+        Open an async transaction: `async with db.session(): ...`.
+
+        Inside the block, every `*_async` call and every `await session.run_sync(...)` runs on one
+        worker thread, hence one connection, hence one transaction - committed when the block
+        ends, rolled back if it raised. Outside a session, `*_async` calls commit individually.
+
+        The session belongs to the task that opened it. A task started inside the block
+        (`create_task`, `gather`) does not join it; those calls autocommit as usual.
+        """
+        return AsyncSession(self)
+
+    async def run_sync[**P, T](self, fn: t.Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> T:
+        """
+        Run sync TypeDAL code on a worker thread without blocking the event loop.
+
+        Inside a session it joins that transaction; outside one it commits on return.
+        """
+        return await run_async(self, fn, *args, **kwargs)
+
+    async def commit_async(self) -> None:
+        """
+        Commit the current async session's transaction.
+
+        Outside a session there is nothing to commit: flat `*_async` calls already committed.
+        """
+        if session := current_session(self):
+            await session.commit()
+
+    async def rollback_async(self) -> None:
+        """
+        Roll back the current async session's transaction.
+
+        Outside a session there is nothing to roll back: flat `*_async` calls already committed.
+        """
+        if session := current_session(self):
+            await session.rollback()
+
+    async def executesql_async(self, *args: t.Any, **kwargs: t.Any) -> list[t.Any]:
+        """
+        Async twin of `executesql()`.
+        """
+        return await run_async(self, self.executesql, *args, **kwargs)
+
+    async def close_async(self) -> None:
+        """
+        Stop the async worker threads, closing the connection each one holds.
+
+        Only needed when the database outlives its async usage; `close()` does this too.
+        """
+        await asyncio.get_running_loop().run_in_executor(None, self._async_workers.shutdown)
+
     def close(self) -> None:
         """Close the database connection and unbind all defined TypedTable models."""
+        self._async_workers.shutdown()
         adapter = self._adapter
         try:
             super().close()  # ty: ignore[unresolved-attribute]

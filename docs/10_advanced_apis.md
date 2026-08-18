@@ -127,3 +127,8 @@ typedal typescript.generate --output-file src/types/typedal.ts
 
 Configuration details for `typescript.generate` (including `typescript_output`) are documented in
 [7. Configuration](./7_configuration.md).
+
+---
+
+Want the ORM without blocking the event loop?
+Continue with [11. Async](./11_async.md).
