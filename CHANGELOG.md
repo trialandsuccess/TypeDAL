@@ -2,6 +2,41 @@
 
 <!--next-version-placeholder-->
 
+### Breaking Changes
+
+* **caching:** `save_to_cache()` and `memoize()` no longer commit as a side effect of writing
+cache entries. Cache writes now join the caller's transaction, so they persist only when the
+caller commits. This is breaking because code that relied on cache entries being durable
+without an explicit `db.commit()` may now see those entries rolled back or missing.
+* **async safety:** synchronous database statements run from a thread with a running event
+loop now emit `BlockingDatabaseAccessWarning` by default. This is breaking because existing
+async applications that used blocking ORM calls, lazy relationships, `update_record()`, or raw
+`executesql()` previously worked silently, and those patterns can now warn or fail where
+warnings are treated as errors.
+
+### Features
+
+* Add an async execution layer with `*_async` twins for query, table, row, and rows
+operations.
+* Add `db.session()` as an async transaction context manager, plus `db.run_sync()`,
+`commit_async()`, `rollback_async()`, `executesql_async()`, and `close_async()`.
+* Add row mutation twins: `insert_async()`, `update_async()`, `update_record_async()`,
+`delete_async()`, and `delete_record_async()`.
+* Add `async_workers` configuration, defaulting to `max(4, pool_size)`, to bound the async
+worker and connection pool.
+* Export `AsyncSession`, `BlockingAccessHandler`, and `BlockingDatabaseAccessWarning`.
+
+### Fixes
+
+* Settle failed async transactions by committing or rolling back before releasing a worker.
+* Prevent async worker leaks when tasks are cancelled or abandoned.
+* Include the executed SQL `command` in blocking-access warnings.
+
+### Documentation
+
+* Document async usage, transactions, lazy-loading limits, blocking-access warnings, and
+`async_workers`.
+
 ## v4.9.16 (2026-08-17)
 
 ### Fix
