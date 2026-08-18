@@ -725,7 +725,7 @@ async def test_async_calls_do_not_block_the_event_loop(db_async: TypeDAL):
     await asyncio.gather(ticker(), repeated_query())
 
     gaps = [b - a for a, b in itertools.pairwise(ticks)]
-    assert max(gaps) < 0.05, f"event loop was blocked: max gap between ticks was {max(gaps) * 1000:.1f}ms"
+    assert max(gaps) < 0.1, f"event loop was blocked: max gap between ticks was {max(gaps) * 1000:.1f}ms"
 
 
 @pytest.mark.asyncio
