@@ -13,3 +13,5 @@ coverage.xml
 *.db
 site/
 .env
+uv.lock
+
