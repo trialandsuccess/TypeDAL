@@ -2,6 +2,11 @@
 
 <!--next-version-placeholder-->
 
+## v5.0.1 (2026-08-29)
+
+### Fix
+* improved typing on 'id' field
+
 ### Breaking Changes
 
 * **caching:** `save_to_cache()` and `memoize()` no longer commit as a side effect of writing

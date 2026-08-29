@@ -33,7 +33,7 @@ dependencies = [
     "legacy-cgi; python_version >= '3.13'",
     "python-dateutil < 3",
 ]
-version = "5.0.0"
+version = "5.0.1"
 
 [project.optional-dependencies]
 py4web = [
