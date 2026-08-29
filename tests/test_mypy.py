@@ -50,6 +50,8 @@ def mypy_test_typedal_define() -> None:
     db.define(LaterDefine)
     reveal_type(LaterDefine())  # R: tests.test_mypy.LaterDefine
 
+    reveal_type(MyTable.id)  # R: typedal.fields.TypedField[int]
+    reveal_type(MyTable().id)  # R: int
     reveal_type(MyTable.normal)  # R: str
     reveal_type(MyTable().normal)  # R: str
     reveal_type(MyTable.fancy)  # R: typedal.fields.TypedField[str]

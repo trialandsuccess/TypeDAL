@@ -41,6 +41,7 @@ for deferred_define in DeferredDefine.paginate(limit=1):
 new_row = WithBraces.insert()
 
 reveal_type(new_row)  # revealed: WithBraces
+reveal_type(WithBraces.id)  # revealed: TypedField[int]
 reveal_type(new_row.id)  # revealed: int
 
 reveal_type(WithBraces.gid)  # revealed: TypedField[str]

@@ -256,3 +256,19 @@ def test_table_with_methods():
 
     loaded = json.loads(dumped)
     assert loaded[0]["age"] == 20
+
+
+def test_string_annotation_is_resolved():
+    # annotations reach the builder as strings on Python < 3.14, or when quoted twice
+    builder = db._builder
+
+    assert builder.annotation_to_pydal_fieldtype("str", {}) == "string"
+    assert builder.annotation_to_pydal_fieldtype("TypedField[str]", {}) == "string"
+
+
+def test_as_typeddict_unwraps_typed_field():
+    @db.define()
+    class TypedDictModel(TypedTable):
+        generic: TypedField[str]
+
+    assert TypedDictModel.as_typeddict().__annotations__ == {"id": int, "generic": str}

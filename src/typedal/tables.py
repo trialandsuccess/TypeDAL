@@ -96,6 +96,8 @@ class TableMeta(type):
 
     """
 
+    id: "TypedField[int]"  # class access; instance access is declared on _TypedTable
+
     # set up by db.define:
     # _db: TypeDAL | None = None
     # _table: Table | None = None
@@ -877,7 +879,7 @@ class _TypedTable(metaclass=TableMeta):
     # This class contains weird typing glue to dodge MRO headaches without losing editor/mypy table methods
     # you can safely ignore it when changing runtime behavior; touch it only for typing/mypy issues
 
-    id: "TypedField[int]"
+    id: int  # instance access; class access comes from TableMeta
 
     _before_insert: list[t.Callable[[t.Self], t.Optional[bool]] | t.Callable[[OpRow], t.Optional[bool]]]
     _after_insert: list[
@@ -1061,8 +1063,6 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
     # set up by 'new':
     _row: Row | None = None
     _rows: tuple[Row, ...] = ()
-
-    id: "TypedField[int]"
 
     _with: list[str]
 
