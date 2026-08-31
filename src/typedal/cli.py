@@ -226,7 +226,7 @@ def setup(
     data.pop("connection", None)
 
     # ignore any None:
-    old_contents["tool"]["typedal"] = {k: v for k, v in data.items() if v is not None}
+    old_contents["tool"]["typedal"] = {k: v for k, v in data.items() if v is not None}  # type: ignore
 
     with toml_path.open("w") as f:
         tomlkit.dump(old_contents, f)

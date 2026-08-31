@@ -176,6 +176,25 @@ SomeField: typing.Any = ...
 reveal_type(MyTable.where().column(SomeField))  # revealed: list[Any]
 reveal_type(MyTable.where().column(MyTable.normal))  # revealed: list[str]
 reveal_type(MyTable.where().column(MyTable.fancy))  # revealed: list[str]
+reveal_type(MyTable.column(MyTable.fancy))  # revealed: list[str]
+```
+
+# 6. column_async(...) Overloads
+
+```python only=mypy
+from typedal import TypeDAL, TypedField, TypedTable
+
+db = TypeDAL()
+
+
+@db.define
+class MyTable(TypedTable):
+    fancy = TypedField(str)
+
+
+async def test_column_async() -> None:
+    reveal_type(await MyTable.where().column_async(MyTable.fancy))  # revealed: list[str]
+    reveal_type(await MyTable.column_async(MyTable.fancy))  # revealed: list[str]
 ```
 
 # 6. rows.render() Overloads

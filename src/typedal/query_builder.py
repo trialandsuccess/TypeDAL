@@ -873,7 +873,9 @@ class QueryBuilder[T_MetaInstance: _TypedTable](pydal.objects.Select):
     def _select_distinct_ids_with_orderby_fields(self, query: Query, select_kwargs: SelectKwargs) -> str:
         db = self._get_db()
         model = self.model
-        select_args: list[OrderBy] = [model.id]
+        id_field = t.cast(TypedField[int], model.id)
+
+        select_args: list[OrderBy] = [id_field]
         seen = {str(model.id)}
 
         for field in self._selectable_orderby_fields(select_kwargs.get("orderby")):
@@ -883,7 +885,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](pydal.objects.Select):
                 seen.add(key)
 
         ids = db(query)._select(*select_args, **select_kwargs).rstrip(";")
-        id_column = getattr(model.id, "_raw_rname", model.id.name)
+        id_column = getattr(model.id, "_raw_rname", id_field.name)
         return f'SELECT "{id_column}" FROM ({ids}) AS typedal_paginate_ids'  # nosec:
         # id_column originates from code
         # ids is a safe subquery, originating from code
@@ -914,7 +916,9 @@ class QueryBuilder[T_MetaInstance: _TypedTable](pydal.objects.Select):
         else:
             ids = db(query)._select(model.id, **kwargs)
 
-        query = model.id.belongs(ids)
+        id_field = t.cast(TypedField[int], model.id)
+
+        query = id_field.belongs(ids)
         metadata["ids"] = ids
 
         return query
@@ -1454,6 +1458,18 @@ class QueryBuilder[T_MetaInstance: _TypedTable](pydal.objects.Select):
         Async twin of `collect_or_fail()`.
         """
         return await self.collect_async() or throw(exception or ValueError("Nothing found!"))
+
+    @t.overload
+    async def column_async[T: t.Any](self, field: TypedField[T], **options: t.Unpack[SelectKwargs]) -> list[T]:
+        """
+        Get all values in a typed field asynchronously.
+        """
+
+    @t.overload
+    async def column_async[T: t.Any](self, field: T, **options: t.Unpack[SelectKwargs]) -> list[T]:
+        """
+        Get all values in an untyped field asynchronously.
+        """
 
     async def column_async[T: t.Any](self, field: TypedField[T] | T, **options: t.Unpack[SelectKwargs]) -> list[T]:
         """

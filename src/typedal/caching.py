@@ -578,7 +578,7 @@ def memoize[T: t.Any](
             for row in arg:
                 deps.add((str(row._table), row.id))
         elif isinstance(arg, TypedTable):
-            deps.add((str(arg._table), t.cast(int, arg.id)))
+            deps.add((str(arg._table), arg.id))
 
     # Generate cache key
     _, hashed_key = create_and_hash_cache_key(key, *[getattr(arg, "id", None) for arg in args], kwargs)

@@ -336,6 +336,26 @@ class TableMeta(type):
         """
         return QueryBuilder(self).select(*a, **kw)
 
+    @t.overload
+    def column[T: t.Any, T_MetaInstance: _TypedTable](
+        self: t.Type[T_MetaInstance],
+        field: TypedField[T],
+        **options: t.Unpack[SelectKwargs],
+    ) -> list[T]:
+        """
+        Get all values in a typed field.
+        """
+
+    @t.overload
+    def column[T: t.Any, T_MetaInstance: _TypedTable](
+        self: t.Type[T_MetaInstance],
+        field: T,
+        **options: t.Unpack[SelectKwargs],
+    ) -> list[T]:
+        """
+        Get all values in an untyped field.
+        """
+
     def column[T: t.Any, T_MetaInstance: _TypedTable](
         self: t.Type[T_MetaInstance],
         field: T | TypedField[T],
@@ -530,6 +550,26 @@ class TableMeta(type):
             query,
             **fields,
         )
+
+    @t.overload
+    async def column_async[T: t.Any, T_MetaInstance: _TypedTable](
+        self: t.Type[T_MetaInstance],
+        field: TypedField[T],
+        **options: t.Unpack[SelectKwargs],
+    ) -> list[T]:
+        """
+        Get all values in a typed field asynchronously.
+        """
+
+    @t.overload
+    async def column_async[T: t.Any, T_MetaInstance: _TypedTable](
+        self: t.Type[T_MetaInstance],
+        field: T,
+        **options: t.Unpack[SelectKwargs],
+    ) -> list[T]:
+        """
+        Get all values in an untyped field asynchronously.
+        """
 
     async def column_async[T: t.Any, T_MetaInstance: _TypedTable](
         self: t.Type[T_MetaInstance],
