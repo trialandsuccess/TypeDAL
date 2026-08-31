@@ -2,6 +2,11 @@
 
 <!--next-version-placeholder-->
 
+## v5.0.2 (2026-08-31)
+
+### Fix
+* **typing:** add typed overloads for column queries
+
 ## v5.0.1 (2026-08-29)
 
 ### Fix
