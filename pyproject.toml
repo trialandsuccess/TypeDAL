@@ -242,7 +242,6 @@ extend-exclude = ["*.bak/", "venv*/", "tests/", "example_*.py"]
 include = ["src"]
 
 [tool.ty.environment]
-python = "./venv"
 python-version = "3.14"
 
 [tool.ruff.lint]
