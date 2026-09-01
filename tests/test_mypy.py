@@ -1,6 +1,5 @@
 import typing
 
-import pydal.objects
 import pytest
 from typing_extensions import reveal_type
 
@@ -11,7 +10,7 @@ from typedal import (  # todo: why does src.typedal not work anymore?
     TypedTable,
 )
 from typedal.mixins import Mixin
-from typedal.types import CacheFn, CacheTuple, OpRow, Reference, Rows
+from typedal.types import CacheFn, CacheTuple, OpRow, Reference, Rows, Query
 
 db = TypeDAL("sqlite:memory")
 
@@ -92,7 +91,7 @@ def mypy_test_typedal_define() -> None:
 
 @pytest.mark.mypy_testing
 def test_update_modern_union() -> None:
-    query: pydal.objects.Query = MyTable.id == 3
+    query: Query = MyTable.id == 3
     new = MyTable.update(query)
     reveal_type(new)  # R: tests.test_mypy.MyTable | None
 

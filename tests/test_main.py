@@ -407,24 +407,13 @@ def test_typedfield_reprs():
 
     assert Demo["field1"] == Demo.field1
 
-    assert isinstance(Demo.field1, pydal.objects.Field)
-    assert isinstance(Demo.field2, pydal.objects.Field)
-    assert isinstance(Demo.field3, pydal.objects.Field)
-    assert isinstance(Demo.field4, pydal.objects.Field)
-    assert isinstance(Demo.textfield, pydal.objects.Field)
+    assert isinstance(Demo.field1, Field)
+    assert isinstance(Demo.field2, Field)
+    assert isinstance(Demo.field3, Field)
+    assert isinstance(Demo.field4, Field)
+    assert isinstance(Demo.textfield, Field)
 
     # due to compatibility reasons, TypedField is now only a virtual (typing) class, at runtime its just a field!
-    # assert isinstance(Demo.field1, TypedField)
-    # assert isinstance(Demo.field2, TypedField)
-    # assert isinstance(Demo.field3, TypedField)
-    # assert isinstance(Demo.field4, pydal.objects.Field)
-    # assert isinstance(Demo.textfield, TypedField)
-
-    # typedfield reprs are not actually used anymore, because class.somefield now returns a pydal.Field!!!
-    # assert repr(Demo.field1) == "<TypedField[str].demo.field1 with options {'default': 'yes'}>"
-    # assert repr(Demo.field2) == "<TypedField[int].demo.field2 with options {}>"
-    # assert repr(Demo.field3) == "<TypedField[float].demo.field3 with options {}>"
-    # assert repr(Demo.textfield) == "<TypedField[text].demo.textfield with options {}>"
 
 
 def test_typedfield_to_field_type():
@@ -512,7 +501,7 @@ def test_fields():
         name="Hendrik 2",
     )
 
-    assert isinstance(SomeNewTable.name_alt.lower(), pydal.objects.Expression)
+    assert isinstance(SomeNewTable.name_alt.lower(), Expression)
     assert isinstance(SomeNewTable(1).name_alt.lower(), str)
 
     assert db(SomeNewTable.name == "Hendrik").count() == 0
@@ -792,6 +781,8 @@ def test_reorder_fields():
     @db.define()
     class Sub(Base):
         name: str
+
+    assert isinstance(Sub.id, Field)
 
     # default order is kinda cursed due to MRO:
     assert list(Sub) == [Sub.id, Sub.name, Sub.gid]

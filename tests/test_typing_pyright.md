@@ -173,13 +173,14 @@ match_on_gid_condition: Condition = match_on_gid
 # 6. TypedRows Inference Behavior
 
 ```python only=pyright
-from typedal import TypeDAL, TypedRows, TypedTable
+from typedal import TypeDAL, TypedField, TypedRows, TypedTable
 
 db = TypeDAL()
 
 
 @db.define
-class MyTable(TypedTable): ...
+class MyTable(TypedTable):
+    value = TypedField(str)
 
 
 select1 = db(MyTable).select()
@@ -199,6 +200,9 @@ for row in select2:
 
 for row in MyTable.select():
     reveal_type(row)  # revealed: MyTable
+
+
+reveal_type(select3.group_by_value(MyTable.value, one_result=True))  # revealed: dict[str, MyTable]
 ```
 
 # 5. where().column(...) Overloads
@@ -325,6 +329,40 @@ def represent_theme_color(color_value: str, _: Theme | None = None) -> HtmlEleme
 
 
 Theme.color.represent = represent_theme_color
+```
+
+# 10. Table Label Metadata
+
+```python only=pyright
+from typedal import TypeDAL, TypedTable
+
+db = TypeDAL()
+
+
+@db.define(singular="Person", plural="People")
+class Person(TypedTable): ...
+
+
+reveal_type(Person._plural)  # revealed: str
+
+Person._plural = "Persons"
+```
+
+# 11. Field Validators
+
+```python only=pyright
+from pydal.validators import IS_IN_SET
+from typedal import TypeDAL, TypedField, TypedTable
+
+db = TypeDAL()
+
+
+@db.define
+class Settings(TypedTable):
+    enabled = TypedField(str)
+
+
+Settings.enabled.requires = IS_IN_SET(("on", "off"))
 ```
 
 # Parity with test_mypy.py

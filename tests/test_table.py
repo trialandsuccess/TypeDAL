@@ -10,13 +10,27 @@ from textwrap import dedent
 import dateutil.parser
 import pydal
 import pytest
-from pydal.objects import Expression
 
 from src.typedal import TypeDAL, TypedField, TypedTable
 from src.typedal.fields import IntegerField
 from src.typedal.serializers import as_json
+from src.typedal.types import Expression, Table
 
 db = TypeDAL("sqlite:memory")
+
+
+def test_singular_and_plural_metadata_are_shared_with_model():
+    @db.define(singular="Person", plural="People")
+    class Person(TypedTable):
+        name: TypedField[str]
+
+    assert Person._plural == "People"
+    assert db.person._plural == "People"
+
+    Person._plural = "Persons"
+
+    assert Person._plural == "Persons"
+    assert db.person._plural == "Persons"
 
 
 def test_both_styles_for_class():
@@ -192,8 +206,8 @@ def test_both_styles_for_class():
     assert len(db(old_style).select()) == 2
     assert len(NewStyle.all()) == 2
 
-    assert isinstance(old_style.with_alias("aliased_old_style"), pydal.objects.Table)
-    assert isinstance(NewStyle.with_alias("aliased_old_style"), pydal.objects.Table)
+    assert isinstance(old_style.with_alias("aliased_old_style"), Table)
+    assert isinstance(NewStyle.with_alias("aliased_old_style"), Table)
 
     old_style.drop()
     NewStyle.drop()

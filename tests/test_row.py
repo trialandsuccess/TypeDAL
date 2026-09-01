@@ -7,10 +7,10 @@ import json
 
 import pydal
 import pytest
-from pydal.objects import Rows
 
 from src.typedal import TypeDAL, TypedField, TypedTable, relationship
 from src.typedal.fields import IntegerField, ReferenceField
+from src.typedal.types import Rows, Table, Row
 
 db = TypeDAL("sqlite:memory")
 
@@ -45,7 +45,7 @@ def test_both_styles_for_instance():
     assert new_style.int_field == old_style.int_field
 
     assert isinstance(new_style, NewStyleClass)
-    assert not isinstance(new_style, (pydal.objects.Table, pydal.objects.Row))
+    assert not isinstance(new_style, (Table, Row))
 
     assert old_style.as_dict() == new_style.as_dict()
 

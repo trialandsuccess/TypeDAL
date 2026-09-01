@@ -26,7 +26,7 @@ from src.typedal.helpers import (
     to_snake,
     unwrap_type,
 )
-from src.typedal.types import Field, merge_permissions
+from src.typedal.types import Field, merge_permissions, Table
 
 
 def test_is_union():
@@ -204,7 +204,7 @@ def test_get_functions():
     table = get_table(TestGetFunctions)
     assert hasattr(table, "string")
     assert issubclass(TestGetFunctions, TypedTable)
-    assert isinstance(table, pydal.objects.Table)
+    assert isinstance(table, Table)
     assert not isinstance(table, TypedTable)
     field = get_field(TestGetFunctions.string)
     print(type(field))
