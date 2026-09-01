@@ -2,6 +2,11 @@
 
 <!--next-version-placeholder-->
 
+## v5.0.4 (2026-09-01)
+
+### Fix
+* **typing:** improve field comparison and relationship condition types
+
 ## v5.0.3 (2026-09-01)
 
 ### Fix

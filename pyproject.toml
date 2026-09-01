@@ -6,7 +6,7 @@ build-backend = "uv_build"
 name = "TypeDAL"
 description = 'Typing support for PyDAL'
 readme = "README.md"
-version = "5.0.3"
+version = "5.0.4"
 requires-python = ">=3.12"
 license-expression = "MIT"
 keywords = []
