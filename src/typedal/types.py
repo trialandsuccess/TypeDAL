@@ -104,9 +104,9 @@ class TableProtocol(t.Protocol):  # pragma: no cover
         Type checkers cannot infer the owning table from a relationship's
         class-body assignment, and forward references can also obscure the
         related table. PyDAL exposes table fields dynamically, so arbitrary
-        field access must remain permissive here. Because ``__getattr__``
-        returns ``Any``, type checkers do not validate field names in
-        relationship callbacks; for example, ``self.fakefield`` is accepted
+        field access must remain permissive here. Because `__getattr__`
+        returns `Any`, type checkers do not validate field names in
+        relationship callbacks; for example, `self.fakefield` is accepted
         even when no such field exists.
         """
 
@@ -418,9 +418,12 @@ type P_Table = TableProtocol
 
 type QueryLike = Query | _Query | bool
 
-type Condition = t.Optional[t.Callable[[P_Table, P_Table], QueryLike]]
+type Condition = t.Callable[[P_Table, P_Table], QueryLike] | None
 
-type OnQuery = t.Optional[t.Callable[[P_Table, P_Table], list[Expression | _Expression]]]
+# An `on` callback can include an alias binding for later join expressions.
+# QueryBuilder ignores table entries when it constructs the actual joins.
+type OnQueryItem = Expression | _Expression | t.Type["TypedTable"]
+type OnQuery = t.Callable[[P_Table, P_Table], t.Sequence[OnQueryItem]] | None
 
 type CacheModel = t.Callable[[str, CacheFn, int], Rows]
 type CacheTuple = tuple[CacheModel, int]
