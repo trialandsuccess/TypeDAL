@@ -157,7 +157,22 @@ class Theme(TypedTable):
     )
 ```
 
-# 5. TypedRows Inference Behavior
+# 5. Reusable Relationship Conditions
+
+```python only=mypy
+import typing
+from typedal import TypedTable
+from typedal.types import Condition, Query
+
+
+def match_on_gid(table1: type[TypedTable], table2: type[TypedTable]) -> Query:
+    return typing.cast(Query, table1.gid == table2.gid)
+
+
+match_on_gid_condition: Condition = match_on_gid
+```
+
+# 6. TypedRows Inference Behavior
 
 ```python only=mypy
 from typedal import TypeDAL, TypedRows, TypedTable

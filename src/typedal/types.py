@@ -203,6 +203,18 @@ class Field(_Field):
 
     _rname: str
 
+    def __eq__(self, other: t.Any) -> Query:  # type: ignore[override]
+        """Comparing fields produces a PyDAL query."""
+        return t.cast(Query, super().__eq__(other))
+
+    def __ne__(self, other: t.Any) -> Query:  # type: ignore[override]
+        """Comparing fields produces a PyDAL query."""
+        return t.cast(Query, super().__ne__(other))
+
+    def __hash__(self) -> int:
+        """Keep fields hashable after overriding equality."""
+        return super().__hash__()
+
 
 class Rows(_Rows):
     """Pydal Rows object. Make mypy happy."""
@@ -418,7 +430,7 @@ type P_Table = TableProtocol
 
 type QueryLike = Query | _Query | bool
 
-type Condition = t.Callable[[P_Table, P_Table], QueryLike] | None
+type Condition = t.Callable[[type["TypedTable"], type["TypedTable"]], QueryLike] | None
 
 # An `on` callback can include an alias binding for later join expressions.
 # QueryBuilder ignores table entries when it constructs the actual joins.

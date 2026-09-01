@@ -19,7 +19,7 @@ class TableWithMixins(TypedTable, SlugMixin, slug_field="name", slug_suffix_leng
     number: Optional[int]
 
 
-class TableWithSlugSuffix(TypedTable, SlugMixin, slug_field="name", slug_suffix_length=1):
+class TableWithSlugSuffix(TypedTable, SlugMixin, slug_field="name", slug_suffix_length=8):
     name: str
     number: Optional[int]
 
