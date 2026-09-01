@@ -198,7 +198,7 @@ class TypedField[T_Value](Expression):  # pragma: no cover
         self._field = t.cast(Field, field)
 
     def unbind(self) -> None:
-        """Remove references to the pydal objects created during ``bind``."""
+        """Remove references to the pydal objects created during `bind`."""
         if getattr(self, "requires", None):
             if isinstance(self.requires, list):
                 self.requires.clear()
