@@ -14,7 +14,6 @@ import uuid
 
 import pydal
 from pydal.helpers.classes import SQLCustomType
-from pydal.objects import Table
 
 from .core import TypeDAL
 from .types import (
@@ -26,6 +25,7 @@ from .types import (
     Query,
     T_annotation,
     T_MetaInstance,
+    Table,
     Validator,
 )
 
@@ -190,12 +190,12 @@ class TypedField[T_Value](Expression):  # pragma: no cover
             extra_kwargs,
         )
 
-    def bind(self, field: pydal.objects.Field, table: pydal.objects.Table) -> None:
+    def bind(self, field: Field, table: Table) -> None:
         """
         Bind the right db/table/field info to this class, so queries can be made using `Class.field == ...`.
         """
         self._table = table
-        self._field = t.cast(Field, field)
+        self._field = field
 
     def unbind(self) -> None:
         """Remove references to the pydal objects created during `bind`."""
@@ -280,7 +280,7 @@ class TypedField[T_Value](Expression):  # pragma: no cover
         return t.cast(Expression, self._field.lower())
 
 
-def rname(field: TypedField[t.Any] | Field | pydal.objects.Field) -> str:
+def rname(field: TypedField[t.Any] | Field) -> str:
     """
     Return the full rname (table and field).
     """

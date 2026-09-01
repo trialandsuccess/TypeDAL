@@ -13,9 +13,9 @@ import types
 import typing as t
 import uuid
 
-import pydal.objects
+import pydal
 from pydal._globals import DEFAULT
-from pydal.helpers.classes import SQLCallableList
+from pydal.helpers.classes import SQLALL, SQLCallableList
 
 from .asynchronous import run_async
 from .constants import JOIN_OPTIONS
@@ -50,7 +50,7 @@ if t.TYPE_CHECKING:
 
 
 def reorder_fields(
-    table: pydal.objects.Table,
+    table: Table,
     fields: t.Iterable[str | TypedField[t.Any] | Field],
     keep_others: bool = True,
 ) -> None:
@@ -65,7 +65,7 @@ def reorder_fields(
             - False: remove other fields (only keep what's specified).
     """
     # Normalize input to field names
-    desired = [f.name if isinstance(f, (TypedField, Field, pydal.objects.Field)) else str(f) for f in fields]
+    desired = [f.name if isinstance(f, (TypedField, Field)) else str(f) for f in fields]
 
     new_order = [f for f in desired if f in table._fields]
 
@@ -105,6 +105,8 @@ class TableMeta(type):
     _table: Table | None = None
     _relationships: dict[str, Relationship[t.Any]] | None = None
     _permissions: Permissions | None = None
+    _singular: str
+    _plural: str
 
     #########################
     # TypeDAL custom logic: #
@@ -149,6 +151,14 @@ class TableMeta(type):
 
         return None
 
+    def __setattr__(self, name: str, value: t.Any) -> None:
+        """Keep PyDAL's table label metadata in sync with its model class."""
+        if name.startswith("_") and self._table is not None:
+            # include base table for internal stuff such as _singular/_plural:
+            setattr(self._table, name, value)
+
+        super().__setattr__(name, value)
+
     def _ensure_table_defined(self) -> Table:
         if not self._table:
             raise EnvironmentError("@define or db.define is not called on this class yet!")
@@ -182,7 +192,7 @@ class TableMeta(type):
         else:
             return f"<unbound table {self.__name__}>"
 
-    def from_row(self: t.Type[T_MetaInstance], row: pydal.objects.Row) -> T_MetaInstance:
+    def from_row(self: t.Type[T_MetaInstance], row: Row) -> T_MetaInstance:
         """
         Create a model instance from a pydal row.
         """
@@ -642,7 +652,7 @@ class TableMeta(type):
         return await QueryBuilder(self).collect_into_async(into=into, verbose=verbose, init=init)
 
     @property
-    def ALL(cls) -> pydal.objects.SQLALL:
+    def ALL(cls) -> SQLALL:
         """
         Select all fields for this table.
         """
@@ -931,6 +941,8 @@ class _TypedTable(metaclass=TableMeta):
     _after_delete: list[t.Callable[[Set], t.Optional[bool]]]
     _rows: tuple[Row, ...]
     _with: list[str]
+    _singular: t.ClassVar[str]
+    _plural: t.ClassVar[str]
 
     @classmethod
     def __on_define__(cls, db: TypeDAL) -> None:
@@ -1131,7 +1143,7 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
 
     def __new__(
         cls,
-        row_or_id: t.Union[Row, Query, pydal.objects.Set, int, str, "TypedTable", None] = None,
+        row_or_id: t.Union[Row, Query, Set, int, str, "TypedTable", None] = None,
         **filters: t.Any,
     ) -> t.Self:
         """
@@ -1149,7 +1161,7 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
             # existing typed table instance!
             return t.cast(t.Self, row_or_id)
 
-        elif isinstance(row_or_id, pydal.objects.Row):
+        elif isinstance(row_or_id, Row):
             row = row_or_id
         elif row_or_id is not None:
             row = table(row_or_id, **filters)

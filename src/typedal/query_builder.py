@@ -10,7 +10,7 @@ import time
 import typing as t
 from collections import defaultdict
 
-import pydal.objects
+from pydal.helpers.classes import SQLALL
 
 from .asynchronous import run_async
 from .constants import DEFAULT_JOIN_OPTION, JOIN_OPTIONS
@@ -38,6 +38,7 @@ from .types import (
     Query,
     Row,
     Rows,
+    Select,
     SelectKwargs,
     T_MetaInstance,
     Table,
@@ -46,7 +47,7 @@ from .types import (
 )
 
 
-class QueryBuilder[T_MetaInstance: _TypedTable](pydal.objects.Select):
+class QueryBuilder[T_MetaInstance: _TypedTable](Select):
     """
     Abstration on top of pydal's query system.
     """
@@ -290,9 +291,9 @@ class QueryBuilder[T_MetaInstance: _TypedTable](pydal.objects.Select):
 
         subquery = t.cast(Query, DummyQuery())
         for query_part in queries_or_lambdas:
-            if isinstance(query_part, (Field, pydal.objects.Field)) or is_typed_field(query_part):
-                subquery |= t.cast(Query, query_part != None)
-            elif isinstance(query_part, (pydal.objects.Query, Expression, pydal.objects.Expression)):
+            if isinstance(query_part, Field) or is_typed_field(query_part):
+                subquery |= query_part != None
+            elif isinstance(query_part, (Query, Expression)):
                 subquery |= t.cast(Query, query_part)
             elif callable(query_part):
                 if result := query_part(self.model):  # ty: ignore[call-top-callable]
@@ -401,7 +402,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](pydal.objects.Select):
             if len(fields) != 1:
                 raise ValueError("join(field, condition=...) can only be used with exactly one field!")
 
-            if isinstance(condition, pydal.objects.Query):
+            if isinstance(condition, Query):
                 condition = as_lambda(condition)
 
             field = fields[0]
@@ -418,8 +419,8 @@ class QueryBuilder[T_MetaInstance: _TypedTable](pydal.objects.Select):
             if len(fields) != 1:
                 raise ValueError("join(field, on=...) can only be used with exactly one field!")
 
-            if isinstance(on, pydal.objects.Expression):
-                on = t.cast(list[Expression], [on])
+            if isinstance(on, Expression):
+                on = [on]
 
             if isinstance(on, list):
                 on = t.cast(OnQuery, as_lambda(on))
@@ -856,7 +857,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](pydal.objects.Select):
             expression_without_direction, _, direction = expression.rpartition(" ")
             return [expression_without_direction if direction.upper() in {"ASC", "DESC"} else orderby]
 
-        if isinstance(orderby, pydal.objects.Field):
+        if isinstance(orderby, Field):
             return t.cast(list[OrderBy], [orderby])
 
         fields = []
@@ -968,8 +969,8 @@ class QueryBuilder[T_MetaInstance: _TypedTable](pydal.objects.Select):
             if not isinstance(on, list):
                 on = [on]
 
-            on = [_ for _ in on if isinstance(_, pydal.objects.Expression)]
-            left_joins.extend(on)  # ty: ignore[invalid-argument-type]
+            on = [_ for _ in on if isinstance(_, Expression)]
+            left_joins.extend(on)
         elif method == "left":
             # Generate left join condition
             if not is_self_reference:
@@ -1032,7 +1033,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](pydal.objects.Select):
         if pre_alias != post_alias:
             updated_args = []
             for arg in select_args:
-                if isinstance(arg, pydal.objects.SQLALL):
+                if isinstance(arg, SQLALL):
                     updated_args.extend(str(field).replace(f"{pre_alias}.", f"{post_alias}.") for field in arg._table)
                 else:
                     updated_args.append(str(arg).replace(f"{pre_alias}.", f"{post_alias}."))

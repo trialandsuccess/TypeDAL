@@ -20,6 +20,7 @@ from pydal.objects import Field as _Field
 from pydal.objects import Query as _Query
 from pydal.objects import Row as _Row
 from pydal.objects import Rows as _Rows
+from pydal.objects import Select as _Select
 from pydal.objects import Set as _Set
 from pydal.objects import Table as _Table
 from pydal.validators import Validator as _Validator
@@ -147,20 +148,26 @@ class FileSystemLike(t.Protocol):  # pragma: no cover
 # pydal Wrappers (to help mypy understand these classes)
 # ---------------------------------------------------------------------------
 
+# same for typing and runtime:
+Row: t.TypeAlias = _Row
+Validator: t.TypeAlias = _Validator
+Table: t.TypeAlias = _Table
+Reference: t.TypeAlias = _Reference
 
-class Query(_Query):
-    """Pydal Query object. Makes mypy happy."""
-
-
-class Expression(_Expression):
-    """Pydal Expression object. Make mypy happy."""
-
-
-class Set(_Set):
-    """Pydal Set object. Make mypy happy."""
-
-
+# has to be (fake) subclass during type-checking:
 if t.TYPE_CHECKING:
+
+    class Query(_Query):
+        """Pydal Query object. Makes mypy happy."""
+
+    class Expression(_Expression):
+        """Pydal Expression object. Makes mypy happy."""
+
+    class Set(_Set):
+        """Pydal Set object. Makes mypy happy."""
+
+    class Select(_Select):
+        """Pydal Select object. Makes mypy happy."""
 
     class OpRow:
         """
@@ -188,57 +195,34 @@ if t.TYPE_CHECKING:
         def values(self) -> t.Iterable[t.Any]:
             """Dictionary-like value iteration."""
 
+    class Field(_Field):
+        """Pydal Field object. Make mypy happy."""
+
+        _rname: str
+
+        def __eq__(self, other: t.Any) -> Query:  # ty: ignore[invalid-method-override]
+            """Comparing fields produces a PyDAL query."""
+            return t.cast(Query, super().__eq__(other))
+
+        def __ne__(self, other: t.Any) -> Query:  # ty: ignore[invalid-method-override]
+            """Comparing fields produces a PyDAL query."""
+            return t.cast(Query, super().__ne__(other))
+
+        def __hash__(self) -> int:
+            """Keep fields hashable after overriding equality."""
+            return super().__hash__()
+
+    class Rows(_Rows):
+        def column(self, column: t.Any = None) -> list[t.Any]: ...
+
 else:
-
-    class OpRow(_OpRow):
-        """Runtime OpRow, using pydal's version."""
-
-
-class Reference(_Reference):
-    """Pydal Reference object. Make mypy happy."""
-
-
-class Field(_Field):
-    """Pydal Field object. Make mypy happy."""
-
-    _rname: str
-
-    def __eq__(self, other: t.Any) -> Query:  # ty: ignore[invalid-method-override]
-        """Comparing fields produces a PyDAL query."""
-        return t.cast(Query, super().__eq__(other))
-
-    def __ne__(self, other: t.Any) -> Query:  # ty: ignore[invalid-method-override]
-        """Comparing fields produces a PyDAL query."""
-        return t.cast(Query, super().__ne__(other))
-
-    def __hash__(self) -> int:
-        """Keep fields hashable after overriding equality."""
-        return super().__hash__()
-
-
-class Rows(_Rows):
-    """Pydal Rows object. Make mypy happy."""
-
-    def column(self, column: t.Any = None) -> list[t.Any]:
-        """
-        Get a list of all values in a specific column.
-
-        Example:
-            rows.column('name') -> ['Name 1', 'Name 2', ...]
-        """
-        return [r[str(column) if column else self.colnames[0]] for r in self]
-
-
-class Row(_Row):
-    """Pydal Row object. Make mypy happy."""
-
-
-class Validator(_Validator):
-    """Pydal Validator object. Make mypy happy."""
-
-
-class Table(_Table):
-    """Pydal Table object. Make mypy happy."""
+    Query: t.TypeAlias = _Query
+    Expression: t.TypeAlias = _Expression
+    Set: t.TypeAlias = _Set
+    Select: t.TypeAlias = _Select
+    Rows: t.TypeAlias = _Rows
+    OpRow: t.TypeAlias = _OpRow
+    Field: t.TypeAlias = _Field
 
 
 # ---------------------------------------------------------------------------

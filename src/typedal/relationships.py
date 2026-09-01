@@ -6,14 +6,12 @@ import inspect
 import typing as t
 import warnings
 
-import pydal.objects
-
 from .config import LazyPolicy
 from .constants import JOIN_OPTIONS
 from .core import ForwardRef, TypeDAL, evaluate_forward_reference
 from .fields import TypedField
 from .helpers import extract_type_optional, looks_like, unwrap_type
-from .types import Condition, OnQuery, T_Field
+from .types import Condition, OnQuery, T_Field, Table
 
 # default lazy policy is defined at the TypeDAL() instance settings level
 
@@ -199,7 +197,7 @@ class Relationship[To_Type]:
         if isinstance(self.table, str):
             return self.table
 
-        if isinstance(self.table, pydal.objects.Table):
+        if isinstance(self.table, Table):
             return str(self.table)
 
         # else: typed table
@@ -288,7 +286,7 @@ class Relationship[To_Type]:
             resolved_table = self.get_table(instance._db)
 
             builder = owner.where(id=instance.id).join(self.name)
-            if issubclass(resolved_table, TypedTable) or isinstance(resolved_table, pydal.objects.Table):
+            if issubclass(resolved_table, TypedTable) or isinstance(resolved_table, Table):
                 # is a table so we can select ALL and ignore non-required fields of parent row:
                 builder = builder.select(owner.id, resolved_table.ALL)
 

@@ -12,7 +12,6 @@ import types
 import typing as t
 import warnings
 
-import pydal
 from pydal.validators import IS_IN_SET, ValidationError, Validator
 
 from .constants import BASIC_MAPPINGS
@@ -163,7 +162,7 @@ class TableDefinitionBuilder:
         if mapping := BASIC_MAPPINGS.get(ftype):
             # basi types
             return mapping
-        elif isinstance(ftype, pydal.objects.Table):
+        elif isinstance(ftype, Table):
             # db.table
             return f"reference {ftype._tablename}"
         elif issubclass(type(ftype), type) and issubclass(ftype, TypedTable):

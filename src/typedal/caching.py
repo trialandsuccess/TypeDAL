@@ -9,13 +9,12 @@ import json
 import typing as t
 
 import dill  # nosec
-from pydal.objects import Field, Rows, Set
 
 from .fields import TypedField
 from .helpers import throw
 from .rows import TypedRows
 from .tables import TypedTable
-from .types import CacheStatus, Query
+from .types import CacheStatus, Field, Query, Rows, Set
 
 if t.TYPE_CHECKING:
     from .core import TypeDAL

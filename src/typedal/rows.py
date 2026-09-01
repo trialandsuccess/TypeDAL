@@ -8,8 +8,6 @@ import csv
 import json
 import typing as t
 
-import pydal.objects
-
 from .asynchronous import run_async
 from .core import TypeDAL
 from .helpers import mktable
@@ -25,6 +23,7 @@ from .types import (
     Query,
     Row,
     Rows,
+    Set,
     T_MetaInstance,
 )
 
@@ -199,18 +198,42 @@ class TypedRows(t.Collection[T_MetaInstance], Rows):
 
         return mktable(data, headers)
 
-    def group_by_value[T: t.Any, T_MetaInstance: _TypedTable](  # ty: ignore[shadowed-type-variable]
+    @t.overload
+    def group_by_value[T: t.Any](
         self,
-        *fields: "str | Field | TypedField[T]",
+        *fields: "TypedField[T] | str | Field",
+        one_result: t.Literal[True],
+        **kwargs: t.Any,
+    ) -> dict[T, T_MetaInstance]: ...
+
+    @t.overload
+    def group_by_value[T: t.Any](
+        self,
+        *fields: "TypedField[T] | str | Field",
+        one_result: t.Literal[False] = False,
+        **kwargs: t.Any,
+    ) -> dict[T, list[T_MetaInstance]]: ...
+
+    @t.overload
+    def group_by_value[T: t.Any](
+        self,
+        *fields: "TypedField[T] | str | Field",
+        one_result: bool,
+        **kwargs: t.Any,
+    ) -> dict[T, T_MetaInstance] | dict[T, list[T_MetaInstance]]: ...
+
+    def group_by_value[T: t.Any](
+        self,
+        *fields: "TypedField[T] | str | Field",
         one_result: bool = False,
         **kwargs: t.Any,
-    ) -> dict[T, list[T_MetaInstance]]:
+    ) -> dict[T, T_MetaInstance] | dict[T, list[T_MetaInstance]]:
         """
         Group the rows by a specific field (which will be the dict key).
         """
         kwargs["one_result"] = one_result
         result = super().group_by_value(*fields, **kwargs)
-        return t.cast(dict[T, list[T_MetaInstance]], result)
+        return t.cast(dict[T, T_MetaInstance] | dict[T, list[T_MetaInstance]], result)
 
     def as_csv(self) -> str:
         """
@@ -533,7 +556,7 @@ class PaginatedRows(TypedRows[T_MetaInstance]):
         return {"data": super().as_dict(), "pagination": self.pagination}
 
 
-class TypedSet(pydal.objects.Set):  # pragma: no cover
+class TypedSet(Set):  # pragma: no cover
     """
     Used to make pydal Set more typed.
 

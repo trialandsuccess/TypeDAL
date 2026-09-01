@@ -51,10 +51,10 @@ if t.TYPE_CHECKING:
 
 def _expression_subclasses() -> t.Iterator[type]:
     """
-    Yield pydal.objects.Expression and every (nested) subclass currently loaded, e.g. Field and TypedField.
+    Yield Expression and every (nested) subclass currently loaded, e.g. Field and TypedField.
     """
-    seen = {pydal.objects.Expression}
-    stack = [pydal.objects.Expression]
+    seen = {Expression}
+    stack = [Expression]
     while stack:
         for subclass in stack.pop().__subclasses__():
             if subclass not in seen:
@@ -77,7 +77,7 @@ def _purge_dialect_expressions(adapter: t.Any) -> None:
     `gc.collect()` will not free it, and with it the entire db (tables, fields, models)
     it belongs to, for the lifetime of the process, unless explicitly undone here.
     """
-    expressions = pydal.objects.Expression._dialect_expressions_
+    expressions = Expression._dialect_expressions_
     stale = [
         name
         for name, wrapper in expressions.items()
@@ -544,7 +544,7 @@ class TypeDAL(_TypeDALBase):
 
         return wrapper
 
-    def __call__(self, *_args: T_Query, **kwargs: t.Any) -> "TypedSet":  # ty: ignore[invalid-method-override]
+    def __call__(self, *_args: T_Query, **kwargs: t.Any) -> "TypedSet":
         """
         A db instance can be called directly to perform a query.
 
