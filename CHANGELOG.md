@@ -2,6 +2,11 @@
 
 <!--next-version-placeholder-->
 
+## v5.0.6 (2026-09-01)
+
+### Fix
+* **typing:** align PyDAL runtime classes with typed aliases
+
 ## v5.0.5 (2026-09-01)
 
 ### Fix
