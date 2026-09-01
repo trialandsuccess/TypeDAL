@@ -125,7 +125,39 @@ MyTable.update_or_insert(my_query)
 MyTable.update_or_insert(db.my_table.id > 3)
 ```
 
-# 4. TypedRows Inference Behavior
+# 4. Alias Binding in On Queries
+
+```python only=mypy
+from typedal import TypeDAL, TypedField, TypedTable, relationship
+
+db = TypeDAL()
+
+
+@db.define
+class Tagged(TypedTable):
+    subject_gid = TypedField(str)
+    object_gid = TypedField(str)
+
+
+@db.define
+class Asset(TypedTable):
+    gid = TypedField(str)
+
+
+@db.define
+class Theme(TypedTable):
+    gid = TypedField(str)
+    documents = relationship(
+        list["Asset"],
+        on=lambda theme, asset: [
+            tagged := Tagged.unique_alias(),
+            tagged.on(tagged.object_gid == theme.gid),
+            asset.on(asset.gid == tagged.subject_gid),
+        ],
+    )
+```
+
+# 5. TypedRows Inference Behavior
 
 ```python only=mypy
 from typedal import TypeDAL, TypedRows, TypedTable
