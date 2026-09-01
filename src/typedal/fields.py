@@ -79,7 +79,7 @@ class TypedField[T_Value](Expression):  # pragma: no cover
     authorize: AnyCallable | None
     autodelete: bool
     requires: Validator | t.Iterable[Validator]
-    represent: t.Callable[[T_Value, TypedTable | None], t.Any]
+    represent: t.Callable[[T_Value, t.Any], t.Any]  # second argument is the model class but we can't type that
     compute: AnyCallable | None
     custom_store: AnyCallable | None
     custom_retrieve: AnyCallable | None
@@ -513,6 +513,7 @@ def BigintField(**kw: t.Unpack[FieldSettings]) -> TypedField[int]:
 
 
 Bigint = BigintField
+
 
 ## Custom:
 

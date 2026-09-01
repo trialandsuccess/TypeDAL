@@ -203,11 +203,11 @@ class Field(_Field):
 
     _rname: str
 
-    def __eq__(self, other: t.Any) -> Query:  # type: ignore[override]
+    def __eq__(self, other: t.Any) -> Query:  # ty: ignore[invalid-method-override]
         """Comparing fields produces a PyDAL query."""
         return t.cast(Query, super().__eq__(other))
 
-    def __ne__(self, other: t.Any) -> Query:  # type: ignore[override]
+    def __ne__(self, other: t.Any) -> Query:  # ty: ignore[invalid-method-override]
         """Comparing fields produces a PyDAL query."""
         return t.cast(Query, super().__ne__(other))
 

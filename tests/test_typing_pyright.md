@@ -304,6 +304,29 @@ def invalid_cache_model(key: str, fn: typing.Callable[..., list[str]], _: typing
 cache_invalid: CacheTuple = (invalid_cache_model, 3000)  # error: [reportAssignmentType]
 ```
 
+# 9. Field Representers Receive Their Owning Table
+
+```python only=pyright
+from typedal import TypeDAL, TypedField, TypedTable
+
+db = TypeDAL()
+
+
+class HtmlElement: ...
+
+
+@db.define
+class Theme(TypedTable):
+    color = TypedField(str)
+
+
+def represent_theme_color(color_value: str, _: Theme | None = None) -> HtmlElement:
+    return HtmlElement()
+
+
+Theme.color.represent = represent_theme_color
+```
+
 # Parity with test_mypy.py
 
 See test_typing_mypy.md
