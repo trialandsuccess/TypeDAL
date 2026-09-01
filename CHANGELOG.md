@@ -2,6 +2,11 @@
 
 <!--next-version-placeholder-->
 
+## v5.0.5 (2026-09-01)
+
+### Fix
+* **typing:** allow table-aware field representers
+
 ## v5.0.4 (2026-09-01)
 
 ### Fix
