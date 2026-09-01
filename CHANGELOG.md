@@ -2,6 +2,14 @@
 
 <!--next-version-placeholder-->
 
+## v5.0.3 (2026-09-01)
+
+### Fix
+* **types:** support table bindings in join callbacks
+
+### Documentation
+* **bindings:** normalize inline code formatting
+
 ## v5.0.2 (2026-08-31)
 
 ### Fix
