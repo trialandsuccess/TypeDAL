@@ -8,6 +8,7 @@ import datetime as dt
 import math
 import time
 import typing as t
+import warnings
 from collections import defaultdict
 
 from pydal.helpers.classes import SQLALL
@@ -45,6 +46,7 @@ from .types import (
     merge_permissions,
     require_permission,
 )
+from .warnings import UnusedWindowWarning
 
 
 class QueryBuilder[T_MetaInstance: _TypedTable](Select):
@@ -296,7 +298,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
             elif isinstance(query_part, (Query, Expression)):
                 subquery |= t.cast(Query, query_part)
             elif callable(query_part):
-                if result := query_part(self.model):  # ty: ignore[call-top-callable]
+                if result := query_part(self.model):
                     subquery |= result
             elif isinstance(query_part, dict):
                 subsubquery = DummyQuery()
@@ -661,6 +663,17 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
             return result
 
         query, select_args, select_kwargs = self._before_query(metadata, add_id=add_id)
+
+        window_size = metadata.get("window_size", None)
+        is_iterating = metadata.get("iterating", False)
+
+        if window_size is not None and is_iterating is not True:
+            warnings.warn(
+                "A window size was configured, but collect() was called directly. "
+                "Use iteration over the query builder to fetch rows in windows.",
+                stacklevel=2,
+                category=UnusedWindowWarning,
+            )
 
         metadata["sql"] = db(query)._select(*select_args, **select_kwargs)
 
@@ -1222,13 +1235,40 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         """
         You can start iterating a Query Builder object before calling collect, for ease of use.
         """
-        yield from self.collect()
+        builder = self._extend(metadata={"iterating": True})
+        window_size = self.metadata.get("window_size", None)
+
+        if not window_size:
+            yield from builder.collect()
+            return
+
+        for chunk in builder.chunk(window_size):
+            yield from chunk
+
+    def __await__(self):
+        return self.collect_async().__await__()
+
+    async def __aiter__(self):
+        builder = self._extend(metadata={"iterating": True})
+
+        window_size = self.metadata.get("window_size", None)
+
+        if window_size:
+            async for chunk in builder.chunk_async(window_size):
+                for row in chunk:
+                    yield row
+        else:
+            rows = await builder.collect_async()
+            for row in rows:
+                yield row
+
+    def window(self, window_size: int) -> QueryBuilder[T_MetaInstance]:
+        return self._extend(metadata={"window_size": window_size})
 
     def __count(
         self,
         db: TypeDAL,
         distinct: t.Optional[bool] = None,
-        *,
         include_left_for_distinct: bool = True,
     ) -> Query:
         # internal, shared logic between .count and ._count
@@ -1351,7 +1391,10 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
                     pass
             ```
         """
-        require_permission(self._permissions, "read")
+        # require_permission checked in .collect()
+        if "limitby" in self.select_kwargs:
+            raise ValueError("chunk() cannot be combined with an existing limitby")
+
         page = 1
 
         while rows := self.__paginate(chunk_size, page).collect():
@@ -1506,7 +1549,10 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         writer can be visible halfway through the iteration; wrap it in `db.session()` if you
         need every page to come from the same snapshot.
         """
-        require_permission(self._permissions, "read")
+        # require_permission checked in .collect()
+        if "limitby" in self.select_kwargs:
+            raise ValueError("chunk_async() cannot be combined with an existing limitby")
+
         db = self._get_db()
         page = 1
 

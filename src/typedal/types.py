@@ -313,6 +313,8 @@ class Metadata(t.TypedDict):
     select_duration: t.NotRequired[float]
     relationships: t.NotRequired[set[str]]
     sql: t.NotRequired[str]
+    window_size: t.NotRequired[int]
+    iterating: t.NotRequired[bool]
 
 
 class FieldSettings(t.TypedDict, total=False):

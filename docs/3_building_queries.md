@@ -156,31 +156,32 @@ For more details about relationships and joins, see [4. Relationships](./4_relat
 
 ### groupby & having
 
-Group query results by one or more fields, typically used with aggregate functions like `count()`, `sum()`, `avg()`, etc.
+Group query results by one or more fields, typically used with aggregate functions like `count()`, `sum()`, `avg()`,
+etc.
 Use `having` to filter the grouped results based on aggregate conditions.
 
 ```python
 # Basic grouping: count articles per author
 Article.select(Article.author, Article.id.count().with_alias("article_count"))
-    .groupby(Article.author)
-    .collect()
+.groupby(Article.author)
+.collect()
 
 # Group by multiple fields
 Sale.select(Sale.product, Sale.region, Sale.amount.sum().with_alias("total"))
-    .groupby(Sale.product, Sale.region)
-    .collect()
+.groupby(Sale.product, Sale.region)
+.collect()
 
 # Filter groups with having: only authors with more than 5 articles
 Article.select(Article.author, Article.id.count().with_alias("article_count"))
-    .groupby(Article.author)
-    .having(Article.id.count() > 5)
-    .collect()
+.groupby(Article.author)
+.having(Article.id.count() > 5)
+.collect()
 
 # Can be chained in any order
 School.groupby(School.id)
-    .having(Team.id.count() > 0)
-    .select(School.id, Team.id.count())
-    .collect()
+.having(Team.id.count() > 0)
+.select(School.id, Team.id.count())
+.collect()
 ```
 
 ### cache
@@ -214,7 +215,8 @@ In order to enable this functionality, TypeDAL adds a `before update` and `befor
 which manages the dependencies. You can disable this behavior by passing `cache_dependency=False` to `db.define`.
 Be aware doing this might break some caching functionality!
 
-**Note:** For caching function results (instead of just query results), see [9. Function Memoization](./9_memoization.md).
+**Note:** For caching function results (instead of just query results),
+see [9. Function Memoization](./9_memoization.md).
 
 ### permissions
 
@@ -249,6 +251,8 @@ The Query Builder has a few operations that don't return a new builder instance:
   be indexed by ID instead of a list index (e.g. `rows[15]` to get the row with ID 15)
 - paginate: this works similarly to `collect`, but returns a PaginatedRows instead, which has a `.next()`
   and `.previous()` method to easily load more pages.
+- chunk: iterate over the query results in `TypedRows` batches of a fixed size. Each batch is loaded separately, so this
+  is useful when the complete result set should not be held in memory at once.
 - collect_into: instantiate rows as another TypedTable model that is unbound or bound to the same table.
 - collect_or_fail: where `collect` may return an empty result, this variant will raise an error if there are no results.
 - execute: get the raw rows matching your query as returned by pydal, without entity mapping or relationship loading.
@@ -260,6 +264,62 @@ The Query Builder has a few operations that don't return a new builder instance:
 - delete: instead of selecting rows, delete those matching the current query (see [Delete](#delete))
 
 Additionally, you can directly call `.all()`, `.collect()`, `.count()`, `.first()` on a model (e.g. `User.all()`).
+
+#### Chunking and windowed iteration
+
+Use `chunk()` when you want to process a large result set in batches:
+
+```python
+from typedal import TypedRows
+
+
+def send_article_batch(batch: TypedRows[Article]) -> None:
+    print(len(batch))  # with 250 published articles, prints 100, 100, 50
+
+
+for batch in Article.where(Article.published == True).chunk(100):
+    send_article_batch(batch)
+```
+
+`chunk_size` is the maximum number of rows in each `TypedRows[Article]` batch. The query is paginated repeatedly until
+an empty batch is returned. For example, with 250 matching articles and `chunk(100)`, the loop receives batches of 100,
+100, and 50 rows.
+These batching helpers cannot be combined with an existing `limitby`, because that sends mixed signals about whether
+the query should return one fixed slice or paginate through the complete result. Use `paginate()` when you need an
+explicitly bounded page or offset.
+Keep an explicit ordering when the database must return rows in a stable order:
+
+```python
+for rows in Article.where(Article.published == True).orderby(Article.id).chunk(100):
+    archive(rows)
+```
+
+`window()` configures the same batching behavior for normal iteration over a query builder. It yields individual rows
+while fetching at most the configured number of rows per database round trip. As with the other query-builder methods,
+it can be called directly on a typed table or chained after another query-builder method:
+
+```python
+for article in Article.where(Article.published == True).window(100):
+    process(article)
+```
+
+Without `window()`, iterating a query builder collects the complete result set first.
+
+```python
+for article in Article.window(100):
+    process(article)
+```
+
+Typed-table methods such as `where()`, `select()`, and `window()` are convenience delegates that create or extend a
+`QueryBuilder`. A database field with the same name takes precedence over such a delegate on the typed table. For
+example, if `Article` has a field called `window`, use the query-builder form explicitly:
+
+```python
+from typedal import QueryBuilder
+
+for article in QueryBuilder(Article).window(100):
+    process(article)
+```
 
 #### collect_into example
 
@@ -334,4 +394,5 @@ person.delete_record()
 Need less-common query patterns (for example, using `QueryBuilder` on old-style pyDAL tables)?
 See [10. Advanced APIs](./10_advanced_apis.md).
 
-Calling these from async code? Every execution method has a non-blocking `*_async` twin - see [11. Async](./11_async.md).
+Calling these from async code? Every execution method has a non-blocking `*_async` twin -
+see [11. Async](./11_async.md).
