@@ -1222,7 +1222,18 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         """
         You can start iterating a Query Builder object before calling collect, for ease of use.
         """
+        # fixme: integrate chunk ?
         yield from self.collect()
+
+    def __await__(self):
+        return self.collect_async().__await__()
+
+    async def __aiter__(self):
+        # fixme: integrate chunk ?
+        rows = await self.collect_async()
+        for row in rows:
+            yield row
+
 
     def __count(
         self,

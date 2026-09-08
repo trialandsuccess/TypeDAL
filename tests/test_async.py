@@ -29,6 +29,7 @@ import pytest_asyncio
 from src.typedal import TypeDAL, TypedField, TypedTable
 from src.typedal.asynchronous import AsyncSession, BlockingDatabaseAccessWarning, ConnectionWorker
 from src.typedal.fields import DecimalField, JSONField
+from src.typedal import TypedRows
 
 
 class AsyncThingCached(TypedTable):
@@ -150,8 +151,10 @@ async def test_collect_async_matches_sync_collect(db_async: TypeDAL):
     AsyncThingParity.insert(name="gadget", qty=7)
     db.commit()
 
-    sync_rows = AsyncThingParity.where(AsyncThingParity.qty > 0).collect()
-    async_rows = await AsyncThingParity.where(AsyncThingParity.qty > 0).collect_async()
+    qb = AsyncThingParity.where(AsyncThingParity.qty > 0)
+
+    sync_rows = qb.collect()
+    async_rows = await qb.collect_async()
 
     assert len(async_rows) == len(sync_rows) == 2
 
@@ -163,6 +166,23 @@ async def test_collect_async_matches_sync_collect(db_async: TypeDAL):
         async_row = async_by_id[row_id]
         assert async_row.name == sync_row.name
         assert async_row.qty == sync_row.qty
+
+    # last b locking ones before not allowing warnings:
+    list_of_rows_sync = list(qb)
+    first_row_sync = qb.first()
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", BlockingDatabaseAccessWarning)
+
+        rows_async = await qb
+        assert isinstance(rows_async, TypedRows), f"{type(rows_async)} unexpected"
+
+        assert list_of_rows_sync == list(rows_async)
+
+        async for row in qb:
+            break
+
+        assert row == first_row_sync == rows_async.first()
 
 
 @pytest.mark.asyncio
@@ -329,6 +349,7 @@ async def test_collect_async_with_relationships_matches_sync(db_async: TypeDAL):
     paginated = await AsyncThingRelMain.join("other").paginate_async(limit=1, page=1)
     assert len(paginated) == 1
     assert paginated.first().other.name == "parent"
+
 
 
 @pytest.mark.asyncio
