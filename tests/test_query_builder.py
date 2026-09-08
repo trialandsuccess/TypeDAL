@@ -3,6 +3,8 @@ import pytest
 from src.typedal import QueryBuilder, TypeDAL, TypedField, TypedTable, relationship
 from src.typedal.fields import rname
 from src.typedal.types import Query, Field
+from src.typedal.warnings import UnusedWindowWarning
+from .helpers import expect_no_warning
 
 db = TypeDAL("sqlite:memory")
 
@@ -1044,3 +1046,64 @@ def test_groupby_having_on_table_class():
     assert "HAVING" in sql1
 
     assert builder1.execute() == builder2.execute()
+
+class QueryCounter:
+    count = 0
+
+    def __call__(self, _):
+        self.count += 1
+
+def test_window():
+    _setup_data()
+
+    window_size = 2
+    qb = TestRelationship.window(window_size)
+
+    with pytest.warns(UnusedWindowWarning):
+        qb.collect()
+
+    query_counter = QueryCounter()
+    db._before_collect.append(query_counter)
+
+    with expect_no_warning(UnusedWindowWarning):
+        for row in qb:
+            assert isinstance(row, TestRelationship)
+
+    expected_count = (TestRelationship.count() + window_size - 1) // window_size + 1
+    assert expected_count == query_counter.count
+
+
+    # test that table which has 'window' field has more prio than the method,
+    # and QueryBuilder(Table).window() still works:
+    @db.define()
+    class TableWithWindowField(TypedTable):
+        window: str
+
+    assert not isinstance(TestRelationship.window, Field)
+    assert isinstance(TableWithWindowField.window, Field), f"unexpected type {type(TableWithWindowField.window)}"
+
+    assert not isinstance(QueryBuilder(TableWithWindowField).window, Field)
+
+    qb = QueryBuilder(TableWithWindowField).window(10)
+    assert isinstance(qb, QueryBuilder)
+
+
+@pytest.mark.asyncio
+async def test_window_async():
+    _setup_data()
+
+    window_size = 2
+    qb = TestRelationship.window(window_size)
+
+    with pytest.warns(UnusedWindowWarning):
+        await qb.collect_async()
+
+    query_counter = QueryCounter()
+    db._before_collect.append(query_counter)
+
+    with expect_no_warning(UnusedWindowWarning):
+        async for row in qb:
+            assert isinstance(row, TestRelationship)
+
+    expected_count = (await TestRelationship.count_async() + window_size - 1) // window_size + 1
+    assert expected_count == query_counter.count
