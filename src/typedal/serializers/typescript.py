@@ -31,7 +31,7 @@ class TypedDictRegistry(Singleton):
     def __init__(self) -> None:
         """Initialize the singleton registry and optional shared typtyp world."""
         self._types: dict[type, type[dict[str, t.Any]]] = {}
-        self._world = typtyp.World() if typtyp else None
+        self._world = typtyp.World() if typtyp else None  # type: ignore
         self._names: set[str] = set()
 
     @property
@@ -78,6 +78,7 @@ class TypedDictRegistry(Singleton):
         if world is None:  # pragma: ignore
             warnings.warn(
                 f"`{caller_name}` can not be used without the typescript extra. Please install `typedal[typescript]`",
+                stacklevel=2,
             )
             return ""
 

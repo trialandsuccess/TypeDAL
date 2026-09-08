@@ -110,7 +110,7 @@ class Relationship[To_Type]:
 
     @staticmethod
     def _error_duplicate_condition(condition: Condition, on: OnQuery) -> t.Never:
-        warnings.warn(f"Relation | Both specified! {condition=} {on=}")
+        warnings.warn(f"Relation | Both specified! {condition=} {on=}", stacklevel=2)
         raise ValueError("Please specify either a condition or an 'on' statement for this relationship!")
 
     def __repr__(self) -> str:
@@ -278,6 +278,7 @@ class Relationship[To_Type]:
                 f"Trying to access relationship '{self.name}' without joining. "
                 f"Did you forget to use .join('{self.name}')? Returning empty value.",
                 category=RuntimeWarning,
+                stacklevel=2,
             )
             return fallback_value
 
@@ -296,6 +297,7 @@ class Relationship[To_Type]:
                     "This performs an extra database query. "
                     f"Consider using .join('{self.name}') for better performance.",
                     category=RuntimeWarning,
+                    stacklevel=2,
                 )
 
             return builder.first()[self.name]  # type: ignore
@@ -304,6 +306,7 @@ class Relationship[To_Type]:
                 f"Failed to lazy load relationship '{self.name}': {e}",
                 category=RuntimeWarning,
                 source=e,
+                stacklevel=2,
             )
 
             return fallback_value
@@ -501,12 +504,12 @@ def to_relationship(
     try:
         condition = _generate_relationship_condition(cls, key, field)
     except Exception as e:  # pragma: no cover
-        warnings.warn("Could not generate Relationship condition", source=e)
+        warnings.warn("Could not generate Relationship condition", source=e, stacklevel=2)
         condition = None
 
     if not condition:  # pragma: no cover
         # something went wrong, not a valid relationship
-        warnings.warn(f"Invalid relationship for {cls.__name__}.{key}: {field}")
+        warnings.warn(f"Invalid relationship for {cls.__name__}.{key}: {field}", stacklevel=2)
         return None
 
     join = "left" if optional or t.get_origin(field) is list else "inner"
