@@ -2,6 +2,11 @@
 
 <!--next-version-placeholder-->
 
+## v5.1.0 (2026-09-08)
+
+### Feature
+* **query:** add async iteration and windowed query results (#13)
+
 ## v5.0.6 (2026-09-01)
 
 ### Fix
