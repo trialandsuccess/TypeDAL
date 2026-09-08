@@ -1088,6 +1088,16 @@ def test_window():
     assert isinstance(qb, QueryBuilder)
 
 
+def test_chunk_rejects_limitby():
+    _setup_data()
+
+    with pytest.raises(ValueError, match="limitby"):
+        list(TestQueryTable.select(limitby=(1, 4)).chunk(2))
+
+    with pytest.raises(ValueError, match="limitby"):
+        list(TestQueryTable.select(limitby=(1, 4)).window(2))
+
+
 @pytest.mark.asyncio
 async def test_window_async():
     _setup_data()

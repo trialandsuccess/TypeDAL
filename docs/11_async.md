@@ -63,6 +63,9 @@ async for batch in Author.where(Author.name.startswith("A")).chunk_async(100):
 Each `chunk_async()` batch is fetched by a separate await. Outside a session, each batch is also a separate transaction,
 so a concurrent writer can become visible during the iteration. Wrap the loop in `async with db.session()` when all
 batches need to use the same transaction and snapshot.
+`chunk_async()` and `window()` cannot be combined with an existing `limitby`, because that sends mixed signals about
+whether the query should return one fixed slice or paginate through the complete result. Use `paginate_async()` when
+you need an explicitly bounded page or offset.
 
 ## Transactions
 

@@ -465,6 +465,14 @@ async def test_chunk_async_matches_sync_chunk(db_async: TypeDAL):
 
     assert [len(chunk) async for chunk in AsyncThingChunk.chunk_async(2)] == [2, 2, 1]
 
+    with pytest.raises(ValueError, match="limitby"):
+        async for _ in AsyncThingChunk.select(limitby=(1, 4)).chunk_async(2):
+            pass
+
+    with pytest.raises(ValueError, match="limitby"):
+        async for _ in AsyncThingChunk.select(limitby=(1, 4)).window(2):
+            pass
+
 
 @pytest.mark.asyncio
 async def test_column_async_matches_sync_column(db_async: TypeDAL):

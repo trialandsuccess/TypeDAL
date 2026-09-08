@@ -284,6 +284,9 @@ for batch in Article.where(Article.published == True).chunk(100):
 `chunk_size` is the maximum number of rows in each `TypedRows[Article]` batch. The query is paginated repeatedly until
 an empty batch is returned. For example, with 250 matching articles and `chunk(100)`, the loop receives batches of 100,
 100, and 50 rows.
+These batching helpers cannot be combined with an existing `limitby`, because that sends mixed signals about whether
+the query should return one fixed slice or paginate through the complete result. Use `paginate()` when you need an
+explicitly bounded page or offset.
 Keep an explicit ordering when the database must return rows in a stable order:
 
 ```python

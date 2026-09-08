@@ -1392,6 +1392,9 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
             ```
         """
         # require_permission checked in .collect()
+        if "limitby" in self.select_kwargs:
+            raise ValueError("chunk() cannot be combined with an existing limitby")
+
         page = 1
 
         while rows := self.__paginate(chunk_size, page).collect():
@@ -1547,6 +1550,8 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         need every page to come from the same snapshot.
         """
         # require_permission checked in .collect()
+        if "limitby" in self.select_kwargs:
+            raise ValueError("chunk_async() cannot be combined with an existing limitby")
 
         db = self._get_db()
         page = 1
