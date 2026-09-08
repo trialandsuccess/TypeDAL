@@ -1,7 +1,7 @@
 # 11. Async
 
 Every query method has an `*_async` twin: `collect_async()`, `insert_async()`, `count_async()`,
-`update_async()`, `delete_async()`, and so on. They do exactly what their sync counterparts do
+`update_async()`, `delete_async()`, `chunk_async()`, and so on. They do exactly what their sync counterparts do
 (same arguments, same return values, same relationships, caching, hooks and permissions), except
 that they do not block the event loop while the database is busy.
 
@@ -28,6 +28,41 @@ async def handler():
     total = await Author.count_async()
     return author, authors, total
 ```
+
+## Awaiting and iterating query builders
+
+Query builders can be awaited directly. This is shorthand for `collect_async()` and returns the same `TypedRows`
+result:
+
+```python
+authors = await Author.where(Author.name.startswith("A"))
+```
+
+Query builders also support asynchronous iteration. `async for` yields individual typed table instances:
+
+```python
+async for author in Author.where(Author.name.startswith("A")):
+    await notify(author)
+```
+
+By default, asynchronous iteration collects the complete result set before yielding its first row. Use `window()` to
+fetch the result in batches while keeping the row-by-row `async for` interface:
+
+```python
+async for author in Author.where(Author.name.startswith("A")).window(100):
+    await notify(author)
+```
+
+Use `chunk_async()` when the consumer should receive each batch as a `TypedRows[Author]` result instead:
+
+```python
+async for batch in Author.where(Author.name.startswith("A")).chunk_async(100):
+    await index_author_batch(batch)  # batch is TypedRows[Author]
+```
+
+Each `chunk_async()` batch is fetched by a separate await. Outside a session, each batch is also a separate transaction,
+so a concurrent writer can become visible during the iteration. Wrap the loop in `async with db.session()` when all
+batches need to use the same transaction and snapshot.
 
 ## Transactions
 
