@@ -28,6 +28,21 @@ A Query Builder can be initialized by calling one of these methods on a TypedTab
 
 e.g. `Person.where(...)` -> `QueryBuilder[Person]`
 
+These may also be called without any arguments, which is useful to start a builder that is filled in conditionally:
+
+```python
+builder = Person.where()  # no conditions yet
+
+if only_active:
+    builder = builder.where(active=True)
+
+builder.collect()
+```
+
+Once a builder does have settings, calling `where()`, `select()` or `permissions()` without arguments does nothing:
+it would only create a copy of the builder. TypeDAL emits a `NoopQueryWarning` for those calls (and returns the
+original builder), so `Person.where(active=True).select().collect()` should simply drop the `.select()`.
+
 The query builder uses the builder pattern, so you can keep adding to it (in any order) until you're ready to get the
 data:
 
@@ -123,17 +138,17 @@ Person.select(expr)
 # Safe parameter injection with t-strings (Python 3.14+)
 min_age = 21
 expr = db.sql_expression(t"age >= {min_age}", output_type="boolean")
-Person.where(expr).select()
+Person.where(expr).collect()
 
 # Positional arguments
 expr = db.sql_expression("age > %s AND status = %s", 18, "active", output_type="boolean")
-Person.where(expr).select()
+Person.where(expr).collect()
 
 # Named arguments
 expr = db.sql_expression(
     "EXTRACT(year FROM %(date_col)s) = %(year)s", date_col="created_at", year=2023, output_type="boolean"
 )
-Person.where(expr).select()
+Person.where(expr).collect()
 ```
 
 Expressions can be used in `where()`, `select()`, `orderby()`, and other query methods.

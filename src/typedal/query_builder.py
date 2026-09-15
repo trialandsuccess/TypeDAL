@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import datetime as dt
 import math
+import pathlib
+import sys
 import time
 import typing as t
 import warnings
@@ -46,7 +48,39 @@ from .types import (
     merge_permissions,
     require_permission,
 )
-from .warnings import UnusedWindowWarning
+from .warnings import NoopQueryWarning, UnusedWindowWarning
+
+_PACKAGE_ROOT = str(pathlib.Path(__file__).parent)
+
+
+def _stacklevel_of_caller() -> int:
+    """
+    Find the stacklevel of the first frame outside of typedal.
+
+    A no-op can be reached directly (`builder.select()`) or via a shortcut on the model
+    (`Model.select()`), which sit at different depths, so the level can't be hardcoded.
+    """
+    stacklevel = 1
+    frame = sys._getframe(1)
+    while frame.f_back and frame.f_code.co_filename.startswith(_PACKAGE_ROOT):
+        stacklevel += 1
+        frame = frame.f_back
+
+    return stacklevel
+
+
+def warn_noop(method: str) -> None:
+    """
+    Warn that `method` was called without arguments on a builder that already has settings.
+
+    Such a call only copies the query builder, so it can simply be removed.
+    """
+    warnings.warn(
+        f"`.{method}()` without arguments does nothing, "
+        f"it only creates a copy of the query builder. You can remove this call.",
+        stacklevel=_stacklevel_of_caller(),
+        category=NoopQueryWarning,
+    )
 
 
 class QueryBuilder[T_MetaInstance: _TypedTable](Select):
@@ -175,6 +209,10 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         """
         Return a clone of this builder with permission overrides merged in.
         """
+        if not permissions and self:
+            warn_noop("permissions")
+            return self
+
         return self._extend(permissions=permissions)
 
     def _normalize_select_option(
@@ -216,7 +254,14 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
             join: othertable.on(query) - do an INNER JOIN. Using TypeDAL relationships with .join() is recommended!
             left: othertable.on(query) - do a LEFT JOIN. Using TypeDAL relationships with .join() is recommended!
             cache: cache the query result to speed up repeated queries; e.g. (cache=(cache.ram, 3600), cacheable=True)
+
+        Calling this without any fields or options on a builder that already has settings
+        does nothing and emits a NoopQueryWarning.
         """
+
+        if not fields and not options and self:
+            warn_noop("select")
+            return self
 
         for key in ("distinct",):
             if options.get(key):
@@ -282,7 +327,15 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
             .where(lambda table: table.id == 5).where(lambda table: table.id == 6) == (table.id == 5) & (table.id=6)
         When passing multiple queries to a single .where, they will be ORed:
             .where(lambda table: table.id == 5, lambda table: table.id == 6) == (table.id == 5) | (table.id=6)
+
+        Calling this without any arguments on a builder that already has settings
+        does nothing and emits a NoopQueryWarning.
+        Starting an empty builder (e.g. `Model.where()`) is allowed and stays silent.
         """
+        if not queries_or_lambdas and not filters and self:
+            warn_noop("where")
+            return self
+
         new_query = self.query
         table = self._ensure_table_defined()
 
