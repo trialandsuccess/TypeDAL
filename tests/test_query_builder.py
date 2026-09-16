@@ -1,9 +1,11 @@
+import inspect
+
 import pytest
 
 from src.typedal import QueryBuilder, TypeDAL, TypedField, TypedTable, relationship
 from src.typedal.fields import rname
 from src.typedal.types import Query, Field
-from src.typedal.warnings import UnusedWindowWarning
+from src.typedal.warnings import NoopQueryWarning, UnusedWindowWarning
 from .helpers import expect_no_warning
 
 db = TypeDAL("sqlite:memory")
@@ -187,7 +189,7 @@ def test_select():
     _setup_data()
 
     # all:
-    full = TestQueryTable.where(lambda row: row.number > 0).join().select().first_or_fail()
+    full = TestQueryTable.where(lambda row: row.number > 0).join().first_or_fail()
 
     assert full.number
     assert full.other
@@ -496,6 +498,48 @@ def test_complex_join():
             condition=lambda relation, query: (relation.querytable == query.id) & (query.number == 1),
             on=lambda relation, query: (relation.querytable == query.id) & (query.number == 1),
         )
+
+
+def test_noop_warnings():
+    _setup_data()
+
+    # starting a builder without arguments is the documented entrypoint, so it stays silent:
+    with expect_no_warning(NoopQueryWarning):
+        assert isinstance(TestQueryTable.select(), QueryBuilder)
+        assert isinstance(TestQueryTable.where(), QueryBuilder)
+        assert isinstance(QueryBuilder(TestQueryTable), QueryBuilder)
+        # a second call on a still-empty builder is a known blind spot, but harmless:
+        assert isinstance(TestQueryTable.select().select(), QueryBuilder)
+
+    # once the builder holds settings, an empty call does nothing:
+    for builder in (
+        TestQueryTable.where(number=1),
+        TestQueryTable.select("number"),
+        TestQueryTable.join("relations"),
+        TestQueryTable.window(2),
+    ):
+        for method in ("select", "where", "permissions"):
+            with pytest.warns(NoopQueryWarning, match=f"`.{method}\\(\\)` without arguments"):
+                # no-op calls return the same instance instead of an (expensive) copy:
+                assert getattr(builder, method)() is builder
+
+    # passing anything at all is never a no-op:
+    with expect_no_warning(NoopQueryWarning):
+        builder = TestQueryTable.where(number=1)
+        assert builder.select("number") is not builder
+        assert builder.where(number=2) is not builder
+        assert builder.permissions(delete=False) is not builder
+
+
+def test_noop_warning_points_at_caller():
+    _setup_data()
+
+    with pytest.warns(NoopQueryWarning) as warning:
+        TestQueryTable.where(number=1).select()
+        expected_line = inspect.currentframe().f_lineno - 1
+
+    assert warning[0].filename == __file__
+    assert warning[0].lineno == expected_line
 
 
 def test_reprs_and_bool():

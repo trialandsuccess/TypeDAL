@@ -46,7 +46,19 @@ from .types import (
     merge_permissions,
     require_permission,
 )
-from .warnings import UnusedWindowWarning
+from .warnings import NoopQueryWarning, UnusedWindowWarning
+
+
+def warn_noop(method: str) -> None:
+    """
+    Warn that `method` was called without arguments, which has no effect.
+    """
+    # stacklevel: 1 = here, 2 = the query builder method, 3 = the caller.
+    warnings.warn(
+        f"`.{method}()` without arguments does nothing. You can remove this call.",
+        stacklevel=3,
+        category=NoopQueryWarning,
+    )
 
 
 class QueryBuilder[T_MetaInstance: _TypedTable](Select):
@@ -175,6 +187,10 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         """
         Return a clone of this builder with permission overrides merged in.
         """
+        if not permissions and self:
+            warn_noop("permissions")
+            return self
+
         return self._extend(permissions=permissions)
 
     def _normalize_select_option(
@@ -216,7 +232,14 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
             join: othertable.on(query) - do an INNER JOIN. Using TypeDAL relationships with .join() is recommended!
             left: othertable.on(query) - do a LEFT JOIN. Using TypeDAL relationships with .join() is recommended!
             cache: cache the query result to speed up repeated queries; e.g. (cache=(cache.ram, 3600), cacheable=True)
+
+        Calling this without any fields or options on a builder that already has settings
+        does nothing and emits a NoopQueryWarning.
         """
+
+        if not fields and not options and self:
+            warn_noop("select")
+            return self
 
         for key in ("distinct",):
             if options.get(key):
@@ -282,7 +305,15 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
             .where(lambda table: table.id == 5).where(lambda table: table.id == 6) == (table.id == 5) & (table.id=6)
         When passing multiple queries to a single .where, they will be ORed:
             .where(lambda table: table.id == 5, lambda table: table.id == 6) == (table.id == 5) | (table.id=6)
+
+        Calling this without any arguments on a builder that already has settings
+        does nothing and emits a NoopQueryWarning.
+        Starting an empty builder (e.g. `Model.where()`) is allowed and stays silent.
         """
+        if not queries_or_lambdas and not filters and self:
+            warn_noop("where")
+            return self
+
         new_query = self.query
         table = self._ensure_table_defined()
 
