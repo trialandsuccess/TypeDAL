@@ -51,13 +51,9 @@ from .warnings import NoopQueryWarning, UnusedWindowWarning
 
 def warn_noop(method: str) -> None:
     """
-    Warn that `method` was called without arguments on a builder that already has settings.
-
-    Such a call has no effect at all, so it can simply be removed.
+    Warn that `method` was called without arguments, which has no effect.
     """
-    # 1 = this function, 2 = the query builder method, 3 = the caller.
-    # The shortcuts on the model (`Model.select()`) always start an empty builder,
-    # which never warns, so there is no deeper path to account for.
+    # stacklevel: 1 = here, 2 = the query builder method, 3 = the caller.
     warnings.warn(
         f"`.{method}()` without arguments does nothing. You can remove this call.",
         stacklevel=3,
