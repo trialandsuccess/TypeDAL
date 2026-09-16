@@ -2,6 +2,11 @@
 
 <!--next-version-placeholder-->
 
+## v5.1.1 (2026-09-16)
+
+### Fix
+* **query:** warn on no-op builder calls
+
 ## v5.1.0 (2026-09-08)
 
 ### Feature
