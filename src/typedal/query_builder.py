@@ -6,8 +6,6 @@ from __future__ import annotations
 
 import datetime as dt
 import math
-import pathlib
-import sys
 import time
 import typing as t
 import warnings
@@ -50,35 +48,19 @@ from .types import (
 )
 from .warnings import NoopQueryWarning, UnusedWindowWarning
 
-_PACKAGE_ROOT = str(pathlib.Path(__file__).parent)
-
-
-def _stacklevel_of_caller() -> int:
-    """
-    Find the stacklevel of the first frame outside of typedal.
-
-    A no-op can be reached directly (`builder.select()`) or via a shortcut on the model
-    (`Model.select()`), which sit at different depths, so the level can't be hardcoded.
-    """
-    stacklevel = 1
-    frame = sys._getframe(1)
-    while frame.f_back and frame.f_code.co_filename.startswith(_PACKAGE_ROOT):
-        stacklevel += 1
-        frame = frame.f_back
-
-    return stacklevel
-
 
 def warn_noop(method: str) -> None:
     """
     Warn that `method` was called without arguments on a builder that already has settings.
 
-    Such a call only copies the query builder, so it can simply be removed.
+    Such a call has no effect at all, so it can simply be removed.
     """
+    # 1 = this function, 2 = the query builder method, 3 = the caller.
+    # The shortcuts on the model (`Model.select()`) always start an empty builder,
+    # which never warns, so there is no deeper path to account for.
     warnings.warn(
-        f"`.{method}()` without arguments does nothing, "
-        f"it only creates a copy of the query builder. You can remove this call.",
-        stacklevel=_stacklevel_of_caller(),
+        f"`.{method}()` without arguments does nothing. You can remove this call.",
+        stacklevel=3,
         category=NoopQueryWarning,
     )
 

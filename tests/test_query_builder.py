@@ -1,3 +1,5 @@
+import inspect
+
 import pytest
 
 from src.typedal import QueryBuilder, TypeDAL, TypedField, TypedTable, relationship
@@ -532,15 +534,12 @@ def test_noop_warnings():
 def test_noop_warning_points_at_caller():
     _setup_data()
 
-    with pytest.warns(NoopQueryWarning) as direct:
-        QueryBuilder(TestQueryTable).where(number=1).select()
-
-    with pytest.warns(NoopQueryWarning) as via_model:
+    with pytest.warns(NoopQueryWarning) as warning:
         TestQueryTable.where(number=1).select()
+        expected_line = inspect.currentframe().f_lineno - 1
 
-    # both reach the warning through a different amount of internal frames,
-    # but should point to this file either way:
-    assert direct[0].filename == via_model[0].filename == __file__
+    assert warning[0].filename == __file__
+    assert warning[0].lineno == expected_line
 
 
 def test_reprs_and_bool():

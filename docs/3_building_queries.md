@@ -39,9 +39,9 @@ if only_active:
 builder.collect()
 ```
 
-Once a builder does have settings, calling `where()`, `select()` or `permissions()` without arguments does nothing:
-it would only create a copy of the builder. TypeDAL emits a `NoopQueryWarning` for those calls (and returns the
-original builder), so `Person.where(active=True).select().collect()` should simply drop the `.select()`.
+Once a builder does have settings, calling `where()`, `select()` or `permissions()` without arguments has no effect:
+the same builder is returned unchanged, together with a `NoopQueryWarning`. So
+`Person.where(active=True).select().collect()` should simply drop the `.select()`.
 
 The query builder uses the builder pattern, so you can keep adding to it (in any order) until you're ready to get the
 data:
