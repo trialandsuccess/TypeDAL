@@ -220,6 +220,10 @@ if t.TYPE_CHECKING:
 
         def define_table(self, *args: t.Any, **kwargs: t.Any) -> "Table": ...
 
+        # pydal ships no py.typed, so without this declaration the result would be Any for mypy users.
+        # pyright infers `TypeIs[...]` from pydal's `return callable(...)`, which `bool` can't restate.
+        def has_representer(self, name: str) -> bool: ...  # pyright: ignore[reportIncompatibleMethodOverride]
+
         def represent(self, name: str, *args: t.Any, **kwargs: t.Any) -> str: ...
 
         # pydal exposes dynamic table attributes like `db.my_table`.
