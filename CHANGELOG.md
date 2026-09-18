@@ -2,6 +2,11 @@
 
 <!--next-version-placeholder-->
 
+## v5.1.2 (2026-09-18)
+
+### Fix
+* **query-builder:** support counting distinct field values
+
 ## v5.1.1 (2026-09-16)
 
 ### Fix
