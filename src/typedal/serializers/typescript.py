@@ -31,7 +31,7 @@ class TypedDictRegistry(Singleton):
     def __init__(self) -> None:
         """Initialize the singleton registry and optional shared typtyp world."""
         self._types: dict[type, type[dict[str, t.Any]]] = {}
-        self._world = typtyp.World() if typtyp else None
+        self._world = typtyp.World() if typtyp else None  # ty: ignore[redundant-condition]
         self._names: set[str] = set()
 
     @property

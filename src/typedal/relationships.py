@@ -253,10 +253,12 @@ class Relationship[To_Type]:
             # relationship queried on class, that's allowed
             return self
 
+        db = instance._db
+
         # instance: TypedTable instance
         # owner: TypedTable class
 
-        if not self.name:  # pragma: no cover
+        if not (self.name and db):  # pragma: no cover
             raise ValueError("Relationship does not seem to be connected to a table field.")
 
         # Handle different lazy policies
@@ -283,7 +285,7 @@ class Relationship[To_Type]:
 
         # For "tolerate" and "allow", we fetch the data
         try:
-            resolved_table = self.get_table(instance._db)
+            resolved_table = self.get_table(db)
 
             builder = owner.where(id=instance.id).join(self.name)
             if issubclass(resolved_table, TypedTable) or isinstance(resolved_table, Table):

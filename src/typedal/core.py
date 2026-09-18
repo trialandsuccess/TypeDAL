@@ -34,7 +34,7 @@ from .helpers import (
 from .serializers.typescript import TypedDictRegistry
 
 # noinspection PyUnusedImports
-from .types import CacheStatus, Field, Template
+from .types import CacheStatus, Expression, Field, Template
 
 try:
     # python 3.14+
@@ -46,15 +46,15 @@ except ImportError:  # pragma: no cover
 if t.TYPE_CHECKING:
     from .fields import TypedField
     from .query_builder import QueryBuilder
-    from .types import AnyDict, DefineKwargs, Expression, Rows, Set, T_Query, Table
+    from .types import AnyDict, DefineKwargs, Rows, Set, T_Query, Table
 
 
-def _expression_subclasses() -> t.Iterator[type]:
+def _expression_subclasses() -> t.Iterator[type[Expression]]:
     """
     Yield Expression and every (nested) subclass currently loaded, e.g. Field and TypedField.
     """
-    seen = {Expression}
-    stack = [Expression]
+    seen: set[type[Expression]] = {Expression}
+    stack: list[type[Expression]] = [Expression]
     while stack:
         for subclass in stack.pop().__subclasses__():
             if subclass not in seen:
@@ -100,7 +100,7 @@ def _purge_dialect_expressions(adapter: t.Any) -> None:
 #  because then they will have different globals and it breaks!
 
 
-def evaluate_forward_reference_312(fw_ref: ForwardRef, namespace: dict[str, type]) -> type:  # pragma: no cover
+def evaluate_forward_reference_312(fw_ref: ForwardRef, namespace: t.Mapping[str, type]) -> type:  # pragma: no cover
     """
     Extract the original type from a forward reference string.
 
@@ -110,13 +110,13 @@ def evaluate_forward_reference_312(fw_ref: ForwardRef, namespace: dict[str, type
         type,
         fw_ref._evaluate(  # ty: ignore[deprecated]
             localns=locals(),
-            globalns=globals() | namespace,
+            globalns=globals() | dict(namespace),
             recursive_guard=frozenset(),
         ),
     )
 
 
-def evaluate_forward_reference_313(fw_ref: ForwardRef, namespace: dict[str, type]) -> type:  # pragma: no cover
+def evaluate_forward_reference_313(fw_ref: ForwardRef, namespace: t.Mapping[str, type]) -> type:  # pragma: no cover
     """
     Extract the original type from a forward reference string.
 
@@ -126,14 +126,14 @@ def evaluate_forward_reference_313(fw_ref: ForwardRef, namespace: dict[str, type
         type,
         fw_ref._evaluate(  # ty: ignore[deprecated]
             localns=locals(),
-            globalns=globals() | namespace,
+            globalns=globals() | dict(namespace),
             recursive_guard=frozenset(),
             type_params=(),  # suggested since 3.13 (warning) and not supported before. Mandatory after 1.15!
         ),
     )
 
 
-def evaluate_forward_reference_314(fw_ref: ForwardRef, namespace: dict[str, type]) -> type:  # pragma: no cover
+def evaluate_forward_reference_314(fw_ref: ForwardRef, namespace: t.Mapping[str, type]) -> type:  # pragma: no cover
     """
     Extract the original type from a forward reference string.
 
@@ -143,7 +143,7 @@ def evaluate_forward_reference_314(fw_ref: ForwardRef, namespace: dict[str, type
         type,
         fw_ref.evaluate(
             locals=locals(),
-            globals=globals() | namespace,
+            globals=globals() | dict(namespace),
             type_params=(),
         ),
     )
@@ -151,7 +151,7 @@ def evaluate_forward_reference_314(fw_ref: ForwardRef, namespace: dict[str, type
 
 def evaluate_forward_reference(
     fw_ref: ForwardRef,
-    namespace: dict[str, type] | None = None,
+    namespace: t.Mapping[str, type] | None = None,
 ) -> type:  # pragma: no cover
     """
     Extract the original type from a forward reference string.
@@ -166,7 +166,7 @@ def evaluate_forward_reference(
         return evaluate_forward_reference_314(fw_ref, namespace=namespace or {})
 
 
-def resolve_annotation_313(ftype: str, namespace: dict[str, type] | None = None) -> type:  # pragma: no cover
+def resolve_annotation_313(ftype: str, namespace: t.Mapping[str, type] | None = None) -> type:  # pragma: no cover
     """
     Resolve an annotation that's in string representation.
 
@@ -176,7 +176,7 @@ def resolve_annotation_313(ftype: str, namespace: dict[str, type] | None = None)
     return evaluate_forward_reference(fw_ref, namespace=namespace)
 
 
-def resolve_annotation_314(ftype: str, namespace: dict[str, type] | None = None) -> type:  # pragma: no cover
+def resolve_annotation_314(ftype: str, namespace: t.Mapping[str, type] | None = None) -> type:  # pragma: no cover
     """
     Resolve an annotation that's in string representation.
 
@@ -186,7 +186,7 @@ def resolve_annotation_314(ftype: str, namespace: dict[str, type] | None = None)
     return evaluate_forward_reference(fw_ref, namespace=namespace)
 
 
-def resolve_annotation(ftype: str, namespace: dict[str, type] | None = None) -> type:  # pragma: no cover
+def resolve_annotation(ftype: str, namespace: t.Mapping[str, type] | None = None) -> type:  # pragma: no cover
     """
     Resolve an annotation that's in string representation.
 
@@ -219,6 +219,8 @@ if t.TYPE_CHECKING:
         def define_table(self, *args: t.Any, **kwargs: t.Any) -> "Table": ...
 
         def has_representer(self, field_type: str) -> bool: ...
+
+        def represent(self, name: str, *args: t.Any, **kwargs: t.Any) -> str: ...
 
         # pydal exposes dynamic table attributes like `db.my_table`.
         # this keeps type checkers from flagging these as missing attributes.

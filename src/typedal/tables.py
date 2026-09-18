@@ -1129,7 +1129,7 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
             "after_delete": cls._after_delete,
         }
 
-    def _setup_instance_methods(self) -> None:
+    def _setup_instance_methods(self: t.Self | type[t.Self]) -> None:
         # use setattr instead of self.x = y to make the typecheckers happier
         setattr(self, "as_dict", self._as_dict)
         setattr(self, "__json__", self._as_json)
