@@ -270,7 +270,8 @@ extend-ignore = [
 ]
 
 ignore = [
-    "RUF013" # implicit optional
+    "RUF012", # mutable class attributes
+    "RUF013", # implicit optional
 ]
 
 
