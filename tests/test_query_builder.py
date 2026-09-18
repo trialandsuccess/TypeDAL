@@ -1,8 +1,12 @@
+import inspect
+
 import pytest
 
 from src.typedal import QueryBuilder, TypeDAL, TypedField, TypedTable, relationship
 from src.typedal.fields import rname
 from src.typedal.types import Query, Field
+from src.typedal.warnings import NoopQueryWarning, UnusedWindowWarning
+from .helpers import expect_no_warning
 
 db = TypeDAL("sqlite:memory")
 
@@ -185,7 +189,7 @@ def test_select():
     _setup_data()
 
     # all:
-    full = TestQueryTable.where(lambda row: row.number > 0).join().select().first_or_fail()
+    full = TestQueryTable.where(lambda row: row.number > 0).join().first_or_fail()
 
     assert full.number
     assert full.other
@@ -494,6 +498,48 @@ def test_complex_join():
             condition=lambda relation, query: (relation.querytable == query.id) & (query.number == 1),
             on=lambda relation, query: (relation.querytable == query.id) & (query.number == 1),
         )
+
+
+def test_noop_warnings():
+    _setup_data()
+
+    # starting a builder without arguments is the documented entrypoint, so it stays silent:
+    with expect_no_warning(NoopQueryWarning):
+        assert isinstance(TestQueryTable.select(), QueryBuilder)
+        assert isinstance(TestQueryTable.where(), QueryBuilder)
+        assert isinstance(QueryBuilder(TestQueryTable), QueryBuilder)
+        # a second call on a still-empty builder is a known blind spot, but harmless:
+        assert isinstance(TestQueryTable.select().select(), QueryBuilder)
+
+    # once the builder holds settings, an empty call does nothing:
+    for builder in (
+        TestQueryTable.where(number=1),
+        TestQueryTable.select("number"),
+        TestQueryTable.join("relations"),
+        TestQueryTable.window(2),
+    ):
+        for method in ("select", "where", "permissions"):
+            with pytest.warns(NoopQueryWarning, match=f"`.{method}\\(\\)` without arguments"):
+                # no-op calls return the same instance instead of an (expensive) copy:
+                assert getattr(builder, method)() is builder
+
+    # passing anything at all is never a no-op:
+    with expect_no_warning(NoopQueryWarning):
+        builder = TestQueryTable.where(number=1)
+        assert builder.select("number") is not builder
+        assert builder.where(number=2) is not builder
+        assert builder.permissions(delete=False) is not builder
+
+
+def test_noop_warning_points_at_caller():
+    _setup_data()
+
+    with pytest.warns(NoopQueryWarning) as warning:
+        TestQueryTable.where(number=1).select()
+        expected_line = inspect.currentframe().f_lineno - 1
+
+    assert warning[0].filename == __file__
+    assert warning[0].lineno == expected_line
 
 
 def test_reprs_and_bool():
@@ -1054,3 +1100,74 @@ def test_groupby_having_on_table_class():
     assert "HAVING" in sql1
 
     assert builder1.execute() == builder2.execute()
+
+class QueryCounter:
+    count = 0
+
+    def __call__(self, _):
+        self.count += 1
+
+def test_window():
+    _setup_data()
+
+    window_size = 2
+    qb = TestRelationship.window(window_size)
+
+    with pytest.warns(UnusedWindowWarning):
+        qb.collect()
+
+    query_counter = QueryCounter()
+    db._before_collect.append(query_counter)
+
+    with expect_no_warning(UnusedWindowWarning):
+        for row in qb:
+            assert isinstance(row, TestRelationship)
+
+    expected_count = (TestRelationship.count() + window_size - 1) // window_size + 1
+    assert expected_count == query_counter.count
+
+
+    # test that table which has 'window' field has more prio than the method,
+    # and QueryBuilder(Table).window() still works:
+    @db.define()
+    class TableWithWindowField(TypedTable):
+        window: str
+
+    assert not isinstance(TestRelationship.window, Field)
+    assert isinstance(TableWithWindowField.window, Field), f"unexpected type {type(TableWithWindowField.window)}"
+
+    assert not isinstance(QueryBuilder(TableWithWindowField).window, Field)
+
+    qb = QueryBuilder(TableWithWindowField).window(10)
+    assert isinstance(qb, QueryBuilder)
+
+
+def test_chunk_rejects_limitby():
+    _setup_data()
+
+    with pytest.raises(ValueError, match="limitby"):
+        list(TestQueryTable.select(limitby=(1, 4)).chunk(2))
+
+    with pytest.raises(ValueError, match="limitby"):
+        list(TestQueryTable.select(limitby=(1, 4)).window(2))
+
+
+@pytest.mark.asyncio
+async def test_window_async():
+    _setup_data()
+
+    window_size = 2
+    qb = TestRelationship.window(window_size)
+
+    with pytest.warns(UnusedWindowWarning):
+        await qb.collect_async()
+
+    query_counter = QueryCounter()
+    db._before_collect.append(query_counter)
+
+    with expect_no_warning(UnusedWindowWarning):
+        async for row in qb:
+            assert isinstance(row, TestRelationship)
+
+    expected_count = (await TestRelationship.count_async() + window_size - 1) // window_size + 1
+    assert expected_count == query_counter.count

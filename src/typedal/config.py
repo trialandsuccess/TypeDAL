@@ -159,7 +159,7 @@ def _load_toml(path: str | bool | Path | None = True) -> tuple[str, AnyDict]:
 
         return str(toml_path) or "", t.cast(AnyDict, data["tool"]["typedal"])
     except Exception as e:
-        warnings.warn(f"Could not load typedal config toml: {e}", source=e)
+        warnings.warn(f"Could not load typedal config toml: {e}", source=e, stacklevel=2)
         return str(toml_path) or "", {}
 
 

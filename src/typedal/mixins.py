@@ -180,6 +180,7 @@ class SlugMixin(Mixin):
             warnings.warn(
                 "The 'slug_suffix' option is deprecated, use 'slug_suffix_length' instead.",
                 DeprecationWarning,
+                stacklevel=2,
             )
 
         slug_suffix = slug_suffix_length or kw.get("slug_suffix", 0)

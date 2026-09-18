@@ -30,6 +30,7 @@ except ImportError as e:
         "to fix this.",
         source=e,
         category=RuntimeWarning,
+        stacklevel=2,
     )
     exit(127)  # command not found
 

@@ -434,6 +434,7 @@ class BlockingAccessHandler(ExecutionHandler):
             f"the extra query. command: {command}",
             category=BlockingDatabaseAccessWarning,
             skip_file_prefixes=_SKIP_FRAMES,
+            stacklevel=2,
         )
 
 

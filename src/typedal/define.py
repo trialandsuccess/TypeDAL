@@ -123,7 +123,10 @@ class TableDefinitionBuilder:
             self.class_map[table._rname] = cls  # table_model - sql name
             cls.__on_define__(self.db)
         else:
-            warnings.warn("db.define used without inheriting TypedTable. This could lead to strange problems!")
+            warnings.warn(
+                "db.define used without inheriting TypedTable. This could lead to strange problems!",
+                stacklevel=2,
+            )
 
         if not tablename.startswith("typedal_") and cache_dependency:
             from .caching import _remove_cache, remove_cache_for_table

@@ -6,7 +6,7 @@ build-backend = "uv_build"
 name = "TypeDAL"
 description = 'Typing support for PyDAL'
 readme = "README.md"
-version = "5.0.6"
+version = "5.1.1"
 requires-python = ">=3.12"
 license-expression = "MIT"
 keywords = []
@@ -181,7 +181,7 @@ badge = true
 mypy = "--disable-error-code misc"
 
 [tool.black]
-target-version = ["py314"]
+target-version = ["py312"]
 line-length = 120
 # 'extend-exclude' excludes files or directories in addition to the defaults
 extend-exclude = '''
@@ -229,7 +229,7 @@ strict = true
 exclude = ["venv", ".bak"]
 
 [tool.ruff]
-target-version = "py314"
+target-version = "py312"
 line-length = 120
 
 extend-exclude = ["*.bak/", "venv*/", "tests/", "example_*.py"]

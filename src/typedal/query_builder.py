@@ -8,6 +8,7 @@ import datetime as dt
 import math
 import time
 import typing as t
+import warnings
 from collections import defaultdict
 
 from pydal.helpers.classes import SQLALL
@@ -45,6 +46,19 @@ from .types import (
     merge_permissions,
     require_permission,
 )
+from .warnings import NoopQueryWarning, UnusedWindowWarning
+
+
+def warn_noop(method: str) -> None:
+    """
+    Warn that `method` was called without arguments, which has no effect.
+    """
+    # stacklevel: 1 = here, 2 = the query builder method, 3 = the caller.
+    warnings.warn(
+        f"`.{method}()` without arguments does nothing. You can remove this call.",
+        stacklevel=3,
+        category=NoopQueryWarning,
+    )
 
 
 class QueryBuilder[T_MetaInstance: _TypedTable](Select):
@@ -173,6 +187,10 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         """
         Return a clone of this builder with permission overrides merged in.
         """
+        if not permissions and self:  # ty: ignore[redundant-condition]
+            warn_noop("permissions")
+            return self
+
         return self._extend(permissions=permissions)
 
     def _normalize_select_option(
@@ -214,7 +232,14 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
             join: othertable.on(query) - do an INNER JOIN. Using TypeDAL relationships with .join() is recommended!
             left: othertable.on(query) - do a LEFT JOIN. Using TypeDAL relationships with .join() is recommended!
             cache: cache the query result to speed up repeated queries; e.g. (cache=(cache.ram, 3600), cacheable=True)
+
+        Calling this without any fields or options on a builder that already has settings
+        does nothing and emits a NoopQueryWarning.
         """
+
+        if not fields and not options and self:
+            warn_noop("select")
+            return self
 
         for key in ("distinct",):
             if options.get(key):
@@ -280,7 +305,15 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
             .where(lambda table: table.id == 5).where(lambda table: table.id == 6) == (table.id == 5) & (table.id=6)
         When passing multiple queries to a single .where, they will be ORed:
             .where(lambda table: table.id == 5, lambda table: table.id == 6) == (table.id == 5) | (table.id=6)
+
+        Calling this without any arguments on a builder that already has settings
+        does nothing and emits a NoopQueryWarning.
+        Starting an empty builder (e.g. `Model.where()`) is allowed and stays silent.
         """
+        if not queries_or_lambdas and not filters and self:
+            warn_noop("where")
+            return self
+
         new_query = self.query
         table = self._ensure_table_defined()
 
@@ -661,6 +694,17 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
             return result
 
         query, select_args, select_kwargs = self._before_query(metadata, add_id=add_id)
+
+        window_size = metadata.get("window_size", None)
+        is_iterating = metadata.get("iterating", False)
+
+        if window_size is not None and is_iterating is not True:
+            warnings.warn(
+                "A window size was configured, but collect() was called directly. "
+                "Use iteration over the query builder to fetch rows in windows.",
+                stacklevel=2,
+                category=UnusedWindowWarning,
+            )
 
         metadata["sql"] = db(query)._select(*select_args, **select_kwargs)
 
@@ -1222,7 +1266,35 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         """
         You can start iterating a Query Builder object before calling collect, for ease of use.
         """
-        yield from self.collect()
+        builder = self._extend(metadata={"iterating": True})
+        window_size = self.metadata.get("window_size", None)
+
+        if not window_size:
+            yield from builder.collect()
+            return
+
+        for chunk in builder.chunk(window_size):
+            yield from chunk
+
+    def __await__(self):
+        return self.collect_async().__await__()
+
+    async def __aiter__(self):
+        builder = self._extend(metadata={"iterating": True})
+
+        window_size = self.metadata.get("window_size", None)
+
+        if window_size:
+            async for chunk in builder.chunk_async(window_size):
+                for row in chunk:
+                    yield row
+        else:
+            rows = await builder.collect_async()
+            for row in rows:
+                yield row
+
+    def window(self, window_size: int) -> QueryBuilder[T_MetaInstance]:
+        return self._extend(metadata={"window_size": window_size})
 
     def __count(
         self,
@@ -1354,7 +1426,10 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
                     pass
             ```
         """
-        require_permission(self._permissions, "read")
+        # require_permission checked in .collect()
+        if "limitby" in self.select_kwargs:
+            raise ValueError("chunk() cannot be combined with an existing limitby")
+
         page = 1
 
         while rows := self.__paginate(chunk_size, page).collect():
@@ -1509,7 +1584,10 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         writer can be visible halfway through the iteration; wrap it in `db.session()` if you
         need every page to come from the same snapshot.
         """
-        require_permission(self._permissions, "read")
+        # require_permission checked in .collect()
+        if "limitby" in self.select_kwargs:
+            raise ValueError("chunk_async() cannot be combined with an existing limitby")
+
         db = self._get_db()
         page = 1
 

@@ -78,6 +78,7 @@ class TypedDictRegistry(Singleton):
         if world is None:  # pragma: ignore
             warnings.warn(
                 f"`{caller_name}` can not be used without the typescript extra. Please install `typedal[typescript]`",
+                stacklevel=2,
             )
             return ""
 

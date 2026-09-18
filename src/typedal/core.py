@@ -478,7 +478,12 @@ class TypeDAL(_TypeDALBase):
                 delattr(self, tablename)
 
             if verbose:
-                warnings.warn(f"{model} could not be migrated, try faking", source=e, category=RuntimeWarning)
+                warnings.warn(
+                    f"{model} could not be migrated, try faking",
+                    source=e,
+                    category=RuntimeWarning,
+                    stacklevel=2,
+                )
 
             # try again:
             return self.define(model, migrate=self._migrate, fake_migrate=self._migrate, redefine=True)

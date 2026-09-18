@@ -138,6 +138,23 @@ class TableMeta(type):
         self._relationships = None
         self._permissions = None
 
+    def __getattribute__(self, col: str) -> t.Any:
+        """
+        Resolve bound table fields before metaclass convenience methods.
+
+        Annotation-only fields are not stored in the model class dictionary, so
+        normal class lookup would otherwise return a same-named method defined
+        on this metaclass. For example, a model may have a 'window' column
+        while this metaclass also provides 'window()'. The column takes
+        precedence on the model class; use 'QueryBuilder(Model).window()' to
+        call the query helper in that case.
+        """
+        table = type.__getattribute__(self, "_table")
+        if table is not None and col in table._fields:
+            return table[col]
+
+        return type.__getattribute__(self, col)
+
     def __getattr__(self, col: str) -> t.Optional[Field]:
         """
         Magic method used by TypedTableMeta to get a database field with dot notation on a class.
@@ -464,6 +481,12 @@ class TableMeta(type):
         See QueryBuilder.join!
         """
         return QueryBuilder(self).join(*fields, on=on, condition=condition, method=method, condition_and=condition_and)
+
+    def window(self: t.Type[T_MetaInstance], window_size: int) -> "QueryBuilder[T_MetaInstance]":
+        """
+        See QueryBuilder.window!
+        """
+        return QueryBuilder(self).window(window_size)
 
     def collect(self: t.Type[T_MetaInstance], verbose: bool = False) -> "TypedRows[T_MetaInstance]":
         """
