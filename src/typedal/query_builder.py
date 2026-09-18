@@ -296,7 +296,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
             elif isinstance(query_part, (Query, Expression)):
                 subquery |= t.cast(Query, query_part)
             elif callable(query_part):
-                if result := query_part(self.model):  # ty: ignore[call-top-callable]
+                if result := query_part(self.model):
                     subquery |= result
             elif isinstance(query_part, dict):
                 subsubquery = DummyQuery()
@@ -1227,7 +1227,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
     def __count(
         self,
         db: TypeDAL,
-        distinct: t.Optional[bool] = None,
+        distinct: bool | Field | TypedField[t.Any] = False,
         *,
         include_left_for_distinct: bool = True,
     ) -> Query:
@@ -1252,9 +1252,11 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
 
         return query
 
-    def count(self, distinct: t.Optional[bool] = None) -> int:
+    def count(self, distinct: bool | Field | TypedField[t.Any] = False) -> int:
         """
         Return the amount of rows matching the current query.
+
+        Passing a field counts its distinct values.
         """
         require_permission(self._permissions, "read")
         db = self._get_db()
@@ -1262,7 +1264,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
 
         return db(query).count(distinct)
 
-    def _count(self, distinct: t.Optional[bool] = None) -> str:
+    def _count(self, distinct: bool | Field | TypedField[t.Any] = False) -> str:
         """
         Return the SQL for .count().
         """
@@ -1288,8 +1290,9 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
             return self.count()
 
         db = self._get_db()
-        query = self.__count(db, distinct=self.model.id, include_left_for_distinct=False)  # ty: ignore[invalid-argument-type]
-        return db(query).count(self.model.id)
+        distinct = t.cast(TypedField[int], self.model.id)
+        query = self.__count(db, distinct=distinct, include_left_for_distinct=False)
+        return db(query).count(distinct)
 
     def __paginate(
         self,
@@ -1480,7 +1483,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         column = t.cast(t.Callable[..., list[T]], self.column)
         return await run_async(self._get_db(), column, field, **options)
 
-    async def count_async(self, distinct: t.Optional[bool] = None) -> int:
+    async def count_async(self, distinct: bool | Field | TypedField[t.Any] = False) -> int:
         """
         Async twin of `count()`.
         """

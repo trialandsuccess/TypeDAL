@@ -789,6 +789,16 @@ def test_execute():
         assert row["count"] == 4
 
 
+def test_count_distinct_field():
+    _setup_data()
+
+    builder = TestRelationship.where(TestRelationship.value > 0)
+
+    assert builder.count(TestRelationship.value) == 2
+    assert "COUNT(DISTINCT" in builder._count(TestRelationship.value)
+    assert builder.count(True) == 1
+
+
 def test_column():
     _setup_data()
 

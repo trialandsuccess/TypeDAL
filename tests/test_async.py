@@ -211,6 +211,24 @@ async def test_count_async_matches_sync_count(db_async: TypeDAL):
 
 
 @pytest.mark.asyncio
+async def test_count_async_distinct_field(db_async: TypeDAL):
+    db = db_async
+
+    @db.define()
+    class AsyncThingDistinctCount(TypedTable):
+        qty: TypedField[int]
+
+    AsyncThingDistinctCount.insert(qty=1)
+    AsyncThingDistinctCount.insert(qty=1)
+    AsyncThingDistinctCount.insert(qty=2)
+    db.commit()
+
+    query = AsyncThingDistinctCount.where(AsyncThingDistinctCount.qty > 0)
+
+    assert await query.count_async(AsyncThingDistinctCount.qty) == 2
+
+
+@pytest.mark.asyncio
 async def test_insert_async_matches_sync_insert(db_async: TypeDAL):
     """insert_async must return a usable id, and the row must be committed and visible."""
     db = db_async

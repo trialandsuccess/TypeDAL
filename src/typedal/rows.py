@@ -10,6 +10,7 @@ import typing as t
 
 from .asynchronous import run_async
 from .core import TypeDAL
+from .fields import TypedField
 from .helpers import mktable
 from .query_builder import QueryBuilder
 from .serializers import as_json
@@ -563,7 +564,7 @@ class TypedSet(Set):  # pragma: no cover
     This class is not actually used, only 'cast' by TypeDAL.__call__
     """
 
-    def count(self, distinct: bool | None = None, cache: AnyDict | None = None) -> int:
+    def count(self, distinct: bool | Field | TypedField[t.Any] = False, cache: AnyDict | None = None) -> int:
         """
         Count returns an int.
         """
@@ -585,5 +586,3 @@ class TypedSet(Set):  # pragma: no cover
 
 
 # note: these imports exist at the bottom of this file to prevent circular import issues:
-
-from .fields import TypedField  # noqa: E402
