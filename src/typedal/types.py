@@ -116,7 +116,7 @@ class TableProtocol(t.Protocol):  # pragma: no cover
         Tables have table[field] syntax.
         """
 
-    def on(self, query: "QueryLike") -> "Expression | _Expression":
+    def on(self, query: "QueryLike") -> "Expression":
         """
         PyDAL `Table.on(query)` helper used in join callbacks.
         """
@@ -153,83 +153,16 @@ Row: t.TypeAlias = _Row
 Validator: t.TypeAlias = _Validator
 Reference: t.TypeAlias = _Reference
 
-# has to be (fake) subclass during type-checking:
-if t.TYPE_CHECKING:
-
-    class Query(_Query):
-        """Pydal Query object. Makes mypy happy."""
-
-    class Expression(_Expression):
-        """Pydal Expression object. Makes mypy happy."""
-
-    class Set(_Set):
-        """Pydal Set object. Makes mypy happy."""
-
-    class Select(_Select):
-        """Pydal Select object. Makes mypy happy."""
-
-    class OpRow:
-        """
-        Pydal OpRow object for typing (otherwise mypy thinks it's Any).
-        """
-
-        def __getattr__(self, name: str) -> t.Any:
-            """Dynamic attribute access (e.g. row.email)."""
-
-        def __getitem__(self, item: str) -> t.Any:
-            """row.item syntax."""
-
-        def __setitem__(self, key: str, value: t.Any) -> None:
-            """row.item = key syntax."""
-
-        def get(self, key: str, default: t.Any = None) -> t.Any:
-            """Dictionary-like get used by update hooks."""
-
-        def keys(self) -> t.Iterable[str]:
-            """Dictionary-like key access."""
-
-        def items(self) -> t.Iterable[tuple[str, t.Any]]:
-            """Dictionary-like item iteration."""
-
-        def values(self) -> t.Iterable[t.Any]:
-            """Dictionary-like value iteration."""
-
-    class Field(_Field):
-        """Pydal Field object. Make mypy happy."""
-
-        _rname: str
-
-        def __eq__(self, other: t.Any) -> Query:  # ty: ignore[invalid-method-override]
-            """Comparing fields produces a PyDAL query."""
-            return t.cast(Query, super().__eq__(other))
-
-        def __ne__(self, other: t.Any) -> Query:  # ty: ignore[invalid-method-override]
-            """Comparing fields produces a PyDAL query."""
-            return t.cast(Query, super().__ne__(other))
-
-        def __hash__(self) -> int:
-            """Keep fields hashable after overriding equality."""
-            return super().__hash__()
-
-    class Table(_Table):
-        """PyDAL table with dynamically exposed fields."""
-
-        def __getattr__(self, name: str) -> Field:
-            """Return a field dynamically exposed by PyDAL."""
-            ...
-
-    class Rows(_Rows):
-        def column(self, column: t.Any = None) -> list[t.Any]: ...
-
-else:
-    Table: t.TypeAlias = _Table
-    Query: t.TypeAlias = _Query
-    Expression: t.TypeAlias = _Expression
-    Set: t.TypeAlias = _Set
-    Select: t.TypeAlias = _Select
-    Rows: t.TypeAlias = _Rows
-    OpRow: t.TypeAlias = _OpRow
-    Field: t.TypeAlias = _Field
+# pydal ships PEP 561 stubs (pydal-stubs), so these need no type-checking-only
+# subclass to carry extra declarations; plain aliases keep one name per concept.
+Query: t.TypeAlias = _Query
+Expression: t.TypeAlias = _Expression
+Set: t.TypeAlias = _Set
+Select: t.TypeAlias = _Select
+Table: t.TypeAlias = _Table
+Field: t.TypeAlias = _Field
+Rows: t.TypeAlias = _Rows
+OpRow: t.TypeAlias = _OpRow
 
 
 # ---------------------------------------------------------------------------
@@ -421,7 +354,7 @@ type T_Field = t.Union["TypedField[t.Any]", "Table", t.Type["TypedTable"]]
 # checked while its dynamic attribute fallback covers model-specific fields.
 type P_Table = TableProtocol
 
-type QueryLike = Query | _Query | bool
+type QueryLike = Query | bool
 
 type Condition = t.Callable[[type["TypedTable"], type["TypedTable"]], QueryLike] | None
 

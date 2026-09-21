@@ -133,7 +133,7 @@ class TableDefinitionBuilder:
 
             table._after_insert.append(lambda _row, _id: remove_cache_for_table(tablename))
             table._before_update.append(lambda s, _: _remove_cache(s, tablename))
-            table._before_delete.append(lambda s: _remove_cache(s, tablename))  # ty: ignore[invalid-argument-type]
+            table._before_delete.append(lambda s: _remove_cache(s, tablename))
 
         return cls
 

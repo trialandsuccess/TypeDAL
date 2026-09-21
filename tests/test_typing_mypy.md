@@ -75,7 +75,7 @@ class MyTable(TypedTable):
     fancy = TypedField(str)
 
 
-reveal_type(MyTable.fancy.lower())  # revealed: typedal.types.Expression
+reveal_type(MyTable.fancy.lower())  # revealed: pydal.objects.Expression
 reveal_type(MyTable().fancy.lower())  # revealed: str
 ```
 
@@ -111,11 +111,11 @@ class MyTable(TypedTable): ...
 
 
 my_query = MyTable.id > 3
-reveal_type(my_query)  # revealed: typedal.types.Query
+reveal_type(my_query)  # revealed: pydal.objects.Query
 
 query = MyTable.id == 3
 
-reveal_type(query)  # revealed: typedal.types.Query
+reveal_type(query)  # revealed: pydal.objects.Query
 
 new = MyTable.update(query)
 reveal_type(new)  # revealed: test_snippet.MyTable | None
@@ -315,8 +315,8 @@ from typedal.types import Field
 db = TypeDAL()
 
 reveal_type(db) # revealed: typedal.core.TypeDAL
-reveal_type(db.some_table) # revealed: typedal.types.Table
-reveal_type(db.some_table.some_field)  # revealed: typedal.types.Field
+reveal_type(db.some_table) # revealed: pydal.objects.Table
+reveal_type(db.some_table.some_field)  # revealed: pydal.objects.Field
 field: Field = db.some_table.some_field
 ```
 

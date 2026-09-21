@@ -58,7 +58,7 @@ def mypy_test_typedal_define() -> None:
     reveal_type(MyTable.options)  # R: typedal.fields.TypedField[str]
     reveal_type(MyTable().options)  # R: str
 
-    reveal_type(MyTable.fancy.lower())  # R: typedal.types.Expression
+    reveal_type(MyTable.fancy.lower())  # R: pydal.objects.Expression
     reveal_type(MyTable().fancy.lower())  # R: str
 
     aliased_cls = MyTable.with_alias("---")
@@ -149,7 +149,7 @@ def mypy_test_query() -> None:
 
     my_query = MyTable.id > 3
 
-    reveal_type(my_query)  # R: typedal.types.Query
+    reveal_type(my_query)  # R: pydal.objects.Query
 
     MyTable.update_or_insert(MyTable)
     MyTable.update_or_insert(my_query)

@@ -1,9 +1,20 @@
+import os
+import sys
 import tempfile
+from pathlib import Path
 
 import pytest
 from testcontainers.postgres import PostgresContainer
 
 from src.typedal import TypeDAL
+
+# pytest-typing runs pyright as a subprocess from a bare temporary directory, so
+# pyright resolves its Python environment from PATH instead of from the
+# interpreter running pytest. Whenever the active venv is not first on PATH, every
+# project import comes back unresolved and all pyright checks fail. Putting this
+# interpreter's directory first makes the checks depend on which venv runs pytest
+# rather than on the shell's state.
+os.environ["PATH"] = os.pathsep.join(filter(None, [str(Path(sys.executable).parent), os.environ.get("PATH")]))
 
 postgres = PostgresContainer(
     dbname="postgres",

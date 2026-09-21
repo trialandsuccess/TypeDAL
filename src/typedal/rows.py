@@ -106,7 +106,10 @@ class TypedRows(t.Collection[T_MetaInstance], Rows):
         """
         return ind in self.records
 
-    def first(self) -> T_MetaInstance | None:
+    # TypedRows deliberately re-types pydal's row container: its elements are
+    # _TypedTable instances, which are row-like but not pydal Rows. The overrides
+    # below therefore narrow Row to T_MetaInstance and are not Liskov-substitutable.
+    def first(self) -> T_MetaInstance | None:  # ty: ignore[invalid-method-override]
         """
         Get the row with the lowest id.
         """
@@ -115,7 +118,7 @@ class TypedRows(t.Collection[T_MetaInstance], Rows):
 
         return next(iter(self))
 
-    def last(self) -> T_MetaInstance | None:
+    def last(self) -> T_MetaInstance | None:  # ty: ignore[invalid-method-override]
         """
         Get the row with the highest id.
         """
@@ -125,7 +128,7 @@ class TypedRows(t.Collection[T_MetaInstance], Rows):
         max_id = max(self.records.keys())
         return self[max_id]
 
-    def find(
+    def find(  # ty: ignore[invalid-method-override]
         self,
         f: t.Callable[[T_MetaInstance], Query],
         limitby: tuple[int, int] | None = None,
@@ -152,7 +155,9 @@ class TypedRows(t.Collection[T_MetaInstance], Rows):
 
         return self.__class__(self, self.model, records)
 
-    def exclude(self, f: t.Callable[[T_MetaInstance], Query]) -> "TypedRows[T_MetaInstance]":
+    def exclude(  # ty: ignore[invalid-method-override]
+        self, f: t.Callable[[T_MetaInstance], Query]
+    ) -> "TypedRows[T_MetaInstance]":
         """
         Removes elements from the calling Rows object, filtered by the function `f`, \
             and returns a new Rows object containing the removed elements.
@@ -175,7 +180,9 @@ class TypedRows(t.Collection[T_MetaInstance], Rows):
             removed,
         )
 
-    def sort(self, f: t.Callable[[T_MetaInstance], t.Any], reverse: bool = False) -> list[T_MetaInstance]:
+    def sort(  # ty: ignore[invalid-method-override]
+        self, f: t.Callable[[T_MetaInstance], t.Any], reverse: bool = False
+    ) -> list[T_MetaInstance]:
         """
         Returns a list of sorted elements (not sorted in place).
         """
@@ -240,7 +247,7 @@ class TypedRows(t.Collection[T_MetaInstance], Rows):
         """
         Dump the data to csv.
         """
-        return t.cast(str, super().as_csv())
+        return super().as_csv()
 
     def as_dict(
         self,
@@ -283,7 +290,7 @@ class TypedRows(t.Collection[T_MetaInstance], Rows):
 
     def json(
         self, default: t.Callable[[t.Any], t.Any] | None = None, indent: int | None = None, **kwargs: t.Any
-    ) -> str:  # ty: ignore[invalid-method-override]
+    ) -> str:
         """
         Turn the data into a dict and then dump to JSON.
         """
@@ -360,7 +367,7 @@ class TypedRows(t.Collection[T_MetaInstance], Rows):
         """
         return await run_async(self.db, self.delete)
 
-    def join(
+    def join(  # ty: ignore[invalid-method-override]
         self,
         field: "Field | TypedField[t.Any]",
         name: str | None = None,
@@ -373,7 +380,9 @@ class TypedRows(t.Collection[T_MetaInstance], Rows):
 
         Using the querybuilder's .join() method is prefered!
         """
-        result = super().join(field, name, constraint, fields or [], orderby)
+        # TypedField is an Expression, not a pydal Field, but carries the
+        # .name/.tablename attributes join() actually reads.
+        result = super().join(field, name, constraint, fields or [], orderby)  # ty: ignore[invalid-argument-type]
         return t.cast(T_MetaInstance, result)
 
     def export_to_csv_file(
@@ -465,7 +474,7 @@ class TypedRows(t.Collection[T_MetaInstance], Rows):
     ) -> T_MetaInstance:
         """With an index, return one rendered row instance."""
 
-    def render(
+    def render(  # ty: ignore[invalid-method-override]
         self,
         i: int | None = None,
         fields: list[Field] | None = None,
@@ -569,7 +578,7 @@ class TypedSet(Set):  # pragma: no cover
         Count returns an int.
         """
         result = super().count(distinct, cache)
-        return t.cast(int, result)
+        return result
 
     def select(self, *fields: t.Any, **attributes: t.Any) -> TypedRows[T_MetaInstance]:
         """
