@@ -278,8 +278,13 @@ class TypedRows(t.Collection[T_MetaInstance], Rows):
 
         return {k: v.as_dict() for k, v in self.records.items()}
 
-    def as_json(  # ty: ignore[invalid-method-override]
-        self, default: t.Callable[[t.Any], t.Any] | None = None, indent: int | None = None, **kwargs: t.Any
+    def as_json(
+        self,
+        mode: str = "object",  # noqa: ARG002 - Required by PyDAL's method signature.
+        default: t.Callable[[t.Any], t.Any] | None = None,
+        *,
+        indent: int | None = None,
+        **kwargs: t.Any,
     ) -> str:
         """
         Turn the data into a dict and then dump to JSON.
@@ -289,12 +294,17 @@ class TypedRows(t.Collection[T_MetaInstance], Rows):
         return as_json.encode(data, default=default, indent=indent, **kwargs)
 
     def json(
-        self, default: t.Callable[[t.Any], t.Any] | None = None, indent: int | None = None, **kwargs: t.Any
+        self,
+        mode: str = "object",
+        default: t.Callable[[t.Any], t.Any] | None = None,
+        *,
+        indent: int | None = None,
+        **kwargs: t.Any,
     ) -> str:
         """
         Turn the data into a dict and then dump to JSON.
         """
-        return self.as_json(default=default, indent=indent, **kwargs)
+        return self.as_json(mode=mode, default=default, indent=indent, **kwargs)
 
     def as_list(
         self,
