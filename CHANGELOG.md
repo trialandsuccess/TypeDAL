@@ -2,6 +2,11 @@
 
 <!--next-version-placeholder-->
 
+## v5.1.3 (2026-09-21)
+
+### Fix
+* **typing:** align TypeDAL declarations with pydal
+
 ## v5.1.2 (2026-09-18)
 
 ### Fix
