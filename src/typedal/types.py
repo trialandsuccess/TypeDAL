@@ -151,7 +151,6 @@ class FileSystemLike(t.Protocol):  # pragma: no cover
 # same for typing and runtime:
 Row: t.TypeAlias = _Row
 Validator: t.TypeAlias = _Validator
-Table: t.TypeAlias = _Table
 Reference: t.TypeAlias = _Reference
 
 # has to be (fake) subclass during type-checking:
@@ -212,10 +211,18 @@ if t.TYPE_CHECKING:
             """Keep fields hashable after overriding equality."""
             return super().__hash__()
 
+    class Table(_Table):
+        """PyDAL table with dynamically exposed fields."""
+
+        def __getattr__(self, name: str) -> Field:
+            """Return a field dynamically exposed by PyDAL."""
+            ...
+
     class Rows(_Rows):
         def column(self, column: t.Any = None) -> list[t.Any]: ...
 
 else:
+    Table: t.TypeAlias = _Table
     Query: t.TypeAlias = _Query
     Expression: t.TypeAlias = _Expression
     Set: t.TypeAlias = _Set

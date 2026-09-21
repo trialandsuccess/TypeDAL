@@ -365,6 +365,32 @@ class Settings(TypedTable):
 Settings.enabled.requires = IS_IN_SET(("on", "off"))
 ```
 
+# 12. Dynamic Table Field Access
+
+```python only=pyright
+from typedal import TypeDAL
+from typedal.types import Field
+
+db = TypeDAL()
+
+reveal_type(db) # revealed: TypeDAL
+reveal_type(db.some_table) # revealed: Table
+reveal_type(db.some_table.some_field)  # revealed: Field
+field: Field = db.some_table.some_field
+```
+
+# 13. TypeDAL Is a PyDAL DAL
+
+```python only=pyright
+from pydal import DAL
+from typedal.core import TypeDAL
+
+def accepts_pydal_dal(database: DAL) -> None: ...
+
+typedal = TypeDAL()
+accepts_pydal_dal(typedal)
+```
+
 # Parity with test_mypy.py
 
 See test_typing_mypy.md
