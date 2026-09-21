@@ -24,6 +24,7 @@ classifiers = [
 ]
 dependencies = [
     "pydal >= 20251012.3", # core
+    "pydal-stubs >= 0.1.0", # improved typing for pydal
     "dill < 1", # caching
     "configuraptor >= 2.1.0, < 3", # config
     "Configurable-JSON < 2", # json dumping

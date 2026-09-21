@@ -75,7 +75,7 @@ class MyTable(TypedTable):
     fancy = TypedField(str)
 
 
-reveal_type(MyTable.fancy.lower())  # revealed: typedal.types.Expression
+reveal_type(MyTable.fancy.lower())  # revealed: pydal.objects.Expression
 reveal_type(MyTable().fancy.lower())  # revealed: str
 ```
 
@@ -111,11 +111,11 @@ class MyTable(TypedTable): ...
 
 
 my_query = MyTable.id > 3
-reveal_type(my_query)  # revealed: typedal.types.Query
+reveal_type(my_query)  # revealed: pydal.objects.Query
 
 query = MyTable.id == 3
 
-reveal_type(query)  # revealed: typedal.types.Query
+reveal_type(query)  # revealed: pydal.objects.Query
 
 new = MyTable.update(query)
 reveal_type(new)  # revealed: test_snippet.MyTable | None
@@ -304,6 +304,32 @@ def invalid_cache_model(key: str, fn: typing.Callable[..., list[str]], _: typing
 
 
 cache_invalid: CacheTuple = (invalid_cache_model, 3000)  # error: [assignment]
+```
+
+# 9. Dynamic Table Field Access
+
+```python only=mypy
+from typedal import TypeDAL
+from typedal.types import Field
+
+db = TypeDAL()
+
+reveal_type(db) # revealed: typedal.core.TypeDAL
+reveal_type(db.some_table) # revealed: pydal.objects.Table
+reveal_type(db.some_table.some_field)  # revealed: pydal.objects.Field
+field: Field = db.some_table.some_field
+```
+
+# 10. TypeDAL Is a PyDAL DAL
+
+```python only=mypy
+from pydal import DAL  # type: ignore[import-untyped]
+from typedal.core import TypeDAL
+
+def accepts_pydal_dal(database: DAL) -> None: ...
+
+typedal = TypeDAL()
+accepts_pydal_dal(typedal)
 ```
 
 # Parity with test_mypy.py

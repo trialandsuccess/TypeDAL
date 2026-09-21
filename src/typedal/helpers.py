@@ -311,7 +311,7 @@ def get_table(table: "TypedTable | Table") -> "Table":
     """
     Get the underlying pydal table for a typedal table.
     """
-    return t.cast("Table", table._table)  # ty: ignore[unresolved-attribute]
+    return t.cast("Table", table._table)
 
 
 def get_field(field: "TypedField[t.Any] | Field") -> "Field":

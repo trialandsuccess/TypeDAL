@@ -268,7 +268,7 @@ class TypedField[T_Value](Expression):  # pragma: no cover
         if not self._field:  # pragma: no cover
             raise ValueError("Unbound Field can not be inverted!")
 
-        return t.cast(Expression, ~self._field)
+        return ~self._field
 
     def lower(self) -> Expression:
         """
@@ -277,7 +277,7 @@ class TypedField[T_Value](Expression):  # pragma: no cover
         if not self._field:  # pragma: no cover
             raise ValueError("Unbound Field can not be lowered!")
 
-        return t.cast(Expression, self._field.lower())
+        return self._field.lower()
 
 
 def rname(field: TypedField[t.Any] | Field) -> str:

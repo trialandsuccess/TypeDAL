@@ -198,7 +198,7 @@ class TableMeta(type):
         Allow dict notation to get a column of this table (-> Field instance).
         """
         table = self._ensure_table_defined()
-        return t.cast(Field, table[item])
+        return table[item]
 
     def __str__(self) -> str:
         """
@@ -766,7 +766,7 @@ class TableMeta(type):
             http://web2py.com/books/default/chapter/29/06/the-database-abstraction-layer?search=export_to_csv_file#One-to-mt.Any-relation
         """
         table = self._ensure_table_defined()
-        return t.cast(Expression, table.on(query))
+        return table.on(query)
 
     def with_alias(self: t.Type[T_MetaInstance], alias: str) -> t.Type[T_MetaInstance]:
         """
@@ -1321,7 +1321,7 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
         """
         table = cls._ensure_table_defined()
         result = table.as_dict(flat, sanitize)
-        return t.cast(AnyDict, result)
+        return result
 
     @classmethod
     def as_typeddict(
@@ -1441,7 +1441,7 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
         - dumps the row info if it's an instance (see _as_xml)
         """
         table = cls._ensure_table_defined()
-        return t.cast(str, table.as_xml(sanitize))
+        return table.as_xml(sanitize)
 
     @classmethod
     def as_yaml(cls, sanitize: bool = True) -> str:
@@ -1453,7 +1453,7 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
         - dumps the row info if it's an instance (see _as_yaml)
         """
         table = cls._ensure_table_defined()
-        return t.cast(str, table.as_yaml(sanitize))
+        return table.as_yaml(sanitize)
 
     def _as_dict(
         self,
@@ -1483,7 +1483,7 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
 
                 result[relationship] = data
 
-        return t.cast(AnyDict, result)
+        return result
 
     def _as_json(
         self,
@@ -1494,9 +1494,11 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
         data = self._as_dict()
         return as_json.encode(data, default=default, indent=indent, **kwargs)
 
-    def _as_xml(self, sanitize: bool = True) -> str:  # pragma: no cover
+    def _as_xml(self, sanitize: bool = True) -> str:  # noqa: ARG002  # pragma: no cover
         row = self._ensure_matching_row()
-        return t.cast(str, row.as_xml(sanitize))
+        # pydal's Row.as_xml has no sanitize flag (its first parameter is the
+        # element name), so the argument is intentionally not forwarded.
+        return row.as_xml()
 
     # def _as_yaml(self, sanitize: bool = True) -> str:
     #     row = self._ensure_matching_row()

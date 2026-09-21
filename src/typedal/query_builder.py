@@ -111,7 +111,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         """
         self.model = model
         table = self._ensure_table_defined()
-        default_query: Query = t.cast(Query, table.id > 0)  # ty: ignore[unresolved-attribute]
+        default_query: Query = table.id > 0
         self.query = add_query or default_query
         self.select_args = select_args or []
         self.select_kwargs = select_kwargs or {}
@@ -152,7 +152,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         Querybuilder is truthy if it has t.Any conditions.
         """
         table = self._ensure_table_defined()
-        default_query: Query = t.cast(Query, table.id > 0)  # ty: ignore[unresolved-attribute]
+        default_query: Query = table.id > 0
         return any(
             [
                 self.query != default_query,
@@ -330,13 +330,14 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
                 subquery |= t.cast(Query, query_part)
             elif callable(query_part):
                 if result := query_part(self.model):
-                    subquery |= result
+                    subquery |= t.cast(Query, result)
             elif isinstance(query_part, dict):
                 subsubquery = DummyQuery()
                 for field, value in query_part.items():
                     subsubquery &= table[field] == value
                 if subsubquery:
-                    subquery |= subsubquery
+                    # DummyQuery is falsy, so reaching here means it became a Query.
+                    subquery |= t.cast(Query, subsubquery)
             else:
                 raise ValueError(f"Unexpected query type ({type(query_part)}).")
 
@@ -559,7 +560,9 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         db = self._get_db()
         return str(db(self.query)._delete())
 
-    def update(self, **fields: t.Any) -> list[int]:
+    # QueryBuilder subclasses Select for its query-building surface but yields
+    # model instances rather than fields, so these two are not substitutable.
+    def update(self, **fields: t.Any) -> list[int]:  # ty: ignore[invalid-method-override]
         """
         Based on the current query, update `fields` and return a list of updated IDs.
         """
@@ -1262,7 +1265,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         """
         return self.collect() or throw(exception or ValueError("Nothing found!"))
 
-    def __iter__(self) -> t.Generator[T_MetaInstance, None, None]:
+    def __iter__(self) -> t.Generator[T_MetaInstance, None, None]:  # ty: ignore[invalid-method-override]
         """
         You can start iterating a Query Builder object before calling collect, for ease of use.
         """

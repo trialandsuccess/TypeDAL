@@ -46,7 +46,7 @@ except ImportError:  # pragma: no cover
 if t.TYPE_CHECKING:
     from .fields import TypedField
     from .query_builder import QueryBuilder
-    from .types import AnyDict, DefineKwargs, Rows, Set, T_Query, Table
+    from .types import AnyDict, DefineKwargs, Rows, T_Query, Table
 
 
 def _expression_subclasses() -> t.Iterator[type[Expression]]:
@@ -200,40 +200,8 @@ def resolve_annotation(ftype: str, namespace: t.Mapping[str, type] | None = None
         return resolve_annotation_314(ftype, namespace=namespace)
 
 
-if t.TYPE_CHECKING:
-
-    class _TypeDALBase(pydal.DAL):
-        # attributes accessed throughout the codebase
-        _adapter: t.Any
-        _migrate: t.Any
-        representers: t.Any
-
-        def __new__(cls, *args: t.Any, **kwargs: t.Any) -> t.Self: ...
-
-        def __init__(self, *args: t.Any, **kwargs: t.Any) -> None: ...
-
-        def __call__(self, query: t.Any = None, ignore_common_filters: t.Any = None) -> "Set": ...
-
-        def commit(self) -> None: ...
-
-        def rollback(self) -> None: ...
-
-        def define_table(self, *args: t.Any, **kwargs: t.Any) -> "Table": ...
-
-        # pydal ships no py.typed, so without this declaration the result would be Any for mypy users.
-        # pyright infers `TypeIs[...]` from pydal's `return callable(...)`, which `bool` can't restate.
-        def has_representer(self, name: str) -> bool: ...  # pyright: ignore[reportIncompatibleMethodOverride]
-
-        def represent(self, name: str, *args: t.Any, **kwargs: t.Any) -> str: ...
-
-        # pydal exposes dynamic table attributes like `db.my_table`.
-        # this keeps type checkers from flagging these as missing attributes.
-        def __getattr__(self, key: str) -> "Table": ...
-
-else:
-
-    class _TypeDALBase(pydal.DAL):
-        pass
+class _TypeDALBase(pydal.DAL):
+    pass
 
 
 class TypeDAL(_TypeDALBase):
@@ -451,7 +419,9 @@ class TypeDAL(_TypeDALBase):
                         hooks.clear()
 
                 if hasattr(table, "_db"):
-                    table._db = None
+                    # outside pydal's contract: pydal only ever nulls a *field's*
+                    # bindings, but the cycle has to be broken here too.
+                    table._db = None  # ty: ignore[invalid-assignment]
 
                 for field_name in getattr(table, "fields", ()):
                     field: Field | None = getattr(table, field_name, None)
@@ -565,7 +535,9 @@ class TypeDAL(_TypeDALBase):
             db(query).select()
 
         """
-        args = list(_args)
+        # heterogeneous on purpose: this list is splatted across pydal's
+        # (query, ignore_common_filters) parameters.
+        args: list[t.Any] = list(_args)
         if args:
             cls = args[0]
             if isinstance(cls, bool):
@@ -588,7 +560,7 @@ class TypeDAL(_TypeDALBase):
         Example:
             db['users'] -> user
         """
-        return t.cast(Table, super().__getitem__(str(key)))
+        return super().__getitem__(str(key))
 
     def find_model(self, table_name: str) -> t.Type["TypedTable"] | None:
         """
