@@ -2,6 +2,11 @@
 
 <!--next-version-placeholder-->
 
+## v5.1.4 (2026-09-21)
+
+### Fix
+* improved typing via pydal-stubs (#16)
+
 ## v5.1.3 (2026-09-21)
 
 ### Fix
