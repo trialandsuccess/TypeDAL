@@ -200,8 +200,13 @@ def resolve_annotation(ftype: str, namespace: t.Mapping[str, type] | None = None
         return resolve_annotation_314(ftype, namespace=namespace)
 
 
-class _TypeDALBase(pydal.DAL):
-    pass
+if t.TYPE_CHECKING:
+    # `pydal.DAL` is exported by pydal-stubs as a gradual alias, so subclassing
+    # it directly would make TypeDAL inherit from `Any` and lose the whole pydal
+    # API. `DALBase` is the nominal surface; it exists only for type checkers.
+    from pydal.base import DALBase as _TypeDALBase
+else:
+    _TypeDALBase = pydal.DAL
 
 
 class TypeDAL(_TypeDALBase):
@@ -224,7 +229,7 @@ class TypeDAL(_TypeDALBase):
 
     # pydal runs these around every statement; drop BlockingAccessHandler to disable the guard.
     execution_handlers: list[type[ExecutionHandler]] = [
-        *pydal.DAL.execution_handlers,
+        *_TypeDALBase.execution_handlers,
         BlockingAccessHandler,
     ]
 
@@ -419,9 +424,7 @@ class TypeDAL(_TypeDALBase):
                         hooks.clear()
 
                 if hasattr(table, "_db"):
-                    # outside pydal's contract: pydal only ever nulls a *field's*
-                    # bindings, but the cycle has to be broken here too.
-                    table._db = None  # ty: ignore[invalid-assignment]
+                    table._db = None
 
                 for field_name in getattr(table, "fields", ()):
                     field: Field | None = getattr(table, field_name, None)
