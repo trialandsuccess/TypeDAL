@@ -202,15 +202,17 @@ def resolve_annotation(ftype: str, namespace: t.Mapping[str, type] | None = None
 
 if t.TYPE_CHECKING:
 
-    class _TypeDALBase:
+    class _TypeDALBase(pydal.DAL):
         # attributes accessed throughout the codebase
         _adapter: t.Any
         _migrate: t.Any
         representers: t.Any
 
+        def __new__(cls, *args: t.Any, **kwargs: t.Any) -> t.Self: ...
+
         def __init__(self, *args: t.Any, **kwargs: t.Any) -> None: ...
 
-        def __call__(self, query: t.Any = None) -> "Set": ...
+        def __call__(self, query: t.Any = None, ignore_common_filters: t.Any = None) -> "Set": ...
 
         def commit(self) -> None: ...
 
@@ -218,13 +220,15 @@ if t.TYPE_CHECKING:
 
         def define_table(self, *args: t.Any, **kwargs: t.Any) -> "Table": ...
 
-        def has_representer(self, field_type: str) -> bool: ...
+        # pydal ships no py.typed, so without this declaration the result would be Any for mypy users.
+        # pyright infers `TypeIs[...]` from pydal's `return callable(...)`, which `bool` can't restate.
+        def has_representer(self, name: str) -> bool: ...  # pyright: ignore[reportIncompatibleMethodOverride]
 
         def represent(self, name: str, *args: t.Any, **kwargs: t.Any) -> str: ...
 
         # pydal exposes dynamic table attributes like `db.my_table`.
         # this keeps type checkers from flagging these as missing attributes.
-        def __getattr__(self, item: str) -> "Table": ...
+        def __getattr__(self, key: str) -> "Table": ...
 
 else:
 
@@ -251,7 +255,7 @@ class TypeDAL(_TypeDALBase):
     _async_workers: ConnectionWorkerPool
 
     # pydal runs these around every statement; drop BlockingAccessHandler to disable the guard.
-    execution_handlers: t.ClassVar[list[type[ExecutionHandler]]] = [
+    execution_handlers: list[type[ExecutionHandler]] = [
         *pydal.DAL.execution_handlers,
         BlockingAccessHandler,
     ]
@@ -419,7 +423,7 @@ class TypeDAL(_TypeDALBase):
         self._async_workers.shutdown()
         adapter = self._adapter
         try:
-            super().close()  # ty: ignore[unresolved-attribute]
+            super().close()
         finally:
             for model in set(self._builder.class_map.values()):
                 model.unbind()
@@ -584,7 +588,7 @@ class TypeDAL(_TypeDALBase):
         Example:
             db['users'] -> user
         """
-        return t.cast(Table, super().__getitem__(str(key)))  # ty: ignore[unresolved-attribute]
+        return t.cast(Table, super().__getitem__(str(key)))
 
     def find_model(self, table_name: str) -> t.Type["TypedTable"] | None:
         """
@@ -664,7 +668,7 @@ class TypeDAL(_TypeDALBase):
         if SYSTEM_SUPPORTS_TEMPLATES and isinstance(query, Template):  # pragma: no cover
             query = sql_escape_template(self, query)
 
-        rows: list[t.Any] = super().executesql(  # ty: ignore[unresolved-attribute]
+        rows: list[t.Any] = super().executesql(
             query,
             placeholders=placeholders,
             as_dict=as_dict,
