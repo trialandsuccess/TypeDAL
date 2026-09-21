@@ -2,6 +2,12 @@
 
 <!--next-version-placeholder-->
 
+## v5.1.5 (2026-09-21)
+
+### Fixes
+* **core:** align TypeDAL with pydal-stubs 0.2.0
+* **rows:** align JSON methods with PyDAL signature
+
 ## v5.1.4 (2026-09-21)
 
 ### Fix
