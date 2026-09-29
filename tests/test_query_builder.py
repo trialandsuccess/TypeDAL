@@ -2,7 +2,15 @@ import inspect
 
 import pytest
 
-from src.typedal import QueryBuilder, TypeDAL, TypedField, TypedTable, relationship
+from src.typedal import (
+    AliasedTableMismatchError,
+    ImplicitCrossJoinError,
+    QueryBuilder,
+    TypeDAL,
+    TypedField,
+    TypedTable,
+    relationship,
+)
 from src.typedal.fields import rname
 from src.typedal.types import Query, Field
 from src.typedal.warnings import NoopQueryWarning, UnusedWindowWarning
@@ -72,6 +80,64 @@ def _setup_data():
     TestRelationship.insert(name="Fourth Relation", querytable=second, value=33)
 
     db.commit()
+
+
+def test_where_on_unaliased_joined_table_is_rejected():
+    safe = TestQueryTable.join(
+        "relations",
+        method="inner",
+        condition_and=lambda _parent, relation: relation.value > 0,
+    ).select(TestRelationship.name)
+    assert "CROSS JOIN" not in safe.to_sql()
+
+    unsafe = (
+        TestQueryTable.join("relations", method="inner")
+        .select(TestRelationship.name)
+        .where(TestRelationship.value > 0)
+    )
+    with pytest.raises(AliasedTableMismatchError, match="alias"):
+        unsafe.to_sql()
+
+
+def test_where_on_unrelated_table_is_rejected():
+    with pytest.raises(ImplicitCrossJoinError, match="cross join"):
+        TestQueryTable.where(TestRelationship.value > 0).to_sql()
+
+
+def test_select_from_unrelated_table_is_rejected():
+    with pytest.raises(ImplicitCrossJoinError, match="cross join"):
+        TestQueryTable.select(TestRelationship.name).to_sql()
+
+
+def test_where_linking_two_tables_is_allowed():
+    query = TestQueryTable.where(TestQueryTable.id == TestRelationship.querytable)
+
+    assert query.to_sql()
+
+
+def test_explicit_cross_join_is_allowed():
+    query = TestQueryTable.join("relations", method="inner").cross_join(TestRelationship)
+
+    assert "CROSS JOIN" in query.to_sql()
+
+
+def test_cross_join_rejects_table_from_another_database():
+    other_db = TypeDAL("sqlite:memory")
+
+    @other_db.define()
+    class OtherDatabaseTable(TypedTable):
+        value: int
+
+    with pytest.raises(ValueError, match="same database"):
+        TestQueryTable.cross_join(OtherDatabaseTable)
+
+
+def test_cross_join_is_idempotent_and_counts_rows():
+    _setup_data()
+    query = TestQueryTable.cross_join(TestRelationship)
+
+    assert query.cross_join(TestRelationship) is query
+    assert query.count() == 40
 
 
 def test_where_builder():

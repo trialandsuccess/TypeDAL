@@ -482,6 +482,10 @@ class TableMeta(type):
         """
         return QueryBuilder(self).join(*fields, on=on, condition=condition, method=method, condition_and=condition_and)
 
+    def cross_join(self: t.Type[T_MetaInstance], table: t.Type[TypedTable]) -> "QueryBuilder[T_MetaInstance]":
+        """See QueryBuilder.cross_join!"""
+        return QueryBuilder(self).cross_join(table)
+
     def window(self: t.Type[T_MetaInstance], window_size: int) -> "QueryBuilder[T_MetaInstance]":
         """
         See QueryBuilder.window!
