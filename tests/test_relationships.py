@@ -453,6 +453,57 @@ def test_join_with_different_condition():
     assert role_with_users.users[0].name != "Reader 1"
 
 
+def test_condition_and_counts_match_combined_condition():
+    with contextlib.closing(TypeDAL("sqlite:memory", enable_typedal_caching=False)) as local_db:
+
+        @local_db.define()
+        class Parent(TypedTable):
+            name: str
+            children = relationship(list["Child"], lambda parent, child: child.parent == parent.id)
+
+        @local_db.define()
+        class Child(TypedTable):
+            parent: Parent
+            active: bool
+
+        first = Parent.insert(name="First")
+        second = Parent.insert(name="Second")
+        filtered = Parent.insert(name="Filtered")
+        Child.insert(parent=first, active=True)
+        Child.insert(parent=first, active=True)
+        Child.insert(parent=first, active=False)
+        Child.insert(parent=second, active=True)
+        Child.insert(parent=filtered, active=False)
+
+        combined = Parent.join(
+            "children",
+            method="inner",
+            condition=lambda parent, child: (child.parent == parent.id) & (child.active == True),
+        ).orderby(Parent.id)
+        additional = Parent.join(
+            "children",
+            method="inner",
+            condition_and=lambda _parent, child: child.active == True,
+        ).orderby(Parent.id)
+
+        combined_rows = combined.collect()
+        additional_rows = additional.collect()
+        assert combined_rows.as_list() == additional_rows.as_list()
+        assert [row.name for row in additional_rows] == ["First", "Second"]
+        assert [len(row.children) for row in additional_rows] == [2, 1]
+        assert all(child.active for row in additional_rows for child in row.children)
+
+        combined_page = combined.paginate(limit=1)
+        additional_page = additional.paginate(limit=1)
+        assert combined_page.as_list() == additional_page.as_list()
+        assert (additional.count(), additional_page.pagination["total_items"]) == (
+            combined.count(),
+            combined_page.pagination["total_items"],
+        ) == (3, 2)
+        assert additional.count(distinct=Parent.id) == combined.count(distinct=Parent.id) == 2
+        assert additional_page.pagination["total_pages"] == combined_page.pagination["total_pages"] == 2
+
+
 def test_caching():
     _setup_data()
 
@@ -1143,4 +1194,3 @@ def test_relationship_labels():
     # custom:
     assert TableWithRelationship.other_gid.label == "Relationship Reference"
     assert TableWithRelationship.target.label == "Other Gid"
-
