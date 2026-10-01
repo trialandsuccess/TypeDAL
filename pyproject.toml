@@ -24,7 +24,9 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
-    "pydal >= 20251012.3", # core
+    # core; 20260520.0 is the first release with Set._apply_update, which UpdateSet relies on.
+    # Note: pydal's newer 3.YYYYMMDD versions sort *below* this under PEP 440 and are excluded on purpose for now.
+    "pydal >= 20260520.0",
     "pydal-stubs >= 0.2.0", # improved typing for pydal
     "dill < 1", # caching
     "configuraptor >= 2.1.0, < 3", # config
@@ -93,7 +95,7 @@ dev = [
     "pytest-asyncio",
     "pyright < 1.1.400",
     "contextlib-chdir",
-    "testcontainers[mysql]",
+    "testcontainers[mysql]>=4.15", # testcontainers.community.mysql
     "pydantic < 3",
     "psycopg2-binary",
     # depends on ->
@@ -200,6 +202,8 @@ extend-exclude = '''
 # measure src/ only, whatever invokes coverage: `su6 pytest` passes `--cov src` itself, but a
 # bare `pytest --cov` would otherwise measure the whole tree (tests, tasks.py, example_*.py).
 source = ["src"]
+# line coverage alone hides untested branches (an `if` that is never false still counts as 100%):
+branch = true
 
 [tool.coverage.report]
 exclude_also = [
