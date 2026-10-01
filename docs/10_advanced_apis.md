@@ -52,22 +52,31 @@ user = await User.upsert_async({"email": "a@example.com"}, name="Bob")
 ```
 
 The key must be nonempty, contain known fields, exclude `id`, and have no `None`
-values. Key fields cannot also occur in the values. To change a key field, use
+values; its values must be plain scalars (`str`, `int`, `float`, `bool`, `bytes`, `Decimal`, `UUID`,
+dates and times). Key fields cannot also occur in the values, and `id` can't be a value either
+(it would re-key the row). All of these raise `UpsertKeyError` (a `ValueError`) before any SQL runs.
+To change a key field, use
 `update_or_insert({"email": "old@example.com"}, email="new@example.com")`.
 A call with only a key returns an existing row unchanged, without after-hooks,
 or inserts a new row using defaults.
 
-PostgreSQL uses atomic `INSERT ... ON CONFLICT ... RETURNING`. A key without a
-matching unique constraint or index raises `UpsertKeyError`. SQLite, MySQL, and
-tables with a common filter use a Python lookup followed by insert or update.
-This path respects the common filter, does not inspect indexes, and raises
-`UpsertAmbiguityError` if the key matches multiple visible rows. It is not atomic
-under concurrent writes, so database unique constraints remain recommended.
-Conflicts on a different unique column raise the database's normal integrity error.
-PostgreSQL checks the proposed insert's constraints before resolving the conflict;
-provide required insertion values even when you expect to update an existing row.
-The key-only existing-row path avoids attempting that insertion.
-It also skips PostgreSQL's conflict-target validation because it executes no write.
+#### Native and fallback paths
+
+Only PostgreSQL has a native path: an atomic `INSERT ... ON CONFLICT ... RETURNING`. A key without a
+matching unique constraint or index raises `UpsertKeyError`. PostgreSQL checks the proposed insert's
+constraints before resolving the conflict; provide required insertion values even when you expect to update
+an existing row. The key-only existing-row path avoids attempting that insertion, and skips the
+conflict-target validation because it executes no write.
+
+SQLite and MySQL always use the fallback: a lookup by key followed by an insert or update. PostgreSQL uses it too
+for tables with a common filter or a multi-tenant (`request_tenant`) field, because `ON CONFLICT` would bypass those
+filters, and when the values replace an upload field with `autodelete=True`. The fallback respects the filters,
+does not inspect indexes, and raises `UpsertAmbiguityError` if the key matches multiple visible rows. It is not
+atomic under concurrent writes, so database unique constraints remain recommended. On SQLite 3.35+ the update
+branch reads the row back with `UPDATE ... RETURNING`; MySQL and older SQLite need one extra `SELECT`.
+Conflicts on a different unique column raise the database's normal integrity error on every backend.
+
+#### Hooks
 
 Before-hooks never run on either path because the branch is unknown beforehand.
 After-hooks run for the branch that occurred: `after_insert(row, id)` or
@@ -75,41 +84,57 @@ After-hooks run for the branch that occurred: `after_insert(row, id)` or
 update set is restricted to the affected ID, ignoring common filters so the hook
 can still access a row moved outside its filter.
 
-Register a before-hook's upsert policy explicitly:
+Register a before-hook's upsert policy explicitly (also accepted by `before_insert_once`/`before_update_once`):
 
 ```python
 User.before_insert(validate_user, upsert="error")  # Require update_or_insert instead.
 User.before_update(normalize_user, upsert="ignore")  # Skip silently during upsert.
 ```
 
-An unmarked before-hook emits `UpsertHooksWarning` and is skipped, including mixin
-hooks for slugs and timestamps. An `"error"` registration raises `UpsertHookError`
-before executing SQL. Policies belong to each model registration; they do not
-change ordinary inserts, updates, or `update_or_insert`.
+An unmarked before-hook you registered emits `UpsertHooksWarning` (pointing at the `upsert()` call) and is skipped.
+An `"error"` registration raises `UpsertHookError` before executing SQL. Policies belong to each model registration;
+they do not change ordinary inserts, updates, or `update_or_insert`.
+PyDAL's own upload hooks, present on every table, don't warn: upsert stores uploaded files itself and, on the update
+branch, removes the replaced file for `autodelete` fields just like a normal update.
+
+The built-in `SlugMixin` and `TimestampsMixin` register their hooks with `upsert="error"`: skipping them would insert
+rows without a slug or leave `updated_at` stale, so `upsert()` on those tables raises `UpsertHookError`.
+Use `update_or_insert` there.
 
 Inserts apply field defaults and computations. Upsert updates write only explicitly
 supplied values: omitted `Field(update=...)` and `compute` fields stay unchanged.
 Supply these values explicitly if they need to change. TypeDAL cache invalidation
 runs through the normal after-hooks.
 
+#### Decimal values
+
+PyDAL writes decimal values into SQL unquoted. Since 6.0, TypeDAL converts every value for a `decimal` field to
+`Decimal` first (for inserts, updates, queries and upserts alike) and raises `ValueError` for anything that isn't a
+finite number, so a string from request data can't change the statement.
+
 ### Affected-ID update hooks since 6.0
 
 Updates through TypeDAL's query builders, `db(query).update(...)`, and record updates
-pass `Set(id.belongs(affected_ids))` to after-update hooks instead of the original
-query. Hooks receive an `AffectedSet` whose `affected_ids` exposes the IDs already
-captured by the write, including for cache invalidation. PostgreSQL and supported
-SQLite versions obtain IDs with `UPDATE ... RETURNING`.
-MySQL selects IDs before updating without locking; concurrent changes can make that
-selected list differ from the rows actually updated.
-Raw updates with no after-hooks use ordinary rowcount without collecting IDs.
-QueryBuilder updates always collect IDs for their return value. Large affected-ID
-lists currently stay in memory; there is no threshold or temporary-table strategy.
+pass an `AffectedSet` (matching the updated rows by primary key) to after-update hooks instead of the original
+query, so hooks still find rows whose filtered columns the update changed. Its `affected_ids` lists the primary
+keys already captured by the write; for keyed tables (`primarykey=[...]`) these are the key values, or tuples for
+composite keys. Calling `.where(...)` or `rows(...)` on it returns a narrowed (plain) `UpdateSet`.
 
-PyDAL's reverse-reference LazySets and `db.smart_query(...)` construct plain Sets
-and retain PyDAL's original-query after-hook semantics. Their hooks receive a plain
-`Set` without `affected_ids`; cache invalidation falls back to selecting IDs from
-that query. Updates that change the query's predicate can therefore miss cache
-invalidation on these PyDAL paths.
+After-update hooks only run when at least one row was updated. That's unchanged from PyDAL, which only calls them
+for a nonzero rowcount.
+
+PostgreSQL and SQLite 3.35+ obtain the IDs with `UPDATE ... RETURNING`. MySQL and older SQLite select the IDs first
+(MySQL with `FOR UPDATE`) and then update exactly those rows, so a row that starts matching in between is neither
+updated nor reported; the returned count is the real rowcount. That costs one extra `SELECT` per update on those
+backends whenever IDs are needed: with an after-update hook (including TypeDAL's own cache invalidation) or for a
+QueryBuilder `update()`, which returns the IDs.
+Raw updates with no after-hooks use ordinary rowcount without collecting IDs.
+Large affected-ID lists currently stay in memory; there is no threshold or temporary-table strategy.
+
+PyDAL's reverse-reference LazySets (`row.articles.update(...)`) and `db.smart_query(...)` construct plain Sets,
+which keep PyDAL's original-query after-hook semantics: their hooks receive that plain `Set` without
+`affected_ids`. Because the original query may no longer match the updated rows, TypeDAL's cache invalidation
+drops every cached result that depends on the table in that case.
 
 ### Validation and general update-or-insert
 
