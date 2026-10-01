@@ -328,8 +328,10 @@ async def test_async_warning_points_to_calling_file() -> None:
     UpsertUser.before_insert(unmarked_hook)
     with pytest.warns(UpsertHooksWarning) as emitted:
         await UpsertUser.upsert_async({"email": "a@example.com"})
-    assert len(emitted) == 1
-    assert emitted[0].filename == __file__
+    # pytest.warns records every warning; drivers may add their own when the worker connects.
+    hook_warnings = [w for w in emitted if issubclass(w.category, UpsertHooksWarning)]
+    assert len(hook_warnings) == 1, [(w.category.__name__, str(w.message), w.filename) for w in emitted]
+    assert hook_warnings[0].filename == __file__
 
 
 def test_ignore_policy_is_silent_and_preserves_normal_hooks(hook_events: list[str]) -> None:
