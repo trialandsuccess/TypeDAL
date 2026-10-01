@@ -4,13 +4,16 @@ TypeDAL Library.
 
 from .asynchronous import AsyncSession, BlockingAccessHandler, BlockingDatabaseAccessWarning
 from .core import TypeDAL
+from .exceptions import UpsertAmbiguityError, UpsertHookError, UpsertKeyError
 from .fields import TypedField
 from .helpers import sql_expression
 from .query_builder import QueryBuilder
 from .relationships import Ref, Relationship, relationship
 from .rows import PaginatedRows, TypedRows
 from .tables import TypedTable
-from .warnings import UpsertFallbackWarning, UpsertHooksWarning
+from .types import UpsertHookPolicy, UpsertKey, UpsertKeyValue
+from .updates import AffectedSet
+from .warnings import UpsertHooksWarning
 
 from . import fields  # isort: skip
 
@@ -20,6 +23,7 @@ except ImportError:  # pragma: no cover
     P4W_DAL = None
 
 __all__ = [
+    "AffectedSet",
     "AsyncSession",
     "BlockingAccessHandler",
     "BlockingDatabaseAccessWarning",
@@ -31,8 +35,13 @@ __all__ = [
     "TypedField",
     "TypedRows",
     "TypedTable",
-    "UpsertFallbackWarning",
+    "UpsertAmbiguityError",
+    "UpsertHookError",
+    "UpsertHookPolicy",
     "UpsertHooksWarning",
+    "UpsertKey",
+    "UpsertKeyError",
+    "UpsertKeyValue",
     "fields",
     "relationship",
     "sql_expression",

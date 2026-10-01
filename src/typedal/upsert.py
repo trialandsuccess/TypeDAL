@@ -4,16 +4,94 @@ from __future__ import annotations
 
 import types
 import typing as t
+import warnings
+from dataclasses import dataclass
 
 from pydal.adapters.base import BaseAdapter, SQLAdapter
 from pydal.dialects.base import SQLDialect
 from pydal.dialects.postgre import PostgreDialect
-from pydal.dialects.sqlite import SQLiteDialect
 from pydal.helpers._internals import Dispatcher
 
-from .types import Field, Row, Table
+from .exceptions import UpsertAmbiguityError, UpsertHookError, UpsertKeyError
+from .types import AnyDict, Field, OpRow, Reference, Row, Table, UpsertHookPolicy
+from .updates import affected_set
+from .warnings import UpsertHooksWarning
 
 upsert_dialects = Dispatcher("upsert dialect")
+
+
+@dataclass
+class HookRegistration:
+    """A model-local policy for one before-hook registration."""
+
+    branch: t.Literal["insert", "update"]
+    hook: t.Callable[..., t.Any]
+    policy: UpsertHookPolicy | None
+
+
+def register_before_hook(
+    hooks: list[t.Callable[..., t.Any]],
+    registrations: list[HookRegistration],
+    branch: t.Literal["insert", "update"],
+    hook: t.Callable[..., t.Any],
+    policy: UpsertHookPolicy | None,
+) -> None:
+    """Register the callable with PyDAL and the policy with its TypeDAL model."""
+    if policy is not None and policy not in t.get_args(UpsertHookPolicy.__value__):
+        raise ValueError(f"Invalid upsert hook policy: {policy!r}")
+    if hook not in hooks:
+        hooks.append(hook)
+    # Replace this hook's policy while preserving the model's registration list.
+    registrations[:] = [
+        registration
+        for registration in registrations
+        if not (registration.branch == branch and registration.hook == hook)
+    ]
+    registrations.append(HookRegistration(branch, hook, policy))
+
+
+def check_before_hooks(
+    before_insert_hooks: list[t.Callable[..., t.Any]],
+    before_update_hooks: list[t.Callable[..., t.Any]],
+    registrations: list[HookRegistration],
+    table_name: str,
+) -> None:
+    """Enforce policies without running any before-hook."""
+    unmarked: list[str] = []
+    for branch, hooks in (("insert", before_insert_hooks), ("update", before_update_hooks)):
+        for hook in hooks:
+            policy = next(
+                (
+                    registration.policy
+                    for registration in registrations
+                    if registration.branch == branch and registration.hook == hook
+                ),
+                None,
+            )
+            if policy == "error":
+                hook_name = getattr(hook, "__name__", type(hook).__name__)
+                raise UpsertHookError(
+                    f"{table_name}.before_{branch} hook {hook_name!r} forbids upsert; "
+                    "use update_or_insert to run before-hooks"
+                )
+            if policy is None:
+                unmarked.append(f"before_{branch}: {getattr(hook, '__name__', type(hook).__name__)}")
+    if unmarked:
+        warnings.warn(
+            f"{table_name}.upsert skips unmarked before-hooks (" + ", ".join(unmarked) + "). "
+            "Register them with upsert='ignore' or upsert='error' to choose an explicit policy.",
+            UpsertHooksWarning,
+            stacklevel=3,
+        )
+
+
+@dataclass
+class UpsertResult:
+    """The written row and the operation data needed by PyDAL after-hooks."""
+
+    row: Row
+    outcome: t.Literal["inserted", "updated", "unchanged"]
+    operation: OpRow
 
 
 class UpsertDialect(t.Protocol):
@@ -54,18 +132,12 @@ class UpsertAdapter(t.Protocol):
         key_fields: list[Field],
         insert_fields: list[tuple[Field, t.Any]],
         update_fields: list[Field],
-    ) -> Row: ...
-
-
-class SQLiteDriver(t.Protocol):
-    """SQLite driver capability used when installing the dialect extension."""
-
-    sqlite_version_info: tuple[int, int, int]
+    ) -> UpsertResult: ...
 
 
 @upsert_dialects.register_for(SQLDialect)
 class SQLUpsertDialect:
-    """Unsupported dialects use update_or_insert instead."""
+    """Dialect without native upsert; execution uses the Python implementation."""
 
     native = False
     returning = False
@@ -86,8 +158,9 @@ class SQLUpsertDialect:
         raise NotImplementedError("This dialect does not support native upsert")
 
 
-class OnConflictUpsertDialect(SQLUpsertDialect):
-    """SQL generation shared by PostgreSQL and SQLite."""
+@upsert_dialects.register_for(PostgreDialect)
+class PostgreUpsertDialect(SQLUpsertDialect):
+    """PostgreSQL conflict handling returns the branch as execution metadata."""
 
     native = True
     returning = True
@@ -107,24 +180,68 @@ class OnConflictUpsertDialect(SQLUpsertDialect):
         action = f"DO UPDATE SET {update}" if update else "DO NOTHING"
         sql += f" ON CONFLICT ({conflict}) {action}"
         if returning:
-            sql += f" RETURNING {returning}"
+            sql += f" RETURNING {returning}, (xmax = 0) AS inserted"
         return sql + ";"
 
 
-@upsert_dialects.register_for(PostgreDialect)
-class PostgreUpsertDialect(OnConflictUpsertDialect):
-    """PostgreSQL supports native conflict handling and RETURNING."""
+def _execute_native(adapter: SQLAdapter, sql: str) -> None:
+    try:
+        adapter.execute(sql)
+    except Exception as error:
+        if getattr(error, "sqlstate", None) == "42P10" or getattr(error, "pgcode", None) == "42P10":
+            raise UpsertKeyError("upsert key must match a database unique constraint or unique index") from error
+        raise
 
 
-@upsert_dialects.register_for(SQLiteDialect)
-class SQLiteUpsertDialect(OnConflictUpsertDialect):
-    """SQLite capabilities depend on the connected driver's SQLite version."""
+def _lookup(table: Table, key: AnyDict) -> Row | None:
+    query = None
+    for name, value in key.items():
+        condition = table[name] == value
+        query = condition if query is None else query & condition
+    rows = table._db(query).select(table.ALL, limitby=(0, 2))
+    if len(rows) > 1:
+        raise UpsertAmbiguityError("upsert key matches multiple rows; use a unique key")
+    return t.cast(Row | None, rows.first())
 
-    def __init__(self, dialect: SQLDialect):
-        super().__init__(dialect)
-        version = t.cast(SQLiteDriver, self.adapter.driver).sqlite_version_info
-        self.native = version >= (3, 24, 0)
-        self.returning = version >= (3, 35, 0)
+
+def execute_upsert(table: Table, key: AnyDict, values: AnyDict) -> UpsertResult:
+    """Write without PyDAL callbacks, then run after-hooks for the actual branch."""
+    adapter = table._db._adapter
+    native = getattr(adapter.dialect, "upsert_supported", False) and not table._common_filter
+    existing = _lookup(table, key) if not native or not values else None
+    if existing is not None and not values:
+        return UpsertResult(existing, "unchanged", OpRow(table))
+    if native:
+        operation = table._fields_and_values_for_insert(key | values)
+        result = t.cast(UpsertAdapter, adapter).upsert(
+            table, [table[name] for name in key], operation.op_values(), [table[name] for name in values]
+        )
+    elif existing is None:
+        operation = table._fields_and_values_for_insert(key | values)
+        row_id = adapter.insert(table, operation.op_values())
+        record = affected_set(table, [int(row_id)]).select(table.ALL).first()
+        result = UpsertResult(t.cast(Row, record), "inserted", operation)
+    else:
+        _, fields = table._filter_fields_for_operation(values)
+        operation = table._compute_fields_for_operation(fields, [])
+        rows = affected_set(table, [int(existing.id)])
+        adapter.update(table, rows.query, operation.op_values())
+        record = rows.select(table.ALL).first()
+        if record is None:
+            raise RuntimeError("The upserted row was deleted concurrently")
+        result = UpsertResult(record, "updated", operation)
+    if result.row is None:
+        raise RuntimeError("The upserted row could not be retrieved; it may have been deleted concurrently")
+    row_id = Reference(int(result.row.id))
+    row_id._table = table
+    if result.outcome == "inserted":
+        for after_insert_hook in table._after_insert:
+            after_insert_hook(result.operation, row_id)
+    elif result.outcome == "updated":
+        rows = affected_set(table, [int(row_id)])
+        for after_update_hook in table._after_update:
+            after_update_hook(rows, result.operation)
+    return result
 
 
 def _adapter_upsert_sql(
@@ -150,15 +267,19 @@ def _adapter_upsert(
     key_fields: list[Field],
     insert_fields: list[tuple[Field, t.Any]],
     update_fields: list[Field],
-) -> Row:
+) -> UpsertResult:
     """Adapter.upsert: execute on the current connection and decode the resulting row."""
     upsert_adapter = t.cast(UpsertAdapter, adapter)
-    adapter.execute(upsert_adapter._upsert(table, key_fields, insert_fields, update_fields))
+    _execute_native(adapter, upsert_adapter._upsert(table, key_fields, insert_fields, update_fields))
     record = None
+    outcome: t.Literal["inserted", "updated", "unchanged"] = "unchanged"
     if upsert_adapter.dialect.upsert_returning:
         fields = list(table)
         colnames = [f"{table._tablename}.{field.name}" for field in fields]
-        record = adapter.parse(adapter.fetchall(), fields, colnames).first()
+        returned = adapter.fetchall()
+        if returned:
+            outcome = "inserted" if returned[0][-1] else "updated"
+            record = adapter.parse([row[:-1] for row in returned], fields, colnames).first()
     if record is None:
         key_names = {field.name for field in key_fields}
         # Reuse converted values instead of evaluating filter_in or callable values twice.
@@ -170,7 +291,12 @@ def _adapter_upsert(
         record = table._db(query, ignore_common_filters=True).select(table.ALL, limitby=(0, 1)).first()
     if record is None:
         raise RuntimeError("The upserted row could not be retrieved; it may have been deleted concurrently")
-    return t.cast(Row, record)
+    names = {field.name for field in update_fields}
+    operation = OpRow(table)
+    for field, value in insert_fields:
+        if outcome == "inserted" or field.name in names:
+            operation.set_value(field.name, value, field)
+    return UpsertResult(t.cast(Row, record), outcome, operation)
 
 
 def install_upsert(adapter: BaseAdapter) -> None:

@@ -4,12 +4,23 @@ import datetime as dt
 from collections.abc import Iterator
 from pathlib import Path
 import typing as t
+import warnings
 
 import pytest
+from pydal import DAL
 from pydal.helpers.classes import ExecutionHandler
 from testcontainers.community.mysql import MySqlContainer
 
-from src.typedal import TypeDAL, TypedField, TypedTable, UpsertFallbackWarning, UpsertHooksWarning
+from src.typedal import (
+    AffectedSet,
+    TypeDAL,
+    TypedField,
+    TypedTable,
+    UpsertAmbiguityError,
+    UpsertHookError,
+    UpsertHooksWarning,
+    UpsertKeyError,
+)
 from src.typedal.types import OpRow, Reference, Set
 
 
@@ -52,6 +63,10 @@ def upsert_db(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[Record
     db.statements = []
 
     db.define(UpsertUser)
+    for hook in list(UpsertUser._before_insert):
+        UpsertUser.before_insert(hook, upsert="ignore")
+    for hook in list(UpsertUser._before_update):
+        UpsertUser.before_update(hook, upsert="ignore")
     db.commit()
     db.statements.clear()
 
@@ -75,7 +90,7 @@ def test_insert_and_update_return_typed_rows(upsert_db: RecordingDAL) -> None:
     assert updated.id == inserted.id
     assert updated.name == "Bob"
     assert updated.created_at == dt.datetime(2026, 1, 1)
-    if upsert_db._adapter.dbengine != "mysql":
+    if upsert_db._adapter.dbengine == "postgres":
         assert len(upsert_db.statements) == 2
         assert all(sql.startswith("INSERT INTO") and "ON CONFLICT" in sql for sql in upsert_db.statements)
 
@@ -114,9 +129,8 @@ def test_composite_unique_key(upsert_db: RecordingDAL) -> None:
 def test_overlap_error_contains_concrete_alternative() -> None:
     with pytest.raises(ValueError) as error:
         UpsertUser.upsert({"email": "old@example.com"}, email="new@example.com", name="fixed")
-    assert (
-        "UpsertUser.update_or_insert({'email': 'old@example.com'}, email='new@example.com', name='fixed')"
-        in str(error.value)
+    assert "UpsertUser.update_or_insert({'email': 'old@example.com'}, email='new@example.com', name='fixed')" in str(
+        error.value
     )
     original = UpsertUser.insert(email="old@example.com", name="original")
     changed = UpsertUser.update_or_insert({"email": "old@example.com"}, email="new@example.com", name="fixed")
@@ -124,7 +138,10 @@ def test_overlap_error_contains_concrete_alternative() -> None:
     assert changed.email == "new@example.com"
 
 
-@pytest.mark.parametrize("key,values", [({}, {}), ({"missing": 1}, {}), ({"email": "a"}, {"missing": 1})])
+@pytest.mark.parametrize(
+    "key,values",
+    [({}, {}), ({"missing": 1}, {}), ({"email": "a"}, {"missing": 1}), ({"email": None}, {}), ({"id": 1}, {})],
+)
 def test_invalid_arguments_do_not_execute_sql(
     upsert_db: RecordingDAL,
     key: dict[str, t.Any],
@@ -149,10 +166,16 @@ def test_upsert_participates_in_transaction(upsert_db: RecordingDAL) -> None:
     assert UpsertUser.count() == 0
 
 
-def test_native_hook_warning_or_mysql_fallback(upsert_db: RecordingDAL) -> None:
-    warning = UpsertFallbackWarning if upsert_db._adapter.dbengine == "mysql" else UpsertHooksWarning
-    with pytest.warns(warning):
+def test_unmarked_before_hook_warns_without_running() -> None:
+    events: list[str] = []
+
+    def unmarked_hook(_row: OpRow) -> None:
+        events.append("before_insert")
+
+    UpsertUser.before_insert(unmarked_hook)
+    with pytest.warns(UpsertHooksWarning, match="unmarked_hook"):
         UpsertUser.upsert({"email": "a@example.com"}, name="Alice")
+    assert events == []
 
 
 @pytest.mark.asyncio
@@ -214,9 +237,9 @@ def hook_events() -> list[str]:
         events.append("after_update")
         assert rows.select().first().name == row.name
 
-    UpsertUser.before_insert(before_insert)
+    UpsertUser.before_insert(before_insert, upsert="ignore")
     UpsertUser.after_insert(after_insert)
-    UpsertUser.before_update(before_update)
+    UpsertUser.before_update(before_update, upsert="ignore")
     UpsertUser.after_update(after_update)
     return events
 
@@ -224,7 +247,7 @@ def hook_events() -> list[str]:
 def test_upsert_insertion_runs_only_insert_hooks(hook_events: list[str]) -> None:
     inserted = UpsertUser.upsert({"email": "a@example.com"}, name="Alice")
     assert inserted.name == "Alice"
-    assert hook_events == ["before_insert", "after_insert"]
+    assert hook_events == ["after_insert"]
 
 
 def test_upsert_update_runs_only_update_hooks(hook_events: list[str]) -> None:
@@ -232,7 +255,7 @@ def test_upsert_update_runs_only_update_hooks(hook_events: list[str]) -> None:
     hook_events.clear()
     updated = UpsertUser.upsert({"email": "a@example.com"}, name="Bob")
     assert updated.id == original.id
-    assert hook_events == ["before_update", "after_update"]
+    assert hook_events == ["after_update"]
 
 
 def test_key_only_existing_row_does_not_run_hooks(hook_events: list[str]) -> None:
@@ -246,22 +269,405 @@ def test_key_only_existing_row_does_not_run_hooks(hook_events: list[str]) -> Non
 def test_key_only_insertion_runs_insert_hooks(hook_events: list[str]) -> None:
     inserted = UpsertUser.upsert({"email": "a@example.com"})
     assert inserted.name == "default"
-    assert hook_events == ["before_insert", "after_insert"]
+    assert hook_events == ["after_insert"]
 
 
-def test_after_insert(upsert_db: RecordingDAL):
-
+def test_changed_predicate_after_update_receives_affected_ids(upsert_db: RecordingDAL) -> None:
     @upsert_db.define()
     class HookedTable(TypedTable):
         value: str
 
-    HookedTable.before_update(lambda req_set, oprow: print(req_set, oprow))
-    HookedTable.after_update(lambda req_set, oprow: print(req_set, oprow))
+    affected: list[int] = []
 
-    HookedTable.insert(value=1)
-    HookedTable.insert(value=1)
-    HookedTable.insert(value=2)
+    def after_update(rows: Set, row: OpRow) -> None:
+        affected.extend(rows.select().column(HookedTable.id))
+        assert row.value == "new"
+        assert all(record.value == "new" for record in rows.select())
 
-    xyz = HookedTable.where(value=1).update(value=3)
+    HookedTable.after_update(after_update)
+    first = HookedTable.insert(value="old")
+    second = HookedTable.insert(value="old")
+    HookedTable.insert(value="other")
+    assert set(HookedTable.where(value="old").update(value="new")) == {first.id, second.id}
+    assert set(affected) == {first.id, second.id}
 
-    print(xyz)
+
+@pytest.mark.parametrize("branch", ["insert", "update"])
+def test_error_policy_blocks_before_sql(upsert_db: RecordingDAL, branch: str) -> None:
+    def forbidden_hook(*_args: t.Any) -> None:
+        pytest.fail("Before-hook must not run during upsert")
+
+    if branch == "insert":
+        UpsertUser.before_insert(forbidden_hook, upsert="error")
+    else:
+        UpsertUser.before_update(forbidden_hook, upsert="error")
+    with pytest.raises(UpsertHookError, match=f"UpsertUser.before_{branch} hook 'forbidden_hook'.*update_or_insert"):
+        UpsertUser.upsert({"email": "a@example.com"})
+    assert upsert_db.statements == []
+
+
+def test_bound_method_policy_uses_callable_equality() -> None:
+    class HookService:
+        def before_insert(self, _row: OpRow) -> None:
+            pytest.fail("Before-hook must not run during upsert")
+
+    service = HookService()
+    UpsertUser.before_insert(service.before_insert, upsert="error")
+    UpsertUser.before_insert(service.before_insert, upsert="ignore")
+    with warnings.catch_warnings(record=True) as emitted:
+        warnings.simplefilter("always", UpsertHooksWarning)
+        UpsertUser.upsert({"email": "a@example.com"})
+    assert emitted == []
+
+
+@pytest.mark.asyncio
+async def test_async_warning_points_to_calling_file() -> None:
+    def unmarked_hook(_row: OpRow) -> None:
+        pytest.fail("Before-hook must not run during upsert")
+
+    UpsertUser.before_insert(unmarked_hook)
+    with pytest.warns(UpsertHooksWarning) as emitted:
+        await UpsertUser.upsert_async({"email": "a@example.com"})
+    assert len(emitted) == 1
+    assert emitted[0].filename == __file__
+
+
+def test_ignore_policy_is_silent_and_preserves_normal_hooks(hook_events: list[str]) -> None:
+    with warnings.catch_warnings(record=True) as emitted:
+        warnings.simplefilter("always", UpsertHooksWarning)
+        UpsertUser.upsert({"email": "a@example.com"}, name="Alice")
+    assert not any(isinstance(warning.message, UpsertHooksWarning) for warning in emitted)
+    assert hook_events == ["after_insert"]
+    hook_events.clear()
+    UpsertUser.update_or_insert({"email": "a@example.com"}, name="Bob")
+    assert hook_events == ["before_update", "after_update"]
+
+
+@pytest.mark.asyncio
+async def test_async_upsert_after_hooks(hook_events: list[str]) -> None:
+    inserted = await UpsertUser.upsert_async({"email": "a@example.com"}, name="Alice")
+    updated = await UpsertUser.upsert_async({"email": "a@example.com"}, name="Bob")
+    assert updated.id == inserted.id
+    assert hook_events == ["after_insert", "after_update"]
+
+
+def test_missing_unique_key_or_ambiguous_python_lookup(upsert_db: RecordingDAL) -> None:
+    @upsert_db.define
+    class NonUniqueUpsert(TypedTable):
+        code: str
+        value: str
+
+    upsert_db.commit()
+    if upsert_db._adapter.dbengine == "postgres":
+        with pytest.raises(UpsertKeyError, match="unique"):
+            NonUniqueUpsert.upsert({"code": "same"}, value="new")
+    else:
+        first = NonUniqueUpsert.upsert({"code": "same"}, value="first")
+        updated = NonUniqueUpsert.upsert({"code": "same"}, value="second")
+        assert updated.id == first.id
+        NonUniqueUpsert.insert(code="same", value="other")
+        with pytest.raises(UpsertAmbiguityError, match="multiple rows"):
+            NonUniqueUpsert.upsert({"code": "same"}, value="ambiguous")
+
+
+@pytest.mark.parametrize("path", ["raw", "raw_where", "record", "table", "validated"])
+def test_other_update_paths_receive_affected_ids(upsert_db: RecordingDAL, path: str) -> None:
+    original = UpsertUser.insert(email="a@example.com", name="old")
+    affected: list[int] = []
+
+    def after_update(rows: Set, row: OpRow) -> None:
+        affected.extend(rows.select().column(UpsertUser.id))
+        assert row.name == "new"
+        assert rows.select().first().name == "new"
+
+    UpsertUser.after_update(after_update)
+    if path == "raw":
+        assert upsert_db(UpsertUser.name == "old").update(name="new") == 1
+    elif path == "raw_where":
+        assert upsert_db(UpsertUser.id > 0).where(UpsertUser.name == "old").update(name="new") == 1
+    elif path == "record":
+        original.update_record(name="new")
+    elif path == "validated":
+        response = upsert_db(UpsertUser.name == "old").validate_and_update(name="new")
+        assert response["updated"] == 1
+        assert not response["errors"]
+    else:
+        UpsertUser.update_or_insert({"name": "old"}, name="new")
+    assert affected == [original.id]
+
+
+def test_upsert_updates_only_explicit_values(upsert_db: RecordingDAL) -> None:
+    @upsert_db.define
+    class ComputedUpsert(TypedTable):
+        code = TypedField(str, unique=True)
+        name: str
+        stamp = TypedField(str, default="insert", update="update")
+        computed = TypedField(str, compute=lambda row: row.name.upper())
+
+    inserted = ComputedUpsert.upsert({"code": "same"}, name="alice")
+    updated = ComputedUpsert.upsert({"code": "same"}, name="bob")
+    assert inserted.computed == updated.computed == "ALICE"
+    assert updated.stamp == "insert"
+    explicit = ComputedUpsert.upsert({"code": "same"}, name="bob", stamp="explicit", computed="manual")
+    assert explicit.stamp == "explicit"
+    assert explicit.computed == "manual"
+
+
+@pytest.mark.parametrize("operation", ["upsert", "update"])
+def test_common_filter_after_hooks_see_row_outside_filter(upsert_db: RecordingDAL, operation: str) -> None:
+    @upsert_db.define(common_filter=lambda _query: upsert_db.filtered_upsert.active == True)  # noqa: E712
+    class FilteredUpsert(TypedTable):
+        code = TypedField(str, unique=True)
+        active = TypedField(bool, default=True)
+
+    inserted = FilteredUpsert.upsert({"code": "same"})
+    affected: list[int] = []
+
+    def after_update(rows: Set, row: OpRow) -> None:
+        affected.extend(rows.select().column(FilteredUpsert.id))
+        assert row.active is False
+        assert rows.select().first().active is False
+
+    FilteredUpsert.after_update(after_update)
+    if operation == "upsert":
+        updated = FilteredUpsert.upsert({"code": "same"}, active=False)
+        assert updated.id == inserted.id
+    else:
+        assert FilteredUpsert.where(active=True).update(active=False) == [inserted.id]
+    assert affected == [inserted.id]
+    assert FilteredUpsert.count() == 0
+
+
+def test_hook_policy_belongs_to_model_registration(upsert_db: RecordingDAL) -> None:
+    @upsert_db.define
+    class OtherUpsertUser(TypedTable):
+        email = TypedField(str, unique=True)
+
+    def shared_hook(_row: OpRow) -> None:
+        pytest.fail("Before-hook must not run during upsert")
+
+    UpsertUser.before_insert(shared_hook, upsert="ignore")
+    OtherUpsertUser.before_insert(shared_hook, upsert="error")
+    UpsertUser.upsert({"email": "a@example.com"})
+    with pytest.raises(UpsertHookError):
+        OtherUpsertUser.upsert({"email": "a@example.com"})
+    OtherUpsertUser.before_insert(shared_hook, upsert="ignore")
+    OtherUpsertUser.upsert({"email": "a@example.com"})
+
+
+def test_conflict_on_another_unique_column_is_integrity_error(upsert_db: RecordingDAL) -> None:
+    @upsert_db.define
+    class OtherUniqueUpsert(TypedTable):
+        email = TypedField(str, unique=True)
+        username = TypedField(str, unique=True)
+
+    OtherUniqueUpsert.insert(email="old@example.com", username="taken")
+    upsert_db.commit()
+    with pytest.raises(upsert_db._adapter.driver.IntegrityError):
+        OtherUniqueUpsert.upsert({"email": "new@example.com"}, username="taken")
+
+
+def test_branch_metadata_does_not_shadow_inserted_field(upsert_db: RecordingDAL) -> None:
+    @upsert_db.define
+    class BranchUpsert(TypedTable):
+        code = TypedField(str, unique=True)
+        inserted: bool
+
+    events: list[str] = []
+    BranchUpsert.after_insert(lambda _row, _row_id: events.append("insert"))
+    BranchUpsert.after_update(lambda _rows, _row: events.append("update"))
+    first = BranchUpsert.upsert({"code": "same"}, inserted=False)
+    second = BranchUpsert.upsert({"code": "same"}, inserted=True)
+    assert first.inserted is False
+    assert second.inserted is True
+    assert second.id == first.id
+    assert events == ["insert", "update"]
+
+
+def test_invalid_hook_policy_leaves_registration_unchanged() -> None:
+    def before_insert(_row: OpRow) -> None:
+        pytest.fail("Invalid hook registration must not be installed")
+
+    with pytest.raises(ValueError, match="Invalid upsert hook policy"):
+        UpsertUser.before_insert(before_insert, upsert=t.cast(t.Any, "invalid"))
+    UpsertUser.insert(email="a@example.com")
+    UpsertUser.upsert({"email": "a@example.com"}, name="updated")
+
+
+def test_update_veto_and_naive_bypass(upsert_db: RecordingDAL) -> None:
+    inserted = UpsertUser.insert(email="a@example.com", name="old")
+    events: list[str] = []
+
+    def veto(_rows: Set, _row: OpRow) -> bool:
+        events.append("before")
+        return True
+
+    UpsertUser.before_update(veto, upsert="ignore")
+    UpsertUser.after_update(lambda _rows, _row: events.append("after"))
+    assert UpsertUser.where(id=inserted.id).update(name="blocked") == []
+    assert UpsertUser(inserted.id).name == "old"
+    assert events == ["before"]
+    events.clear()
+    assert upsert_db(UpsertUser.id == inserted.id).update_naive(name="naive") == 1
+    assert UpsertUser(inserted.id).name == "naive"
+    assert events == []
+
+
+def test_plain_update_without_after_hooks_uses_only_rowcount(upsert_db: RecordingDAL) -> None:
+    original = UpsertUser.insert(email="a@example.com", name="old")
+    upsert_db.statements.clear()
+    assert upsert_db(UpsertUser.id == original.id).update(name="new") == 1
+    assert len(upsert_db.statements) == 1
+    assert upsert_db.statements[0].startswith("UPDATE")
+    assert "RETURNING" not in upsert_db.statements[0]
+    assert UpsertUser(original.id).name == "new"
+
+
+def test_after_hook_uses_known_ids_without_selecting(upsert_db: RecordingDAL) -> None:
+    original = UpsertUser.insert(email="a@example.com", name="old")
+    ids: list[int] = []
+
+    def after_update(rows: AffectedSet, row: OpRow) -> None:
+        ids.extend(rows.affected_ids)
+        assert row.name == "new"
+
+    UpsertUser.after_update(after_update)
+    upsert_db.statements.clear()
+    assert upsert_db(UpsertUser.id == original.id).update(name="new") == 1
+    assert ids == [original.id]
+    expected_count = 2 if upsert_db._adapter.dbengine == "mysql" else 1
+    assert len(upsert_db.statements) == expected_count
+
+
+def test_upsert_same_values_still_runs_update_after_hook() -> None:
+    original = UpsertUser.insert(email="a@example.com", name="same")
+    ids: list[int] = []
+
+    def after_update(rows: AffectedSet, row: OpRow) -> None:
+        ids.extend(rows.affected_ids)
+        assert row.name == "same"
+
+    UpsertUser.after_update(after_update)
+    updated = UpsertUser.upsert({"email": "a@example.com"}, name="same")
+    assert updated.id == original.id
+    assert ids == [original.id]
+
+
+@pytest.mark.parametrize("naive", [False, True])
+def test_empty_update_raises_before_sql(upsert_db: RecordingDAL, naive: bool) -> None:
+    rows = upsert_db(UpsertUser.id > 0)
+    with pytest.raises(ValueError, match="No fields to update"):
+        if naive:
+            rows.update_naive()
+        else:
+            rows.update()
+    assert upsert_db.statements == []
+
+
+def test_empty_query_builder_update_raises_before_sql(upsert_db: RecordingDAL) -> None:
+    with pytest.raises(ValueError, match="No fields to update"):
+        UpsertUser.where(UpsertUser.id > 0).update()
+    assert upsert_db.statements == []
+
+
+def test_update_without_matches_has_no_after_hook(upsert_db: RecordingDAL) -> None:
+    events: list[str] = []
+    UpsertUser.after_update(lambda _rows, _row: events.append("after"))
+    rows = upsert_db(UpsertUser.id > 0)
+    assert rows.where(None) is rows
+    assert rows.update(name="new") == 0
+    assert events == []
+
+
+@pytest.mark.parametrize("upsert_db", ["postgres"], indirect=True)
+def test_native_adapter_key_only_conflict_returns_unchanged_row(upsert_db: RecordingDAL) -> None:
+    @upsert_db.define
+    class NativeMembership(TypedTable):
+        user_code: str
+        group_code: str
+        name = TypedField(str, default="default")
+
+    NativeMembership.create_index("native_membership_unique", "user_code", "group_code", unique=True)
+    existing = NativeMembership.insert(user_code="u", group_code="g", name="existing")
+    table = NativeMembership._ensure_table_defined()
+    operation = table._fields_and_values_for_insert({"user_code": "u", "group_code": "g"})
+    result = upsert_db._adapter.upsert(table, [table.user_code, table.group_code], operation.op_values(), [])
+    assert result.outcome == "unchanged"
+    assert result.row.id == existing.id
+    assert result.row.name == "existing"
+
+
+@pytest.mark.parametrize("upsert_db", ["sqlite", "mysql"], indirect=True)
+def test_unsupported_native_dialect_rejects_direct_use(upsert_db: RecordingDAL) -> None:
+    table = UpsertUser._ensure_table_defined()
+    operation = table._fields_and_values_for_insert({"email": "a@example.com"})
+    with pytest.raises(NotImplementedError, match="native upsert"):
+        upsert_db._adapter._upsert(table, [table.email], operation.op_values(), [])
+    if upsert_db._adapter.dbengine == "mysql":
+        with pytest.raises(NotImplementedError, match="UPDATE RETURNING"):
+            upsert_db._adapter.dialect.update_returning("UPDATE unused SET value=1;", "id")
+    assert upsert_db.statements == []
+
+
+def test_install_upsert_is_idempotent(upsert_db: RecordingDAL) -> None:
+    from src.typedal.upsert import install_upsert
+
+    original = upsert_db._adapter.upsert
+    install_upsert(upsert_db._adapter)
+    assert upsert_db._adapter.upsert is original
+    assert UpsertUser.upsert({"email": "a@example.com"}).name == "default"
+
+
+def test_extensions_leave_pydal_null_adapter_unchanged(tmp_path: Path) -> None:
+    from src.typedal.updates import install_update
+    from src.typedal.upsert import install_upsert
+
+    db = DAL(None, folder=str(tmp_path))
+    try:
+        install_upsert(db._adapter)
+        install_update(db._adapter)
+        assert not hasattr(db._adapter, "upsert")
+        assert not hasattr(db._adapter, "update_with_ids")
+    finally:
+        db.close()
+
+
+@pytest.mark.parametrize("branch", ["insert", "update"])
+@pytest.mark.parametrize("upsert_db", ["sqlite"], indirect=True)
+def test_python_path_reports_trigger_deleted_row(upsert_db: RecordingDAL, branch: str) -> None:
+    original = UpsertUser.insert(email="a@example.com", name="old")
+    events: list[str] = []
+    UpsertUser.after_insert(lambda _row, _row_id: events.append("insert"))
+    UpsertUser.after_update(lambda _rows, _row: events.append("update"))
+    if branch == "insert":
+        upsert_db.executesql(
+            'CREATE TRIGGER remove_inserted AFTER INSERT ON "upsert_user" BEGIN '
+            'DELETE FROM "upsert_user" WHERE id = NEW.id; END;'
+        )
+        with pytest.raises(RuntimeError, match="could not be retrieved"):
+            UpsertUser.upsert({"email": "other@example.com"}, name="new")
+    else:
+        upsert_db.executesql(
+            'CREATE TRIGGER remove_updated BEFORE UPDATE ON "upsert_user" BEGIN '
+            'DELETE FROM "upsert_user" WHERE id = OLD.id; SELECT RAISE(IGNORE); END;'
+        )
+        with pytest.raises(RuntimeError, match="deleted concurrently"):
+            UpsertUser.upsert({"email": original.email}, name="new")
+    assert events == []
+
+
+@pytest.mark.parametrize("upsert_db", ["postgres"], indirect=True)
+def test_native_path_reports_suppressed_insert(upsert_db: RecordingDAL) -> None:
+    upsert_db.executesql(
+        "CREATE FUNCTION suppress_upsert_insert() RETURNS trigger AS $$ BEGIN RETURN NULL; END; $$ LANGUAGE plpgsql;"
+    )
+    try:
+        upsert_db.executesql(
+            'CREATE TRIGGER suppress_insert BEFORE INSERT ON "upsert_user" '
+            "FOR EACH ROW EXECUTE FUNCTION suppress_upsert_insert();"
+        )
+        with pytest.raises(RuntimeError, match="could not be retrieved"):
+            UpsertUser.upsert({"email": "a@example.com"}, name="new")
+    finally:
+        upsert_db.executesql('DROP TRIGGER suppress_insert ON "upsert_user";')
+        upsert_db.executesql("DROP FUNCTION suppress_upsert_insert();")

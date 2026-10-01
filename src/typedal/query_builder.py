@@ -569,12 +569,9 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         # todo: limit?
         require_permission(self._permissions, "update")
         db = self._get_db()
-        updated_ids = db(self.query).select("id").column("id")
-        if db(self.query).update(**fields):
-            # success!
-            return updated_ids
+        from .updates import UpdateSet
 
-        return []
+        return t.cast(UpdateSet, db(self.query)).update_ids(**fields)
 
     def _update(self, **fields: t.Any) -> str:
         db = self._get_db()
