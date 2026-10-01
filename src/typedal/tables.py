@@ -20,6 +20,7 @@ from pydal.helpers.classes import SQLALL, SQLCallableList
 from .asynchronous import run_async
 from .constants import JOIN_OPTIONS
 from .core import TypeDAL
+from .exceptions import UpsertKeyError
 from .helpers import all_dict, classproperty, filter_out, throw
 from .serializers import as_json
 from .types import (
@@ -40,9 +41,13 @@ from .types import (
     T_MetaInstance,
     T_Query,
     Table,
+    UpsertHookPolicy,
+    UpsertKey,
     merge_permissions,
     require_permission,
 )
+from .updates import AffectedSet
+from .upsert import HookRegistration, check_before_hooks, execute_upsert, register_before_hook
 
 if t.TYPE_CHECKING:
     from .relationships import Relationship
@@ -105,6 +110,7 @@ class TableMeta(type):
     _table: Table | None = None
     _relationships: dict[str, Relationship[t.Any]] | None = None
     _permissions: Permissions | None = None
+    _upsert_hook_registrations: list[HookRegistration]
     _singular: str
     _plural: str
 
@@ -126,6 +132,7 @@ class TableMeta(type):
         self._table = table
         self._relationships = relationships
         self._permissions = merge_permissions(permissions)
+        self._upsert_hook_registrations = []
 
     def unbind(self) -> None:
         """Remove the database bindings created by `db.define`."""
@@ -288,6 +295,55 @@ class TableMeta(type):
 
         record.update_record(**values)
         return self(record)
+
+    def upsert(
+        self: t.Type[T_MetaInstance],
+        key: UpsertKey,
+        /,
+        **values: t.Any,
+    ) -> T_MetaInstance:
+        """
+        Insert or update by a database unique key and return the resulting instance.
+
+        Before-hooks never run; after-hooks run only for the branch performed.
+        Unmarked before-hooks warn, 'error' policies block, and 'ignore' is silent.
+        Updates write only explicit values, without omitted Field(update=...) or
+        compute fields. Inserts apply defaults and computations. A key-only call
+        returns an existing row without hooks or inserts a new row.
+
+        PostgreSQL uses atomic ON CONFLICT and requires a matching unique index.
+        SQLite, MySQL, and common-filter tables select then write without atomicity;
+        their keys must match at most one visible row. Another unique-column
+        conflict raises the normal database integrity error on every backend.
+        """
+        table = self._ensure_table_defined()
+        check_before_hooks(table._before_insert, table._before_update, self._upsert_hook_registrations, self.__name__)
+        return self._upsert(key, **values)
+
+    def _upsert(self: t.Type[T_MetaInstance], key: UpsertKey, /, **values: t.Any) -> T_MetaInstance:
+        """Validate and execute after the caller has checked its hook policies."""
+        table = self._ensure_table_defined()
+        require_permission(self._permissions, "insert")
+        require_permission(self._permissions, "update")
+        if not isinstance(key, t.Mapping) or not key:
+            raise ValueError("upsert requires a nonempty key mapping")
+        key = dict(key)
+        if "id" in key or table._id.name in key:
+            raise UpsertKeyError("upsert key must not contain id")
+        if any(value is None for value in key.values()):
+            raise UpsertKeyError("upsert key values must not be None")
+        insert_values = key | values
+        if key.keys() & values.keys():
+            kwargs = ", ".join(f"{name}={value!r}" for name, value in insert_values.items())
+            raise ValueError(
+                "upsert key fields must not also be supplied as values. "
+                f"To change a key field, use {self.__name__}.update_or_insert({key!r}, {kwargs})."
+            )
+        unknown = (key.keys() | values.keys()) - set(table.fields)
+        if unknown:
+            raise ValueError(f"Unknown upsert fields: {', '.join(sorted(unknown))}")
+
+        return self(execute_upsert(table, key, values).row)
 
     def validate_and_insert(
         self: t.Type[T_MetaInstance],
@@ -548,6 +604,17 @@ class TableMeta(type):
             query,
             **values,
         )
+
+    async def upsert_async(
+        self: t.Type[T_MetaInstance],
+        key: UpsertKey,
+        /,
+        **values: t.Any,
+    ) -> T_MetaInstance:
+        """Async twin of upsert(), including its before-hook policies and after-hook contract."""
+        table = self._ensure_table_defined()
+        check_before_hooks(table._before_insert, table._before_update, self._upsert_hook_registrations, self.__name__)
+        return await run_async(self._ensure_db(), self._upsert, key, **values)  # ty: ignore[invalid-return-type]
 
     async def validate_and_insert_async(
         self: t.Type[T_MetaInstance],
@@ -813,12 +880,12 @@ class TableMeta(type):
     def before_insert(
         cls: t.Type[T_MetaInstance],
         fn: t.Callable[[T_MetaInstance], t.Optional[bool]] | t.Callable[[OpRow], t.Optional[bool]],
+        upsert: UpsertHookPolicy | None = None,
     ) -> t.Type[T_MetaInstance]:
         """
-        Add a before insert hook.
+        Add a before insert hook; upsert='error' blocks upsert, 'ignore' skips silently.
         """
-        if fn not in cls._before_insert:
-            cls._before_insert.append(fn)
+        register_before_hook(cls._before_insert, cls._upsert_hook_registrations, "insert", fn, upsert)
         return cls
 
     def before_insert_once(
@@ -857,12 +924,12 @@ class TableMeta(type):
     def before_update(
         cls: t.Type[T_MetaInstance],
         fn: t.Callable[[Set, T_MetaInstance], t.Optional[bool]] | t.Callable[[Set, OpRow], t.Optional[bool]],
+        upsert: UpsertHookPolicy | None = None,
     ) -> t.Type[T_MetaInstance]:
         """
-        Add a before update hook.
+        Add a before update hook; upsert='error' blocks upsert, 'ignore' skips silently.
         """
-        if fn not in cls._before_update:
-            cls._before_update.append(fn)
+        register_before_hook(cls._before_update, cls._upsert_hook_registrations, "update", fn, upsert)
         return cls
 
     def before_update_once(
@@ -876,10 +943,11 @@ class TableMeta(type):
 
     def after_update(
         cls: t.Type[T_MetaInstance],
-        fn: t.Callable[[Set, T_MetaInstance], t.Optional[bool]] | t.Callable[[Set, OpRow], t.Optional[bool]],
+        fn: t.Callable[[AffectedSet, T_MetaInstance], t.Optional[bool]]
+        | t.Callable[[AffectedSet, OpRow], t.Optional[bool]],
     ) -> t.Type[T_MetaInstance]:
         """
-        Add an after update hook.
+        Add an after update hook receiving an AffectedSet with its known affected_ids.
         """
         if fn not in cls._after_update:
             cls._after_update.append(fn)
@@ -887,7 +955,8 @@ class TableMeta(type):
 
     def after_update_once(
         cls: t.Type[T_MetaInstance],
-        fn: t.Callable[[Set, T_MetaInstance], t.Optional[bool]] | t.Callable[[Set, OpRow], t.Optional[bool]],
+        fn: t.Callable[[AffectedSet, T_MetaInstance], t.Optional[bool]]
+        | t.Callable[[AffectedSet, OpRow], t.Optional[bool]],
     ) -> t.Type[T_MetaInstance]:
         """
         Add an after update hook that only fires once and then removes itself.
@@ -963,7 +1032,9 @@ class _TypedTable(metaclass=TableMeta):
         t.Callable[[t.Self, Reference], t.Optional[bool]] | t.Callable[[OpRow, Reference], t.Optional[bool]]
     ]
     _before_update: list[t.Callable[[Set, t.Self], t.Optional[bool]] | t.Callable[[Set, OpRow], t.Optional[bool]]]
-    _after_update: list[t.Callable[[Set, t.Self], t.Optional[bool]] | t.Callable[[Set, OpRow], t.Optional[bool]]]
+    _after_update: list[
+        t.Callable[[AffectedSet, t.Self], t.Optional[bool]] | t.Callable[[AffectedSet, OpRow], t.Optional[bool]]
+    ]
     _before_delete: list[t.Callable[[Set], t.Optional[bool]]]
     _after_delete: list[t.Callable[[Set], t.Optional[bool]]]
     _rows: tuple[Row, ...]

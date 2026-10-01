@@ -204,10 +204,20 @@ def clear_expired() -> int:
 
 def _remove_cache(s: Set, tablename: str) -> None:
     """
-    Used as the table._before_update and table._after_update for every TypeDAL table (on by default).
+    Obtain IDs before-delete, or after-update when PyDAL supplies a plain Set.
+    A plain Set retains its original query, which may no longer match updated rows.
     """
     indeces = s.select("id").column("id")
     remove_cache(indeces, tablename)
+
+
+def _remove_cache_after_update(rows: Set, tablename: str) -> None:
+    """Reuse affected IDs when available, otherwise retain PyDAL's query-based invalidation."""
+    affected_ids = getattr(rows, "affected_ids", None)
+    if affected_ids is None:
+        _remove_cache(rows, tablename)
+    else:
+        remove_cache(affected_ids, tablename)
 
 
 def get_expire(

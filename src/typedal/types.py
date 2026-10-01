@@ -10,6 +10,8 @@ Stuff to make mypy happy.
 import datetime as dt
 import types
 import typing as t
+import uuid
+from decimal import Decimal
 
 # Third-party
 from pydal.helpers.classes import OpRow as _OpRow
@@ -44,6 +46,9 @@ if t.TYPE_CHECKING:
 Template: t.TypeAlias = TemplateAlias  # explicit export for mypy, NOT a `type` because it's used at runtime
 type AnyCallable = t.Callable[..., t.Any]
 type AnyDict = dict[str, t.Any]
+type UpsertKeyValue = str | int | float | bool | bytes | Decimal | uuid.UUID | dt.date | dt.time
+type UpsertKey = t.Mapping[str, UpsertKeyValue]
+type UpsertHookPolicy = t.Literal["error", "ignore"]
 
 PermissionType = t.Literal["read", "insert", "update", "delete"]
 

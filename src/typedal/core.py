@@ -334,6 +334,12 @@ class TypeDAL(_TypeDALBase):
             table_hash,
         )
 
+        from .updates import install_update
+        from .upsert import install_upsert
+
+        install_upsert(self._adapter)
+        install_update(self._adapter)
+
         if config.caching:
             self.try_define(_TypedalCache)
             self.try_define(_TypedalCacheDependency)
@@ -554,6 +560,11 @@ class TypeDAL(_TypeDALBase):
         _set = super().__call__(*args, **kwargs)
         return t.cast(TypedSet, _set)
 
+    def where(self, query: T_Query | AnyDict | None = None, ignore_common_filters: bool | None = None) -> "UpdateSet":
+        """Build a PyDAL Set with TypeDAL's affected-ID update callbacks."""
+        rows = super().where(query, ignore_common_filters=ignore_common_filters)
+        return UpdateSet(self, rows.query)
+
     def __getitem__(self, key: str) -> "Table":
         """
         Allows dynamically accessing a table by its name as a string.
@@ -739,6 +750,7 @@ from .fields import *  # noqa: E402 F403 # isort: skip ; to fill globals() scope
 from .define import TableDefinitionBuilder  # noqa: E402
 from .rows import TypedRows, TypedSet  # noqa: E402
 from .tables import TypedTable  # noqa: E402
+from .updates import UpdateSet  # noqa: E402
 
 from .caching import (  # isort: skip # noqa: E402
     memoize,

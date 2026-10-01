@@ -93,7 +93,7 @@ dev = [
     "pytest-asyncio",
     "pyright < 1.1.400",
     "contextlib-chdir",
-    "testcontainers",
+    "testcontainers[mysql]",
     "pydantic < 3",
     "psycopg2-binary",
     # depends on ->

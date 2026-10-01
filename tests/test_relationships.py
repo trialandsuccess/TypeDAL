@@ -22,6 +22,71 @@ from src.typedal.serializers import as_json
 db = TypeDAL("sqlite:memory", lazy_policy="warn")
 
 
+@db.define
+class CacheUpsertUser(TypedTable):
+    email = TypedField(str, unique=True)
+    name: str
+
+
+@db.define
+class CacheUpsertArticle(TypedTable):
+    author: CacheUpsertUser
+    title: str
+
+
+def test_lazy_reference_update_invalidates_cache() -> None:
+    author = CacheUpsertUser.insert(email="lazy@example.com", name="author")
+    article = CacheUpsertArticle.insert(author=author.id, title="old")
+    query = CacheUpsertArticle.where(author=author.id).cache()
+    try:
+        assert query.collect().first().title == "old"
+        assert query.collect().metadata["cache"]["status"] == "cached"
+        author_row = db.cache_upsert_user(author.id)
+        assert author_row.cache_upsert_article.update(title="new") == 1
+        refreshed = query.collect()
+        assert refreshed.metadata["cache"]["status"] == "fresh"
+        assert refreshed.first().id == article.id
+        assert refreshed.first().title == "new"
+    finally:
+        CacheUpsertArticle.where(author=author.id).delete()
+        CacheUpsertUser.where(id=author.id).delete()
+
+
+def test_smart_query_update_invalidates_cache() -> None:
+    user = CacheUpsertUser.insert(email="smart@example.com", name="old")
+    query = CacheUpsertUser.where(email=user.email).cache()
+    try:
+        assert query.collect().first().name == "old"
+        assert query.collect().metadata["cache"]["status"] == "cached"
+        rows = db.smart_query([CacheUpsertUser.email], "email = 'smart@example.com'")
+        assert rows.update(name="new") == 1
+        refreshed = query.collect()
+        assert refreshed.metadata["cache"]["status"] == "fresh"
+        assert refreshed.first().id == user.id
+        assert refreshed.first().name == "new"
+    finally:
+        CacheUpsertUser.where(id=user.id).delete()
+
+
+@pytest.mark.parametrize("operation", ["upsert", "update", "raw", "validated"])
+def test_cache_invalidation_after_changed_predicate(operation: str) -> None:
+    CacheUpsertUser.where(CacheUpsertUser.id > 0).delete()
+    inserted = CacheUpsertUser.insert(email="a@example.com", name="old")
+    query = CacheUpsertUser.where(name="old").cache()
+    assert query.collect().first().name == "old"
+    if operation == "upsert":
+        CacheUpsertUser.upsert({"email": "a@example.com"}, name="new")
+    elif operation == "raw":
+        db(CacheUpsertUser.name == "old").update(name="new")
+    elif operation == "validated":
+        result = db(CacheUpsertUser.name == "old").validate_and_update(name="new")
+        assert result["updated"] == 1
+    else:
+        assert CacheUpsertUser.where(name="old").update(name="new") == [inserted.id]
+    assert not query.collect()
+    assert CacheUpsertUser(inserted.id).name == "new"
+
+
 class TaggableMixin:
     tags = relationship(
         list["Tag"],
@@ -314,8 +379,7 @@ def test_typedal_way():
     author1 = User.where(id=4).join("articles").first()
 
     assert (
-            len(author1.as_dict()["articles"]) == len(author1.__dict__["articles"]) == len(
-        dict(author1)["articles"]) == 2
+        len(author1.as_dict()["articles"]) == len(author1.__dict__["articles"]) == len(dict(author1)["articles"]) == 2
     )
 
 
@@ -536,12 +600,12 @@ def test_caching():
     cached_user_only2 = User.join().cache(User.id).collect_or_fail()
 
     assert (
-            len(uncached2)
-            == len(uncached)
-            == len(cached2)
-            == len(cached)
-            == len(cached_user_only2)
-            == len(cached_user_only)
+        len(uncached2)
+        == len(uncached)
+        == len(cached2)
+        == len(cached)
+        == len(cached_user_only2)
+        == len(cached_user_only)
     )
 
     assert uncached.as_json() == uncached2.as_json() == cached.as_json() == cached2.as_json()
@@ -549,9 +613,9 @@ def test_caching():
     assert cached.first().gid == cached2.first().gid
 
     assert (
-            [_.name for _ in uncached2.first().roles]
-            == [_.name for _ in cached.first().roles]
-            == [_.name for _ in cached2.first().roles]
+        [_.name for _ in uncached2.first().roles]
+        == [_.name for _ in cached.first().roles]
+        == [_.name for _ in cached2.first().roles]
     )
 
     assert not uncached2.metadata.get("cache", {}).get("enabled")
@@ -879,6 +943,7 @@ def test_memoize_with_empty_table():
 
 def test_illegal():
     with pytest.raises(ValueError), pytest.warns(UserWarning):
+
         class HasRelationship:
             something = relationship("...", condition=lambda: 1, on=lambda: 2)
 
@@ -1143,16 +1208,16 @@ def test_relationship_self():
         key: str
         value: str
 
-        related_directly = relationship(list["SelfReferencing"],
-                                        lambda self, other: self.value == other.value
-                                        )
+        related_directly = relationship(list["SelfReferencing"], lambda self, other: self.value == other.value)
 
-        related_indirectly = relationship(list["SelfReferencing"],
-                                          on=lambda self, other: [
-                                              via := IntermediateTable.unique_alias(),
-                                              via.on(via.left == self.value),
-                                              other.on(via.right == other.value)
-                                          ])
+        related_indirectly = relationship(
+            list["SelfReferencing"],
+            on=lambda self, other: [
+                via := IntermediateTable.unique_alias(),
+                via.on(via.left == self.value),
+                other.on(via.right == other.value),
+            ],
+        )
 
     IntermediateTable.insert(left="two", right="two")
     IntermediateTable.insert(left="three", right="one")
@@ -1172,6 +1237,7 @@ def test_relationship_self():
     assert rows.value == "two"
     assert len(rows.related_directly) == 2
     assert set(row.value for row in rows.related_directly) == {"two"}
+
 
 def test_relationship_labels():
 
