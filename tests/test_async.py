@@ -1935,3 +1935,23 @@ async def test_the_blocking_warning_is_configurable_through_the_warnings_module(
         AsyncGuardStrict.first()
 
     assert not _blocking(records)
+
+
+@pytest.mark.asyncio
+async def test_worker_shutdown_closes_its_connection_without_a_pool(tmp_path: Path):
+    """
+    Without a pydal pool (pool_size=0, the default), a worker must really close its connection on shutdown.
+
+    `close(really=False)` used to drop the connection unclosed in that case: the thread went away, but the
+    connection stayed open (and on Postgres, kept a server slot) until garbage collection got to it.
+    """
+    db = TypeDAL(f"sqlite://{tmp_path / 'worker.db'}", folder=str(tmp_path), enable_typedal_caching=False)
+    try:
+        worker = ConnectionWorker(db, "close-test")
+        connection = await worker.run(lambda: (db.executesql("SELECT 1;"), db._adapter.connection)[1])
+        worker.shutdown()
+
+        with pytest.raises(Exception, match="closed"):
+            connection.execute("SELECT 1;")
+    finally:
+        db.close()
