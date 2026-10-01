@@ -90,9 +90,9 @@ class ConnectionWorker:
         if adapter is None:  # pragma: no cover
             return
 
-        # `really=False` lets pydal recycle the connection into its own pool when it has one;
-        # it closes for real when it doesn't (sqlite) or when that pool is full.
-        adapter.close(action="rollback", really=False)
+        # pydal recycles the connection into its own pool when that has room and closes it otherwise.
+        # Don't pass `really=False`: without a pool that drops the connection unclosed.
+        adapter.close(action="rollback")
 
 
 class ConnectionWorkerPool:
