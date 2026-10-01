@@ -10,6 +10,7 @@ from .query_builder import QueryBuilder
 from .relationships import Ref, Relationship, relationship
 from .rows import PaginatedRows, TypedRows
 from .tables import TypedTable
+from .warnings import UpsertFallbackWarning, UpsertHooksWarning
 
 from . import fields  # isort: skip
 
@@ -30,6 +31,8 @@ __all__ = [
     "TypedField",
     "TypedRows",
     "TypedTable",
+    "UpsertFallbackWarning",
+    "UpsertHooksWarning",
     "fields",
     "relationship",
     "sql_expression",

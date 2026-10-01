@@ -12,6 +12,7 @@ import json
 import types
 import typing as t
 import uuid
+import warnings
 
 import pydal
 from pydal._globals import DEFAULT
@@ -43,6 +44,8 @@ from .types import (
     merge_permissions,
     require_permission,
 )
+from .upsert import UpsertAdapter
+from .warnings import UpsertFallbackWarning, UpsertHooksWarning
 
 if t.TYPE_CHECKING:
     from .relationships import Relationship
@@ -288,6 +291,71 @@ class TableMeta(type):
 
         record.update_record(**values)
         return self(record)
+
+    def upsert(
+        self: t.Type[T_MetaInstance],
+        key: AnyDict,
+        /,
+        **values: t.Any,
+    ) -> T_MetaInstance:
+        """
+        Insert or update by a database unique key and return the resulting instance.
+
+        Insert combines key and values; native update writes only values. With no
+        values, return the existing row or insert the key. Native insert/update
+        hooks and TypeDAL cache invalidation are not implemented yet.
+        """
+        table = self._ensure_table_defined()
+        require_permission(self._permissions, "insert")
+        require_permission(self._permissions, "update")
+        if not isinstance(key, dict) or not key:
+            raise ValueError("upsert requires a nonempty key mapping")
+        insert_values = key | values
+        if key.keys() & values.keys():
+            kwargs = ", ".join(f"{name}={value!r}" for name, value in insert_values.items())
+            raise ValueError(
+                "upsert key fields must not also be supplied as values. "
+                f"To change a key field, use {self.__name__}.update_or_insert({key!r}, {kwargs})."
+            )
+        unknown = (key.keys() | values.keys()) - set(table.fields)
+        if unknown:
+            raise ValueError(f"Unknown upsert fields: {', '.join(sorted(unknown))}")
+
+        adapter = t.cast(UpsertAdapter, self._ensure_db()._adapter)
+        native = getattr(adapter.dialect, "upsert_supported", False)
+        if not native or table._common_filter:
+            reason = "a table common filter" if table._common_filter else "the adapter or database version"
+            warnings.warn(
+                f"Native upsert is unavailable for {reason}; using SELECT followed by UPDATE/INSERT. "
+                "This fallback does not guarantee an atomic upsert under concurrent writes.",
+                UpsertFallbackWarning,
+                stacklevel=2,
+            )
+            if values:
+                return self.update_or_insert(key, **insert_values)
+            record = table(**key)
+            if record is not None:
+                return self(record)
+            return self.insert(**key)
+
+        warnings.warn(
+            "Native upsert does not yet run insert/update hooks or invalidate TypeDAL's cache.",
+            UpsertHooksWarning,
+            stacklevel=2,
+        )
+        if not values:
+            # An existing row may have required fields that cannot be supplied for a new INSERT.
+            record = table(**key)
+            if record is not None:
+                return self(record)
+        insert_row = table._fields_and_values_for_insert(insert_values)
+        row = adapter.upsert(
+            table,
+            [table[name] for name in key],
+            insert_row.op_values(),
+            [table[name] for name in values],
+        )
+        return self(row)
 
     def validate_and_insert(
         self: t.Type[T_MetaInstance],
@@ -544,6 +612,15 @@ class TableMeta(type):
             query,
             **values,
         )
+
+    async def upsert_async(
+        self: t.Type[T_MetaInstance],
+        key: AnyDict,
+        /,
+        **values: t.Any,
+    ) -> T_MetaInstance:
+        """Async twin of upsert(), with the same native and fallback behavior."""
+        return await run_async(self._ensure_db(), self.upsert, key, **values)  # ty: ignore[invalid-return-type]
 
     async def validate_and_insert_async(
         self: t.Type[T_MetaInstance],

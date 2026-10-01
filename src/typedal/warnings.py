@@ -7,3 +7,11 @@ class UnusedWindowWarning(RuntimeWarning):
 
 class NoopQueryWarning(RuntimeWarning):
     """Warn when a query builder method is called without arguments, so it does nothing."""
+
+
+class UpsertFallbackWarning(RuntimeWarning):
+    """Warn when upsert uses a non-atomic lookup followed by an update or insert."""
+
+
+class UpsertHooksWarning(RuntimeWarning):
+    """Warn that native upsert does not yet execute insert/update hooks."""

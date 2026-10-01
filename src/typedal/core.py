@@ -334,6 +334,10 @@ class TypeDAL(_TypeDALBase):
             table_hash,
         )
 
+        from .upsert import install_upsert
+
+        install_upsert(self._adapter)
+
         if config.caching:
             self.try_define(_TypedalCache)
             self.try_define(_TypedalCacheDependency)
