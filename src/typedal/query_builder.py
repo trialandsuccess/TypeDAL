@@ -16,6 +16,7 @@ from pydal.helpers.classes import SQLALL
 from .asynchronous import run_async
 from .constants import DEFAULT_JOIN_OPTION, JOIN_OPTIONS
 from .core import TypeDAL
+from .errors import AliasedTableMismatchError, ImplicitCrossJoinError
 from .fields import TypedField, is_typed_field
 from .helpers import (
     DummyQuery,
@@ -73,6 +74,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
     relationships: dict[str, Relationship[t.Any]]
     metadata: Metadata
     _permissions: Permissions
+    cross_joins: list[t.Type[TypedTable]]
 
     def __setattr__(self, key: str, value: t.Any) -> None:
         """Keep QueryBuilder state independent from Select's table-like storage."""
@@ -102,6 +104,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         relationships: dict[str, Relationship[t.Any]] | None = None,
         metadata: Metadata | None = None,
         permissions: Permissions | None = None,
+        cross_joins: list[t.Type[TypedTable]] | None = None,
     ):
         """
         Normally, you wouldn't manually initialize a QueryBuilder but start using a method on a TypedTable.
@@ -118,6 +121,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         self.relationships = relationships or {}
         self.metadata = metadata or {}
         self._permissions = merge_permissions(getattr(model, "_permissions", None), permissions)
+        self.cross_joins = cross_joins or []
 
     def _ensure_table_defined(self) -> Table:
         model = self.model
@@ -160,6 +164,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
                 self.select_kwargs,
                 self.relationships,
                 self.metadata,
+                self.cross_joins,
             ],
         )
 
@@ -172,6 +177,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         relationships: dict[str, Relationship[t.Any]] | None = None,
         metadata: Metadata | None = None,
         permissions: Permissions | None = None,
+        cross_joins: list[t.Type[TypedTable]] | None = None,
     ) -> "QueryBuilder[T_MetaInstance]":
         return QueryBuilder(
             self.model,
@@ -181,6 +187,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
             (self.relationships | relationships) if relationships else self.relationships,
             (self.metadata | (metadata or {})) if metadata else self.metadata,  # ty: ignore[invalid-argument-type]
             permissions=merge_permissions(self._permissions, permissions),
+            cross_joins=self.cross_joins + (cross_joins or []),
         )
 
     def permissions(self, **permissions: t.Unpack[Permissions]) -> "QueryBuilder[T_MetaInstance]":
@@ -506,6 +513,14 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
 
         return self._extend(relationships=relationships)
 
+    def cross_join(self, table: t.Type[TypedTable]) -> "QueryBuilder[T_MetaInstance]":
+        """Explicitly include an unrelated table in the query."""
+        if table._db is not self._get_db():
+            raise ValueError("cross join table must belong to the same database")
+        if table in self.cross_joins:
+            return self
+        return self._extend(cross_joins=[table])
+
     def cache(
         self,
         *deps: t.Any,
@@ -597,7 +612,64 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         if self.relationships:
             query, select_args = self._handle_relationships_pre_select(query, select_args, select_kwargs, mut_metadata)
 
+        for table in self.cross_joins:
+            query &= table.id > 0
+
+        self._validate_joins(query, select_args, select_kwargs)
         return query, select_args, select_kwargs
+
+    def _validate_joins(
+        self,
+        query: Query,
+        fields: list[t.Any],
+        options: SelectKwargs,
+    ) -> None:
+        db = self._get_db()
+        adapter = db._adapter
+        joins = [*(options.get("join") or []), *(options.get("left") or [])]
+        tables = adapter.tables(query, *fields)
+        predicate_tables = adapter.tables(self.query)
+        for join in joins:
+            tables.update(adapter.tables(join))
+        root = self._ensure_table_defined()._tablename
+        explicit = {table._ensure_table_defined()._tablename for table in self.cross_joins}
+        for name, relation in self.relationships.items():
+            if not relation.condition:
+                continue
+            original = relation.get_table(db)._tablename
+            if original in predicate_tables and original != root:
+                raise AliasedTableMismatchError(f"Table {original!r} is joined under alias {name!r}")
+
+        links: dict[str, set[str]] = {name: set() for name in tables}
+
+        def visit(node: t.Any) -> None:
+            if not isinstance(node, (Query, Expression)):
+                return
+            if isinstance(node, Query) and getattr(node.op, "__name__", None) not in {"_and", "_or", "_not"}:
+                for left in adapter.tables(node.first):
+                    for right in adapter.tables(node.second):
+                        if left != right and left in links and right in links:
+                            links[left].add(right)
+                            links[right].add(left)
+            visit(node.first)
+            visit(node.second)
+
+        visit(query)
+        for join in joins:
+            visit(join.second)
+
+        connected = {root}
+        connected.update(join.first._tablename for join in joins if isinstance(join.first, Table))
+        pending = list(connected)
+        while pending:
+            current = pending.pop()
+            for name in links.get(current, set()) - connected:
+                connected.add(name)
+                pending.append(name)
+
+        if disconnected := set(tables) - connected - explicit:
+            names = ", ".join(sorted(disconnected))
+            raise ImplicitCrossJoinError(f"Implicit cross join involving {names}; use cross_join()")
 
     def to_sql(self, add_id: bool = False) -> str:
         """
@@ -1325,6 +1397,10 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
             if relation.condition is not None:
                 query &= relation.condition(model, other)  # ty: ignore[invalid-argument-type]
 
+        for table in self.cross_joins:
+            query &= table.id > 0
+
+        self._validate_joins(query, [model.id], {})
         return query
 
     def count(self, distinct: bool | Field | TypedField[t.Any] = False) -> int:
