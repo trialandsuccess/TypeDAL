@@ -123,7 +123,7 @@ class HAS_UNIQUE_SLUG(IS_NOT_IN_DB):
         row_id = record_id or self.record_id
         if isinstance(row_id, dict):  # pragma: no cover
             row_id = table(**row_id)
-        if row_id is not None:
+        if row_id:  # IS_NOT_IN_DB defaults record_id to 0, meaning "no record to exclude"
             query &= table._id != row_id
         subset = self.dbset(query)
 

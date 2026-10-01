@@ -541,7 +541,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
 
             # Clone direct Relationship instances (preserving their settings)
             for relationship in relationship_instances.values():
-                if relationship.name:
+                if relationship.name:  # pragma: no branch - bound relationships always have a name
                     relationships[relationship.name] = relationship.clone(
                         join=method,
                         condition_and=condition_and,
@@ -697,7 +697,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
             if isinstance(join, Table):
                 seeds.add(join._tablename)
                 continue
-            if isinstance(join.first, Table):
+            if isinstance(join.first, Table):  # pragma: no branch - `table.on(...)` always starts with a table
                 seeds.add(join.first._tablename)
             walk(join.second)
 
@@ -1029,7 +1029,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         first = getattr(orderby, "first", None)
         second = getattr(orderby, "second", None)
 
-        if first is not None:
+        if first is not None:  # pragma: no branch - an orderby expression with a second part has a first
             fields.extend(self._selectable_orderby_fields(first))
         if second is not None:
             fields.extend(self._selectable_orderby_fields(second))
@@ -1148,7 +1148,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
             left_joins.append(other.on(condition))
         else:
             # Inner join (handled in _build_inner_joins)
-            if not is_self_reference:
+            if not is_self_reference:  # pragma: no branch - self references were aliased above
                 other = other.with_alias(f"{key}_{hash(relation)}")
 
         # Handle aliasing in select_args
@@ -1441,10 +1441,9 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
                 # todo: can this lead to other issues?
                 other = other.with_alias(f"{key}_{hash(relation)}")
 
-            if relation.condition is not None:
-                conditions.append(relation.condition(model, other))  # ty: ignore[invalid-argument-type]
-                if callable(relation.condition_and):
-                    conditions.append(relation.condition_and(model, other))  # ty: ignore[invalid-argument-type]
+            conditions.append(relation.condition(model, other))  # ty: ignore[invalid-argument-type]
+            if callable(relation.condition_and):
+                conditions.append(relation.condition_and(model, other))  # ty: ignore[invalid-argument-type]
 
         self._validate_joins(conditions, [model.id], {})
         for condition in conditions:

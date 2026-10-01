@@ -1319,3 +1319,13 @@ def test_relationship_labels():
     # custom:
     assert TableWithRelationship.other_gid.label == "Relationship Reference"
     assert TableWithRelationship.target.label == "Other Gid"
+
+
+def _double(value: int) -> int:
+    return value * 2
+
+
+def test_memoize_ignores_plain_arguments_for_dependencies() -> None:
+    result, status = db.memoize(_double, 21, key="double-plain-arg")
+    assert (result, status) == (42, "fresh")
+    assert db.memoize(_double, 21, key="double-plain-arg") == (42, "cached")

@@ -969,3 +969,33 @@ def test_upsert_invalidates_cache(upsert_db: RecordingDAL, tmp_path: Path) -> No
         if previous is not None and previous._adapter is not None:
             previous.try_define(_TypedalCache)
             previous.try_define(_TypedalCacheDependency)
+
+
+@pytest.mark.parametrize("upsert_db", ["sqlite"], indirect=True)
+def test_paths_without_update_returning(upsert_db: RecordingDAL) -> None:
+    # what MySQL and SQLite < 3.35 do, checked on SQLite so it runs without a MySQL container
+    upsert_db._adapter.dialect.update_returning_supported = False
+    ids: list[int] = []
+    UpsertUser.after_update(lambda rows, _row: ids.extend(rows.affected_ids))
+
+    assert upsert_db(UpsertUser.email == "missing@example.com").update(name="x") == 0
+    original = UpsertUser.upsert({"email": "a@example.com"}, name="old")
+    updated = UpsertUser.upsert({"email": "a@example.com"}, name="new")
+    assert (updated.id, updated.name) == (original.id, "new")
+    assert ids == [original.id]
+
+
+def test_upload_without_pydal_autodelete_hook_keeps_old_file(upsert_db: RecordingDAL, tmp_path: Path) -> None:
+    from pydal.helpers.methods import delete_uploaded_files
+
+    from src.typedal.fields import UploadField
+
+    @upsert_db.define()
+    class UpsertKeepFile(TypedTable):
+        code = TypedField(str, unique=True)
+        attachment = UploadField(uploadfolder=str(tmp_path), autodelete=True)
+
+    UpsertKeepFile._before_update.remove(delete_uploaded_files)
+    first = UpsertKeepFile.upsert({"code": "a"}, attachment={"data": b"one", "filename": "one.txt"})
+    UpsertKeepFile.upsert({"code": "a"}, attachment={"data": b"two", "filename": "two.txt"})
+    assert (tmp_path / first.attachment).exists()

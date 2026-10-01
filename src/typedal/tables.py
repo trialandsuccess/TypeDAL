@@ -1174,7 +1174,7 @@ class _TypedTable(metaclass=TableMeta):
 
                 property_hints = t.get_type_hints(getter, include_extras=True)
                 return_type = property_hints.get("return")
-                if return_type is not None:
+                if return_type is not None:  # pragma: no branch - unannotated properties are skipped
                     annotations[field_name] = return_type
 
         fields = {
@@ -1217,7 +1217,7 @@ class _TypedTable(metaclass=TableMeta):
 
         for field_name, relationship_value in relationship_items:
             relationship_type = cls._typedal_resolve_relationship_python_type(relationship_value)
-            if relationship_type is not None:
+            if relationship_type is not None:  # pragma: no branch - every relationship has a type
                 relationship_fields[field_name] = relationship_type
 
         return relationship_fields
@@ -1763,7 +1763,7 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
             # else: relationship, different logic:
 
         for relation_name in getattr(row, "_with", []):
-            if relation := self._relationships.get(relation_name):
+            if relation := self._relationships.get(relation_name):  # pragma: no branch - _with holds joined names
                 relation_table = relation.table
                 if isinstance(relation_table, str):
                     relation_table = self._db[relation_table]

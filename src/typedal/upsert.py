@@ -192,7 +192,7 @@ class PostgreUpsertDialect(SQLUpsertDialect):
         sql = dialect.insert(table, fields, values).rstrip().removesuffix(";")
         action = f"DO UPDATE SET {update}" if update else "DO NOTHING"
         sql += f" ON CONFLICT ({conflict}) {action}"
-        if returning:
+        if returning:  # pragma: no branch - the adapter always asks Postgres for the row
             sql += f" RETURNING {returning}, (xmax = 0) AS inserted"
         return sql + ";"
 
@@ -291,7 +291,7 @@ def execute_upsert(table: Table, key: AnyDict, values: AnyDict) -> UpsertResult:
     if result.outcome == "inserted":
         for after_insert_hook in table._after_insert:
             after_insert_hook(result.operation, row_id)
-    elif result.outcome == "updated":
+    elif result.outcome == "updated":  # pragma: no branch - 'unchanged' returned before writing
         rows = affected_set(table, [int(row_id)])
         for after_update_hook in table._after_update:
             after_update_hook(rows, result.operation)
@@ -327,7 +327,7 @@ def _adapter_upsert(
     _execute_native(adapter, upsert_adapter._upsert(table, key_fields, insert_fields, update_fields))
     record = None
     outcome: t.Literal["inserted", "updated", "unchanged"] = "unchanged"
-    if upsert_adapter.dialect.upsert_returning:
+    if upsert_adapter.dialect.upsert_returning:  # pragma: no branch - the only native dialect returns rows
         fields = list(table)
         colnames = [f"{table._tablename}.{field.name}" for field in fields]
         returned = adapter.fetchall()

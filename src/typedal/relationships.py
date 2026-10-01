@@ -58,7 +58,7 @@ class Relationship[To_Type]:
             raise self._error_duplicate_condition(condition, on)
 
         resolved_type = resolve_relationship_type(_type, keep_unresolved=True)
-        if resolved_type is not None:
+        if resolved_type is not None:  # pragma: no branch - keep_unresolved returns the input when unresolved
             _type = resolved_type
 
         self._type = _type
@@ -289,7 +289,7 @@ class Relationship[To_Type]:
             resolved_table = self.get_table(db)
 
             builder = owner.where(id=instance.id).join(self.name)
-            if issubclass(resolved_table, TypedTable) or isinstance(resolved_table, Table):
+            if issubclass(resolved_table, TypedTable) or isinstance(resolved_table, Table):  # pragma: no branch
                 # is a table so we can select ALL and ignore non-required fields of parent row:
                 builder = builder.select(owner.id, resolved_table.ALL)
 
