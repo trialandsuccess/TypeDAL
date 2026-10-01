@@ -12,6 +12,7 @@ import sys
 import types
 import typing as t
 from collections import ChainMap
+from decimal import Decimal, InvalidOperation
 
 from pydal import DAL
 
@@ -619,3 +620,37 @@ def throw(exc: BaseException) -> t.Never:
         >>> result = data.get('key') if data else throw(KeyError("Missing data"))
     """
     raise exc
+
+
+def _coerce_decimal(value: t.Any) -> t.Any:
+    if value is None or isinstance(value, (Decimal, int, float)):
+        return value
+    try:
+        number = Decimal(str(value).strip())
+    except InvalidOperation:
+        raise ValueError(f"Invalid decimal value: {str(value)[:32]!r}") from None
+    if not number.is_finite():
+        raise ValueError(f"Invalid decimal value: {str(value)[:32]!r}")
+    return number
+
+
+def install_decimal_guard(adapter: t.Any) -> None:
+    """
+    Coerce values for decimal fields before PyDAL renders them into SQL.
+
+    PyDAL's `decimal` representer inlines `str(value)` unquoted, so a string value for a decimal field (from request
+    data, for example) ends up in the statement verbatim. Integer and double fields don't have this problem because
+    their representers go through int() and float(). Patched on this adapter's representer only.
+    """
+    representer = getattr(adapter, "representer", None)
+    if representer is None or getattr(representer, "_typedal_decimal_guard", False):
+        return
+    represent = representer.represent
+
+    def guarded(value: t.Any, field_type: t.Any) -> t.Any:
+        if isinstance(field_type, str) and field_type.startswith("decimal"):
+            value = _coerce_decimal(value)
+        return represent(value, field_type)
+
+    representer.represent = guarded
+    representer._typedal_decimal_guard = True

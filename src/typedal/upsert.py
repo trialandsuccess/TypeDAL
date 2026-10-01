@@ -11,10 +11,11 @@ from pydal.adapters.base import BaseAdapter, SQLAdapter
 from pydal.dialects.base import SQLDialect
 from pydal.dialects.postgre import PostgreDialect
 from pydal.helpers._internals import Dispatcher
+from pydal.helpers.methods import attempt_upload, delete_uploaded_files
 
 from .exceptions import UpsertAmbiguityError, UpsertHookError, UpsertKeyError
 from .types import AnyDict, Field, OpRow, Reference, Row, Table, UpsertHookPolicy
-from .updates import affected_set
+from .updates import UpdateDialect, affected_set
 from .warnings import UpsertHooksWarning
 
 upsert_dialects = Dispatcher("upsert dialect")
@@ -50,6 +51,16 @@ def register_before_hook(
     registrations.append(HookRegistration(branch, hook, policy))
 
 
+def is_pydal_upload_hook(hook: t.Callable[..., t.Any]) -> bool:
+    """Recognize the upload before-hooks PyDAL registers on every table; upsert handles uploads itself."""
+    if hook is delete_uploaded_files:
+        return True
+    qualname = getattr(hook, "__qualname__", "")
+    return getattr(hook, "__module__", None) == attempt_upload.__module__ and qualname.startswith(
+        ("attempt_upload_on_insert.", "attempt_upload_on_update.")
+    )
+
+
 def check_before_hooks(
     before_insert_hooks: list[t.Callable[..., t.Any]],
     before_update_hooks: list[t.Callable[..., t.Any]],
@@ -60,6 +71,8 @@ def check_before_hooks(
     unmarked: list[str] = []
     for branch, hooks in (("insert", before_insert_hooks), ("update", before_update_hooks)):
         for hook in hooks:
+            if is_pydal_upload_hook(hook):
+                continue
             policy = next(
                 (
                     registration.policy
@@ -204,10 +217,47 @@ def _lookup(table: Table, key: AnyDict) -> Row | None:
     return t.cast(Row | None, rows.first())
 
 
+def _autodelete_upload_fields(table: Table, values: AnyDict) -> list[str]:
+    """Upload fields in `values` whose replaced file PyDAL would delete on a normal update."""
+    if delete_uploaded_files not in table._before_update:
+        return []
+    return [
+        name
+        for name in values
+        if table[name].type == "upload" and table[name].uploadfield is True and table[name].autodelete
+    ]
+
+
+def _is_filtered(table: Table) -> bool:
+    """Common filters and multi-tenant defaults restrict which rows a write may touch."""
+    tenant = table._db._request_tenant
+    return bool(table._common_filter) or (tenant in table.fields and table[tenant].default is not None)
+
+
+def _update_returning_row(adapter: SQLAdapter, table: Table, query: t.Any, fields: list[tuple[Field, t.Any]]) -> t.Any:
+    """Update and read the row back in one statement where UPDATE ... RETURNING exists (Postgres, SQLite 3.35+)."""
+    dialect = t.cast(UpdateDialect, adapter.dialect)
+    if not getattr(dialect, "update_returning_supported", False):
+        return NotImplemented
+    columns = list(table)
+    sql = dialect.update_returning(adapter._update(table, query, fields), ", ".join(field._rname for field in columns))
+    adapter.execute(sql)
+    returned = adapter.fetchall()
+    colnames = [f"{table._tablename}.{field.name}" for field in columns]
+    return adapter.parse(returned, columns, colnames).first() if returned else None
+
+
 def execute_upsert(table: Table, key: AnyDict, values: AnyDict) -> UpsertResult:
     """Write without PyDAL callbacks, then run after-hooks for the actual branch."""
     adapter = table._db._adapter
-    native = getattr(adapter.dialect, "upsert_supported", False) and not table._common_filter
+    if t.cast(set[str], table._upload_fieldnames) & values.keys():
+        # same conversion PyDAL's attempt_upload_on_insert/update hooks do (store file objects, keep names)
+        values = dict(values)
+        attempt_upload(table, values)
+    autodelete = _autodelete_upload_fields(table, values)
+    # ON CONFLICT bypasses common filters and tenant defaults, and can't remove a replaced upload first,
+    # so those cases take the select-then-write path (which applies the filters to its lookup):
+    native = getattr(adapter.dialect, "upsert_supported", False) and not _is_filtered(table) and not autodelete
     existing = _lookup(table, key) if not native or not values else None
     if existing is not None and not values:
         return UpsertResult(existing, "unchanged", OpRow(table))
@@ -225,8 +275,12 @@ def execute_upsert(table: Table, key: AnyDict, values: AnyDict) -> UpsertResult:
         _, fields = table._filter_fields_for_operation(values)
         operation = table._compute_fields_for_operation(fields, [])
         rows = affected_set(table, [int(existing.id)])
-        adapter.update(table, rows.query, operation.op_values())
-        record = rows.select(table.ALL).first()
+        if autodelete:
+            delete_uploaded_files(rows, {name: values[name] for name in autodelete})
+        record = _update_returning_row(adapter, table, rows.query, operation.op_values())
+        if record is NotImplemented:
+            adapter.update(table, rows.query, operation.op_values())
+            record = rows.select(table.ALL).first()
         if record is None:
             raise RuntimeError("The upserted row was deleted concurrently")
         result = UpsertResult(record, "updated", operation)

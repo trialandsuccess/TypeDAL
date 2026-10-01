@@ -47,6 +47,7 @@ Template: t.TypeAlias = TemplateAlias  # explicit export for mypy, NOT a `type` 
 type AnyCallable = t.Callable[..., t.Any]
 type AnyDict = dict[str, t.Any]
 type UpsertKeyValue = str | int | float | bool | bytes | Decimal | uuid.UUID | dt.date | dt.time
+UPSERT_KEY_TYPES = (str, int, float, bool, bytes, Decimal, uuid.UUID, dt.date, dt.time)  # runtime twin of the above
 type UpsertKey = t.Mapping[str, UpsertKeyValue]
 type UpsertHookPolicy = t.Literal["error", "ignore"]
 

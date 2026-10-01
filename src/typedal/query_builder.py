@@ -50,12 +50,11 @@ from .types import (
 )
 from .warnings import NoopQueryWarning, UnusedWindowWarning
 
-
 _BOOL_OPS = frozenset({"_and", "_or", "_not"})
 
 
 def _as_join_list(value: t.Any) -> list[t.Any]:
-    """PyDAL accepts a bare join/left expression as well as a list of them."""
+    """Normalize join/left: PyDAL accepts a bare expression as well as a list of them."""
     if not value:
         return []
     return list(value) if isinstance(value, (list, tuple)) else [value]
@@ -83,8 +82,9 @@ def _walk_tables(node: t.Any, tables: set[str], parents: dict[str, str]) -> set[
     and the extra cyclic GC runs made SQL building noticeably slower.
     """
     if isinstance(node, Field):
-        tables.add(node.tablename)
-        return {node.tablename}
+        name = t.cast(str, node.tablename)
+        tables.add(name)
+        return {name}
     if isinstance(node, SQLALL):
         name = node._table._tablename
         tables.add(name)
@@ -667,7 +667,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
 
     def _validate_joins(
         self,
-        conditions: list[Query],
+        conditions: list[t.Any],
         fields: list[t.Any],
         options: SelectKwargs,
     ) -> None:
@@ -1427,7 +1427,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         # internal, shared logic between .count and ._count
         model = self.model
         query = self.query
-        conditions: list[Query] = []
+        conditions: list[t.Any] = []
         for key, relation in self.relationships.items():
             if not relation.condition:
                 continue

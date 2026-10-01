@@ -334,9 +334,11 @@ class TypeDAL(_TypeDALBase):
             table_hash,
         )
 
+        from .helpers import install_decimal_guard
         from .updates import install_update
         from .upsert import install_upsert
 
+        install_decimal_guard(self._adapter)
         install_upsert(self._adapter)
         install_update(self._adapter)
 
