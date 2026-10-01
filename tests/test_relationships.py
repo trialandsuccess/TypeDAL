@@ -962,15 +962,19 @@ def test_join_relationship_custom_on():
 
     rows2 = Tag.join(
         Tag.articles,
+        # each item must be a `table.on(...)` join; a bare table or query used to be dropped silently,
+        # which turned this into an implicit cross join with article:
         on=lambda tag, article: [
-            tagged := Tagged.unique_alias(),
-            (tagged.tag == tag.id) & (article.gid == tagged.entity) & (article.author == 3),
+            (tagged := Tagged.unique_alias()).on(tagged.tag == tag.id),
+            article.on((article.gid == tagged.entity) & (article.author == 3)),
         ],
         method="inner",
     )
 
     assert all([row.articles for row in rows1])
-    assert all([row.articles for row in rows2])
+    # custom `on` is always a left join, so tags without a matching article are kept (with no articles):
+    matched = {row.id: sorted(article.id for article in row.articles) for row in rows2 if row.articles}
+    assert matched == {row.id: sorted(article.id for article in row.articles) for row in rows1}
 
 
 def test_join_with_select():
