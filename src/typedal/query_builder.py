@@ -440,6 +440,8 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
                 condition = as_lambda(condition)
 
             field = fields[0]
+            if isinstance(field, str):
+                field = self.model.get_relationships().get(field, field)
             if isinstance(field, Relationship) and field.name:
                 relationships = {
                     field.name: field.clone(condition=condition, on=None, join=method, condition_and=condition_and)
@@ -1324,6 +1326,8 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
 
             if relation.condition is not None:
                 query &= relation.condition(model, other)  # ty: ignore[invalid-argument-type]
+                if callable(relation.condition_and):
+                    query &= relation.condition_and(model, other)  # ty: ignore[invalid-argument-type]
 
         return query
 
