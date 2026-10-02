@@ -985,6 +985,107 @@ def test_paths_without_update_returning(upsert_db: RecordingDAL) -> None:
     assert ids == [original.id]
 
 
+@pytest.mark.parametrize("upsert_db", ["sqlite"], indirect=True)
+@pytest.mark.parametrize("handle_error", [False, True])
+@pytest.mark.parametrize("need_ids", [False, True])
+def test_update_returning_preserves_error_callback(upsert_db: RecordingDAL, handle_error: bool, need_ids: bool) -> None:
+    """Constraint failures call the configured handler or propagate without after-hooks."""
+    original = UpsertUser.insert(email="a@example.com")
+    UpsertUser.insert(email="taken@example.com")
+    table = UpsertUser._ensure_table_defined()
+    events: list[str] = []
+    UpsertUser.after_update(lambda _rows, _row: events.append("after"))
+    rows = upsert_db(UpsertUser.id == original.id)
+
+    def on_error(error_table: t.Any, query: t.Any, fields: t.Any, error: Exception) -> int:
+        assert error_table is table
+        assert query is rows.query
+        assert fields == [(table.email, "taken@example.com")]
+        assert isinstance(error, upsert_db._adapter.driver.IntegrityError)
+        events.append("error")
+        return 0
+
+    if handle_error:
+        table._on_update_error = on_error
+    write = rows.update_ids if need_ids else rows.update
+    if handle_error:
+        assert write(email="taken@example.com") == ([] if need_ids else 0)
+        assert events == ["error"]
+    else:
+        with pytest.raises(upsert_db._adapter.driver.IntegrityError):
+            write(email="taken@example.com")
+        assert events == []
+    assert UpsertUser(original.id).email == "a@example.com"
+
+
+@pytest.mark.parametrize("upsert_db", ["sqlite"], indirect=True)
+def test_fallback_update_without_query(upsert_db: RecordingDAL) -> None:
+    """An unrestricted adapter update reports every updated row's key."""
+    first = UpsertUser.insert(email="a@example.com")
+    second = UpsertUser.insert(email="b@example.com")
+    table = UpsertUser._ensure_table_defined()
+    upsert_db._adapter.dialect.update_returning_supported = False
+    operation = table._fields_and_values_for_update({"name": "updated"})
+    result = upsert_db._adapter.update_with_ids(table, None, operation.op_values())
+    assert result.count == 2
+    assert set(result.ids) == {first.id, second.id}
+    assert UpsertUser.where(name="updated").count() == 2
+
+
+@pytest.mark.parametrize("upsert_db", ["sqlite"], indirect=True)
+def test_fallback_update_preserves_filter_bypass(upsert_db: RecordingDAL) -> None:
+    """Restricting fallback updates to selected IDs preserves access to hidden rows."""
+    @upsert_db.define(common_filter=lambda _query: upsert_db.bypass_update.active == True)  # noqa: E712
+    class BypassUpdate(TypedTable):
+        active: bool
+        name: str
+
+    table = BypassUpdate._ensure_table_defined()
+    row_id = table.insert(active=False, name="hidden")
+    upsert_db._adapter.dialect.update_returning_supported = False
+    seen: list[str] = []
+    BypassUpdate.after_update(lambda rows, _row: seen.extend(rows.select().column("name")))
+    rows = upsert_db(BypassUpdate.id == row_id, ignore_common_filters=True)
+    assert rows.update_ids(name="updated") == [row_id]
+    assert seen == ["updated"]
+    assert rows.select().first().name == "updated"
+
+
+def test_upsert_normalizes_keys_once(upsert_db: RecordingDAL) -> None:
+    """Insert, update and key-only lookup share keys converted exactly once per call."""
+    conversions: list[str] = []
+
+    def normalize(value: str) -> str:
+        conversions.append(value)
+        return value.lower()
+
+    @upsert_db.define
+    class NormalizedUpsert(TypedTable):
+        email = TypedField(str, unique=True, filter_in=normalize)
+        name = TypedField(str, default="default")
+
+    first = NormalizedUpsert.upsert({"email": "A@EXAMPLE.COM"}, name="old")
+    updated = NormalizedUpsert.upsert({"email": "A@EXAMPLE.COM"}, name="new")
+    unchanged = NormalizedUpsert.upsert({"email": "A@EXAMPLE.COM"})
+    assert first.email == "a@example.com"
+    assert updated.id == unchanged.id == first.id
+    assert updated.name == unchanged.name == "new"
+    assert NormalizedUpsert.count() == 1
+    assert conversions == ["A@EXAMPLE.COM"] * 3
+
+
+def test_upsert_missing_required_field(upsert_db: RecordingDAL) -> None:
+    """Upserts reject missing required insert values before writing a row."""
+    @upsert_db.define
+    class RequiredUpsert(TypedTable):
+        code = TypedField(str, unique=True)
+        name = TypedField(str, required=True)
+
+    with pytest.raises(RuntimeError, match="missing required field: name"):
+        RequiredUpsert.upsert({"code": "new"})
+    assert RequiredUpsert.count() == 0
+
+
 def test_upload_without_pydal_autodelete_hook_keeps_old_file(upsert_db: RecordingDAL, tmp_path: Path) -> None:
     from pydal.helpers.methods import delete_uploaded_files
 

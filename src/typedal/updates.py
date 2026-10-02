@@ -114,19 +114,28 @@ def _update_with_ids(
     if dialect.update_returning_supported:
         returning = ", ".join(field._rname for field in keys)
         sql = dialect.update_returning(adapter._update(table, query, fields), returning)
-        adapter.execute(sql)
+        try:
+            adapter.execute(sql)
+        except Exception as error:
+            if hasattr(table, "_on_update_error"):
+                on_error = t.cast(t.Callable[..., int], table._on_update_error)
+                return UpdateResult(on_error(table, query, fields, error), [])
+            raise
         ids = [_key_value(keys, row) for row in adapter.fetchall()]
         return UpdateResult(len(ids), ids)
 
     # Without RETURNING: lock the matching rows where the backend can (MySQL), then restrict the
     # UPDATE to exactly those keys, so rows changed in between are neither updated nor reported.
     # (PyDAL's SQLite for_update opens a new transaction and emits invalid FOR UPDATE syntax, so not there.)
+    # Primary keys must stay unchanged here: returned IDs and after-hooks use the pre-update keys.
     for_update = bool(adapter.can_select_for_update) and adapter.dbengine not in {"sqlite", "spatialite"}
     rows = adapter.db(query).select(*keys, for_update=for_update)
     ids = [_key_value(keys, [row[field] for field in keys]) for row in rows]
     if not ids:
         return UpdateResult(0, [])
     restricted = ids_query(table, ids) if query is None else query & ids_query(table, ids)
+    if query is not None:
+        restricted.ignore_common_filters = query.ignore_common_filters
     count = adapter.update(table, restricted, fields)
     return UpdateResult(count, ids if count else [])
 

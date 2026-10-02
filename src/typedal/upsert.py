@@ -224,6 +224,25 @@ def _lookup(table: Table, key: AnyDict) -> Row | None:
     return t.cast(Row | None, rows.first())
 
 
+def _insert_operation(table: Table, key: AnyDict, values: AnyDict) -> OpRow:
+    """Apply insert defaults and computations while reusing already converted keys."""
+    filtered = table._filter_fields_for_operation(values)
+    empty, fields = t.cast(tuple[list[str], dict[str, tuple[Field, t.Any]]], filtered)
+    fields.update({name: (table[name], value) for name, value in key.items()})
+    to_compute = []
+    for name in empty:
+        if name in key:
+            continue
+        field = table[name]
+        if field.compute:
+            to_compute.append((name, field))
+        elif field.default is not None:
+            fields[name] = (field, field.default)
+        elif field.required:
+            raise RuntimeError("Table: missing required field: %s" % name)
+    return table._compute_fields_for_operation(fields, to_compute)
+
+
 def _autodelete_upload_fields(table: Table, values: AnyDict) -> list[str]:
     """Upload fields in `values` whose replaced file PyDAL would delete on a normal update."""
     if delete_uploaded_files not in table._before_update:
@@ -257,6 +276,10 @@ def _update_returning_row(
 def execute_upsert(table: Table, key: AnyDict, values: AnyDict) -> UpsertResult:
     """Write without PyDAL callbacks, then run after-hooks for the actual branch."""
     adapter = table._db._adapter
+    # Normalize once so lookup and insertion agree, including native key-only upserts.
+    _, key_fields = table._filter_fields_for_operation(key)
+    key_operation = table._compute_fields_for_operation(key_fields, [])
+    key = {name: key_operation[name] for name in key}
     if t.cast(set[str], table._upload_fieldnames) & values.keys():
         # same conversion PyDAL's attempt_upload_on_insert/update hooks do (store file objects, keep names)
         values = dict(values)
@@ -269,12 +292,12 @@ def execute_upsert(table: Table, key: AnyDict, values: AnyDict) -> UpsertResult:
     if existing is not None and not values:
         return UpsertResult(existing, "unchanged", OpRow(table))
     if native:
-        operation = table._fields_and_values_for_insert(key | values)
+        operation = _insert_operation(table, key, values)
         result = t.cast(UpsertAdapter, adapter).upsert(
             table, [table[name] for name in key], operation.op_values(), [table[name] for name in values]
         )
     elif existing is None:
-        operation = table._fields_and_values_for_insert(key | values)
+        operation = _insert_operation(table, key, values)
         row_id = adapter.insert(table, operation.op_values())
         record = affected_set(table, [int(row_id)]).select(table.ALL).first()
         result = UpsertResult(t.cast(Row, record), "inserted", operation)
