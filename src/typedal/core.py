@@ -343,8 +343,7 @@ class TypeDAL(_TypeDALBase):
         install_update(self._adapter)
 
         if config.caching:
-            self.try_define(_TypedalCache)
-            self.try_define(_TypedalCacheDependency)
+            define_cache_models(self)
 
     def session(self) -> AsyncSession:
         """
@@ -407,7 +406,9 @@ class TypeDAL(_TypeDALBase):
             super().close()
         finally:
             for model in set(self._builder.class_map.values()):
-                model.unbind()
+                # a model defined on several databases is bound to the last one; leave that binding be:
+                if model._db is self:
+                    model.unbind()
             self._builder.class_map.clear()
 
             if adapter is not None:  # pragma: no branch - defensive cleanup
@@ -757,7 +758,6 @@ from .tables import TypedTable  # noqa: E402
 from .updates import UpdateSet  # noqa: E402
 
 from .caching import (  # isort: skip # noqa: E402
+    define_cache_models,
     memoize,
-    _TypedalCache,
-    _TypedalCacheDependency,
 )

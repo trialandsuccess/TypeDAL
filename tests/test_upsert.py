@@ -929,11 +929,7 @@ class CachedUpsert(TypedTable):
 
 @pytest.mark.parametrize("upsert_db", ["sqlite", "postgres", "mysql"], indirect=True)
 def test_upsert_invalidates_cache(upsert_db: RecordingDAL, tmp_path: Path) -> None:
-    from src.typedal.caching import _TypedalCache, _TypedalCacheDependency
-
-    # the shared fixture disables caching; this one needs it. The cache models are module-global, so
-    # remember which database they belong to and hand them back afterwards.
-    previous = _TypedalCache._db
+    # the shared fixture disables caching; this one needs it
     uri = str(upsert_db._uri)
     db = TypeDAL(uri, enable_typedal_caching=True, folder=str(tmp_path / "cached"))
     try:
@@ -966,9 +962,6 @@ def test_upsert_invalidates_cache(upsert_db: RecordingDAL, tmp_path: Path) -> No
         db.commit()
         db.close()
         CachedUpsert.unbind()
-        if previous is not None and previous._adapter is not None:
-            previous.try_define(_TypedalCache)
-            previous.try_define(_TypedalCacheDependency)
 
 
 @pytest.mark.parametrize("upsert_db", ["sqlite"], indirect=True)
