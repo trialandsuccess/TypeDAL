@@ -844,12 +844,25 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
     @staticmethod
     def _required_left_joins(names: set[str], left_joins: list[Expression]) -> list[Expression]:
         """
-        The left joins of the tables in `names`, see _required_join_names.
+        The left joins of the tables in `names` and their transitive ON dependencies.
 
         Queries that replace the select (the id subquery of limitby, count) need these: without them, a filter on a
         left-joined table references a table that isn't in their FROM clause.
         """
-        return [join for join in left_joins if isinstance(join.first, Table) and join.first._tablename in names]
+        dependencies: dict[str, set[str]] = defaultdict(set)
+        for join in left_joins:
+            if isinstance(join.first, Table):
+                dependencies[join.first._tablename] |= _walk_tables(join.second, set(), {})
+
+        required = names.copy()
+        pending = names.copy()
+        while pending:
+            name = pending.pop()
+            referenced = dependencies.get(name, set()) - required
+            required |= referenced
+            pending |= referenced
+
+        return [join for join in left_joins if isinstance(join.first, Table) and join.first._tablename in required]
 
     def _before_query(self, mut_metadata: Metadata, add_id: bool = True) -> tuple[Query, list[t.Any], SelectKwargs]:
         select_args = [self._select_arg_convert(_) for _ in self.select_args] or [self.model.ALL]

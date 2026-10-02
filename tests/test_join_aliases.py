@@ -148,6 +148,54 @@ def test_nested_inner_join_filter_counts_and_paginates(operation):
         assert (page.pagination["total_items"], page.pagination["total_pages"]) == (1, 1)
 
 
+@pytest.mark.parametrize("operation", ["count", "paginate"])
+def test_custom_on_intermediate_join_filter_counts_and_paginates(operation):
+    db = TypeDAL("sqlite:memory")
+
+    try:
+        @db.define()
+        class Parent(TypedTable):
+            name: str
+
+            children = relationship(
+                list["Child"],
+                on=lambda parent, child: [
+                    ParentChild.on(ParentChild.parent == parent.id),
+                    child.on(child.id == ParentChild.child),
+                ],
+                join="left",
+            )
+
+        @db.define()
+        class Child(TypedTable):
+            name: str
+
+        @db.define()
+        class ParentChild(TypedTable):
+            parent: Parent
+            child: Child
+
+        Parent.insert(name="unlinked")
+        linked = Parent.insert(name="linked")
+        child = Child.insert(name="matching")
+        ParentChild.insert(parent=linked, child=child)
+
+        builder = Parent.join("children").where(Child.name == "matching").orderby(Parent.id)
+        rows = builder.collect()
+        assert [row.id for row in rows] == [linked.id]
+        assert [child.id for child in rows.first().children] == [child.id]
+
+        if operation == "count":
+            assert builder.count() == 1
+            assert builder.count(distinct=Parent.id) == 1
+        else:
+            page = builder.paginate(limit=1)
+            assert [row.id for row in page] == [linked.id]
+            assert (page.pagination["total_items"], page.pagination["total_pages"]) == (1, 1)
+    finally:
+        db.close()
+
+
 def test_paginated_join_deduplicates_root_ids_before_limit():
     builder = Article.join("comments").where(Comment.id > 0).orderby(Comment.id)
 
