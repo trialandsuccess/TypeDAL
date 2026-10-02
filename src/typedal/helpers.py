@@ -627,10 +627,10 @@ def throw(exc: BaseException) -> t.Never:
 
 
 def _coerce_decimal(value: object) -> object:
-    if value is None or isinstance(value, (Decimal, int, float)):
+    if value is None:
         return value
     try:
-        number = Decimal(str(value).strip())
+        number = value if isinstance(value, Decimal) else Decimal(str(value).strip())
     except InvalidOperation:
         raise ValueError(f"Invalid decimal value: {str(value)[:32]!r}") from None
     if not number.is_finite():

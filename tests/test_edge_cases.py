@@ -5,13 +5,14 @@ Small behaviours that are easy to miss: mostly the 'other' side of a condition, 
 import contextlib
 import typing as t
 import warnings
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
 from pydal.validators import IS_NOT_EMPTY
 
 from src.typedal import TypeDAL, TypedField, TypedTable, relationship
-from src.typedal.helpers import all_annotations, install_decimal_guard, sql_expression
+from src.typedal.helpers import _coerce_decimal, all_annotations, install_decimal_guard, sql_expression
 from src.typedal.mixins import HAS_UNIQUE_SLUG, SlugMixin
 from src.typedal.updates import SQLUpdateDialect
 
@@ -59,6 +60,32 @@ def test_all_annotations_can_exclude_names() -> None:
 
 def test_sql_expression_renders_none_as_null(db: TypeDAL) -> None:
     assert "NULL" in str(sql_expression(db, "title IS %s", None))
+
+
+@pytest.mark.parametrize("value", [None, 1, 1.25, Decimal("2.50"), " 2.50 "])
+def test_decimal_coercion_preserves_null_and_finite_values(value: t.Any) -> None:
+    expected = None if value is None else Decimal(str(value).strip())
+    assert _coerce_decimal(value) == expected
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        Decimal("NaN"),
+        Decimal("sNaN"),
+        Decimal("Infinity"),
+        Decimal("-Infinity"),
+        float("nan"),
+        float("inf"),
+        float("-inf"),
+        "NaN",
+        "Infinity",
+        "invalid",
+    ],
+)
+def test_decimal_coercion_rejects_nonfinite_and_invalid_values(value: t.Any) -> None:
+    with pytest.raises(ValueError, match="Invalid decimal"):
+        _coerce_decimal(value)
 
 
 def test_decimal_guard_is_installed_once_and_skips_adapters_without_representer(db: TypeDAL) -> None:
