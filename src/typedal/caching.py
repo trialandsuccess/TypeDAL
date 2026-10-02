@@ -8,7 +8,7 @@ import hashlib
 import json
 import typing as t
 
-import dill  # nosec
+import dill
 
 from .fields import TypedField
 from .helpers import throw
@@ -22,10 +22,14 @@ if t.TYPE_CHECKING:
 
 
 class FunctionWithMetadata[T](t.Protocol):
+    """A callable with the name attributes memoize uses for its cache key."""
+
     __name__: str
     __qualname__: str
 
-    def __call__(self, *args: t.Any, **kwargs: t.Any) -> T: ...
+    def __call__(self, *args: t.Any, **kwargs: t.Any) -> T:
+        """Call the memoized function."""
+        ...
 
 
 def get_now(tz: dt.timezone = dt.timezone.utc) -> dt.datetime:
@@ -339,7 +343,7 @@ def _fetch_cached_payload(key: str) -> tuple[t.Any, t.Any] | None:
         return None
 
     # Only one place for deserialization to happen
-    return dill.loads(row.data), row  # nosec
+    return dill.loads(row.data), row  # noqa: S301 - written by TypeDAL itself, never by users
 
 
 def _load_from_cache(key: str, db: "TypeDAL") -> t.Any | None:

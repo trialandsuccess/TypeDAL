@@ -64,7 +64,9 @@ def _cls_annotations(c: type) -> dict[str, type]:  # pragma: no cover
 
 def _all_annotations(cls: type) -> ChainMap[str, type]:
     """
-    Returns a dictionary-like ChainMap that includes annotations for all \
+    Collect the annotations of cls and its superclasses.
+
+    Returns a dictionary-like ChainMap that includes annotations for all
     attributes defined in cls or inherited from superclasses.
     """
     # chainmap reverses the iterable, so reverse again beforehand to keep order normally:
@@ -568,8 +570,9 @@ def sql_expression(
 
 def normalize_table_keys(row: Row, pattern: re.Pattern[str] = re.compile(r"^([a-zA-Z_]+)_(\d{5,})$")) -> Row:
     """
-    Normalize table keys in a PyDAL Row object by stripping numeric hash suffixes from table names, \
-    only if the suffix is 5 or more digits.
+    Normalize table keys in a PyDAL Row object by stripping numeric hash suffixes from table names.
+
+    Only suffixes of 5 or more digits are stripped.
 
     For example:
         Row({'articles_12345': {...}}) -> Row({'articles': {...}})

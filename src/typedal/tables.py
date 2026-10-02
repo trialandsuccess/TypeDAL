@@ -24,6 +24,7 @@ from .exceptions import UpsertKeyError
 from .helpers import all_dict, classproperty, filter_out, throw
 from .serializers import as_json
 from .types import (
+    UPSERT_KEY_TYPES,
     AnyDict,
     Condition,
     Expression,
@@ -41,7 +42,6 @@ from .types import (
     T_MetaInstance,
     T_Query,
     Table,
-    UPSERT_KEY_TYPES,
     UpsertHookPolicy,
     UpsertKey,
     merge_permissions,

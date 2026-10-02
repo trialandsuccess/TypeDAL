@@ -56,6 +56,8 @@ PermissionType = t.Literal["read", "insert", "update", "delete"]
 
 # type Permissions = dict[PermissionType, bool]
 class Permissions(t.TypedDict):
+    """Which operations a model or query may perform."""
+
     # note: extra source of truth because the dynamic dict doesn't work for all type checkers
     read: bool
     insert: bool

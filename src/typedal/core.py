@@ -506,7 +506,9 @@ class TypeDAL(_TypeDALBase):
         **kwargs: t.Unpack[DefineKwargs],
     ) -> t.Type[T] | t.Callable[[t.Type[T]], t.Type[T]]:
         """
-        Can be used as a decorator on a class that inherits `TypedTable`, \
+        Define a `TypedTable` class on this database.
+
+        Can be used as a decorator on a class that inherits `TypedTable`,
           or as a regular method if you need to define your classes before you have access to a 'db' instance.
 
         You can also pass extra arguments to db.define_table.

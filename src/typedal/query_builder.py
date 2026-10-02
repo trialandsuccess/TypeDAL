@@ -290,7 +290,6 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         Calling this without any fields or options on a builder that already has settings
         does nothing and emits a NoopQueryWarning.
         """
-
         if not fields and not options and self:
             warn_noop("select")
             return self
@@ -412,7 +411,8 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         Args:
             fields: Iterable of relationship field names
                 (e.g., ['relationship', 'relationship.with_nested', 'relationship.no2'])
-            condition_and: Optional condition to pass to relationship clones
+            method: Join method to use instead of each relationship's own
+            update: Extra settings passed to the relationship clones (e.g. condition_and)
 
         Returns:
             Dict mapping base relationship names to Relationship objects with nested relationships
@@ -577,8 +577,9 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         ttl: t.Optional[int | dt.timedelta] = None,
     ) -> "QueryBuilder[T_MetaInstance]":
         """
-        Enable caching for this query to load repeated calls from a dill row \
-            instead of executing the sql and collecing matching rows again.
+        Enable caching for this query.
+
+        Repeated calls are loaded from a dill row instead of executing the sql and collecting matching rows again.
         """
         existing = self.metadata.get("cache", {})
 
@@ -1052,7 +1053,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
 
         ids = db(query)._select(*select_args, **select_kwargs).rstrip(";")
         id_column = getattr(model.id, "_raw_rname", id_field.name)
-        return f'SELECT "{id_column}" FROM ({ids}) AS typedal_paginate_ids'  # nosec:
+        return f'SELECT "{id_column}" FROM ({ids}) AS typedal_paginate_ids'  # noqa: S608
         # id_column originates from code
         # ids is a safe subquery, originating from code
 
@@ -1398,9 +1399,11 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
             yield from chunk
 
     def __await__(self):
+        """`await builder` collects the rows asynchronously."""
         return self.collect_async().__await__()
 
     async def __aiter__(self):
+        """`async for row in builder` yields rows, in windows when `.window()` was used."""
         builder = self._extend(metadata={"iterating": True})
 
         window_size = self.metadata.get("window_size", None)
@@ -1415,6 +1418,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
                 yield row
 
     def window(self, window_size: int) -> QueryBuilder[T_MetaInstance]:
+        """Iterate in chunks of `window_size` rows instead of loading everything at once."""
         return self._extend(metadata={"window_size": window_size})
 
     def __count(
@@ -1471,7 +1475,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         db = self._get_db()
         query = self.__count(db, distinct=distinct)
 
-        return t.cast(str, db(query)._count(distinct))
+        return db(query)._count(distinct)
 
     def exists(self) -> bool:
         """

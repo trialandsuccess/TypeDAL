@@ -327,7 +327,7 @@ class Ref[To_Type: TypedTable]:
 
 
 @t.overload
-def relationship(
+def relationship(  # noqa: D417 - overloads only document what differs
     _type: type[list[To_Type]],
     condition: Condition = None,
     join: JOIN_OPTIONS = None,
@@ -348,7 +348,7 @@ def relationship(
 
 
 @t.overload
-def relationship(
+def relationship(  # noqa: D417 - overloads only document what differs
     _type: t.Type[To_Type] | str | t.Type[Ref[To_Type]],
     condition: Condition = None,
     *,
@@ -371,7 +371,7 @@ def relationship(
 
 
 @t.overload
-def relationship(
+def relationship(  # noqa: D417 - overloads only document what differs
     _type: t.Type[To_Type] | str | t.Type[Ref[To_Type]],
     condition: Condition = None,
     join: JOIN_OPTIONS = None,

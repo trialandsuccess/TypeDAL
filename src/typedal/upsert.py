@@ -113,7 +113,9 @@ class UpsertDialect(t.Protocol):
     upsert_supported: bool
     upsert_returning: bool
 
-    def insert(self, table: str, fields: str, values: str) -> str: ...
+    def insert(self, table: str, fields: str, values: str) -> str:
+        """Render PyDAL's own INSERT statement."""
+        ...
 
     def upsert(
         self,
@@ -123,7 +125,9 @@ class UpsertDialect(t.Protocol):
         conflict: str,
         update: str,
         returning: str | None = None,
-    ) -> str: ...
+    ) -> str:
+        """Render the native upsert statement."""
+        ...
 
 
 class UpsertAdapter(t.Protocol):
@@ -145,7 +149,9 @@ class UpsertAdapter(t.Protocol):
         key_fields: list[Field],
         insert_fields: list[tuple[Field, t.Any]],
         update_fields: list[Field],
-    ) -> UpsertResult: ...
+    ) -> UpsertResult:
+        """Execute the native upsert and return the written row."""
+        ...
 
 
 @upsert_dialects.register_for(SQLDialect)
@@ -156,6 +162,7 @@ class SQLUpsertDialect:
     returning = False
 
     def __init__(self, dialect: SQLDialect):
+        """Keep the adapter of the dialect this extension is installed on."""
         self.adapter = dialect.adapter
 
     def upsert(

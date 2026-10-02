@@ -29,37 +29,55 @@ class UpdateResult:
 
 
 class UpdateAdapter(t.Protocol):
-    def update_with_ids(self, table: Table, query: Query | None, fields: list[tuple[Field, t.Any]]) -> UpdateResult: ...
+    """Typed interface for the adapter's instance-local `update_with_ids` extension."""
+
+    def update_with_ids(self, table: Table, query: Query | None, fields: list[tuple[Field, t.Any]]) -> UpdateResult:
+        """Update the matching rows and return the rowcount and their primary keys."""
+        ...
 
 
 class UpdateDialect(t.Protocol):
+    """Typed interface for the dialect's instance-local UPDATE ... RETURNING extension."""
+
     update_returning_supported: bool
 
-    def update_returning(self, sql: str, field: str) -> str: ...
+    def update_returning(self, sql: str, field: str) -> str:
+        """Append a RETURNING clause for `field` to an UPDATE statement."""
+        ...
 
 
 @update_dialects.register_for(SQLDialect)
 class SQLUpdateDialect:
+    """Dialect without UPDATE ... RETURNING; IDs are selected before updating."""
+
     supported = False
 
     def __init__(self, dialect: SQLDialect):
+        """Keep the adapter of the dialect this extension is installed on."""
         self.adapter = dialect.adapter
 
     def update_returning(self, sql: str, field: str) -> str:
+        """Not available on this dialect."""
         raise NotImplementedError("This dialect does not support UPDATE RETURNING")
 
 
 @update_dialects.register_for(PostgreDialect)
 class PostgreUpdateDialect(SQLUpdateDialect):
+    """PostgreSQL returns the updated rows' keys in the UPDATE itself."""
+
     supported = True
 
     def update_returning(self, sql: str, field: str) -> str:
+        """Append `RETURNING field` to the UPDATE statement."""
         return sql.rstrip().removesuffix(";") + f" RETURNING {field};"
 
 
 @update_dialects.register_for(SQLiteDialect)
 class SQLiteUpdateDialect(PostgreUpdateDialect):
+    """SQLite has the same RETURNING syntax, from version 3.35 on."""
+
     def __init__(self, dialect: SQLDialect):
+        """Enable RETURNING only when the linked SQLite library supports it."""
         super().__init__(dialect)
         self.supported = getattr(self.adapter.driver, "sqlite_version_info", (0,)) >= (3, 35, 0)
 
@@ -112,6 +130,7 @@ def _update_with_ids(
 
 
 def install_update(adapter: BaseAdapter) -> None:
+    """Extend this adapter and its dialect with `update_with_ids`, without touching PyDAL's global registrations."""
     if not isinstance(adapter.dialect, SQLDialect):
         return
     extension = update_dialects.get_for(adapter.dialect)
@@ -129,6 +148,7 @@ class UpdateSet(Set):
     """A real PyDAL Set with affected-ID after-update callback semantics."""
 
     def where(self, query: Query | None, ignore_common_filters: bool = False) -> UpdateSet:
+        """Narrow this set; the result is a plain UpdateSet."""
         if query is None:
             return self
         rows = super().where(query, ignore_common_filters=ignore_common_filters)
@@ -150,6 +170,7 @@ class UpdateSet(Set):
         return result
 
     def update_ids(self, **fields: t.Any) -> list[t.Any]:
+        """Update the matching rows, running hooks, and return the primary keys of the updated rows."""
         table = self.db._adapter.get_table(self.query)
         row = table._fields_and_values_for_update(fields)
         if not row.op_values():
@@ -157,6 +178,7 @@ class UpdateSet(Set):
         return self._write(table, row, run_callbacks=True, need_ids=True).ids
 
     def update(self, **fields: t.Any) -> int:
+        """Update the matching rows, running hooks, and return the rowcount."""
         table = self.db._adapter.get_table(self.query)
         row = table._fields_and_values_for_update(fields)
         if not row.op_values():
@@ -168,6 +190,7 @@ class UpdateSet(Set):
         return self._write(table, row, run_callbacks=run_callbacks).count
 
     def update_naive(self, **fields: t.Any) -> int:
+        """Update the matching rows without running any hooks and return the rowcount."""
         table = self.db._adapter.get_table(self.query)
         row = table._fields_and_values_for_update(fields)
         if not row.op_values():
@@ -179,5 +202,6 @@ class AffectedSet(UpdateSet):
     """An ID-restricted hook Set carrying the IDs already obtained by the write."""
 
     def __init__(self, db: DAL, query: Query, affected_ids: list[t.Any]):
+        """Match the affected rows by key, ignoring common filters (the update may have moved them out)."""
         super().__init__(db, query, ignore_common_filters=True)
         self.affected_ids = affected_ids

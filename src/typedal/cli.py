@@ -227,7 +227,7 @@ def setup(
     data.pop("connection", None)
 
     # ignore any None:
-    old_contents["tool"]["typedal"] = {k: v for k, v in data.items() if v is not None}  # type: ignore
+    old_contents["tool"]["typedal"] = {k: v for k, v in data.items() if v is not None}
 
     with toml_path.open("w") as f:
         tomlkit.dump(old_contents, f)
@@ -567,8 +567,9 @@ type FormatOptions = t.Literal["plaintext", "json", "yaml", "toml"]
 
 def get_output_format(fmt: FormatOptions) -> t.Callable[[AnyNestedDict], None]:
     """
-    This function takes a format option as input and \
-        returns a function that can be used to output data in the specified format.
+    Get the output function for a format option.
+
+    The returned function prints data in the specified format.
     """
     match fmt:
         case "plaintext":

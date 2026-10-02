@@ -279,8 +279,9 @@ class AsyncSession:
 
     async def run_sync[**P, T](self, fn: t.Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> T:
         """
-        Run ordinary *sync* TypeDAL code on this session's worker, sharing its connection and
-        transaction.
+        Run ordinary *sync* TypeDAL code on this session's worker.
+
+        It shares the session's connection and transaction.
         """
         worker = await self._acquire()
         return await worker.run(functools.partial(fn, *args, **kwargs))
