@@ -127,7 +127,8 @@ def test_where_builder():
     assert sql
     assert isinstance(sql, str)
     assert "number" in sql
-    assert "5" in sql
+    # pydal 3 binds values as parameters (sqlite) instead of inlining them:
+    assert "5" in sql or 5 in getattr(sql, "params", ())
 
     result = builder.update(number=5)
     assert TestQueryTable.where(lambda row: row.number == -1).update(number=5) == []  # nothing updated

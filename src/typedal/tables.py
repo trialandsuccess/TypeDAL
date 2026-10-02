@@ -253,7 +253,8 @@ class TableMeta(type):
     def _insert(self, **fields: t.Any) -> str:
         table = self._ensure_table_defined()
 
-        return str(table._insert(**fields))
+        # no str(): pydal 3 may return a str subclass carrying bound params
+        return table._insert(**fields)
 
     def bulk_insert(self: t.Type[T_MetaInstance], items: list[AnyDict]) -> "TypedRows[T_MetaInstance]":
         """

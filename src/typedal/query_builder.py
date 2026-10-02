@@ -84,6 +84,22 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         _, select_args, _ = self._before_query({}, add_id=False)
         return select_args
 
+    # pydal 3 compiles a Select used in belongs() from these attributes instead of calling _compile().
+    # They expose the same (query, fields, kwargs) that to_sql() renders, so relationships are already applied.
+    @property
+    def _db(self) -> "TypeDAL":
+        return self._get_db()
+
+    @property
+    def _query(self) -> Query:  # type: ignore[override]
+        query, _, _ = self._before_query({}, add_id=False)
+        return query
+
+    @property
+    def _attributes(self) -> dict[str, t.Any]:  # type: ignore[override]
+        _, _, select_kwargs = self._before_query({}, add_id=False)
+        return dict(select_kwargs)
+
     def _compile(
         self,
         outer_scoped: list[t.Any] | None = None,  # noqa ARG002 - inherit from Select
@@ -193,15 +209,14 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
 
         return self._extend(permissions=permissions)
 
-    def _normalize_select_option(
-        self, value: str | Field | Expression | bool | t.Iterable[str | Field]
-    ) -> str | bool | list[str]:
+    def _normalize_select_option(self, value: str | Field | Expression | bool | t.Iterable[str | Field]) -> str | bool:
         # currently only used for 'distinct' since orderby, ... are patched by pydal itself in select()
         if isinstance(value, bool):
             return value
 
         if isinstance(value, (list, tuple, set)):
-            return t.cast(list[str], [self._normalize_select_option(val) for val in value])
+            # pre-joined into one fragment: pydal 3 would otherwise try to `|` the strings together
+            return ", ".join(str(self._normalize_select_option(val)) for val in value)
 
         if rname := getattr(value, "_rname", None):
             return str(rname)
@@ -558,7 +573,8 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
 
     def _delete(self) -> str:
         db = self._get_db()
-        return str(db(self.query)._delete())
+        # no str(): pydal 3 may return a str subclass carrying bound params
+        return db(self.query)._delete()
 
     # QueryBuilder subclasses Select for its query-building surface but yields
     # model instances rather than fields, so these two are not substitutable.
@@ -578,7 +594,8 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
 
     def _update(self, **fields: t.Any) -> str:
         db = self._get_db()
-        return str(db(self.query)._update(**fields))
+        # no str(): pydal 3 may return a str subclass carrying bound params
+        return db(self.query)._update(**fields)
 
     def _before_query(self, mut_metadata: Metadata, add_id: bool = True) -> tuple[Query, list[t.Any], SelectKwargs]:
         select_args = [self._select_arg_convert(_) for _ in self.select_args] or [self.model.ALL]
