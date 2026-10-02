@@ -20,11 +20,10 @@ from pydal.helpers.classes import SQLALL, SQLCallableList
 from .asynchronous import run_async
 from .constants import JOIN_OPTIONS
 from .core import TypeDAL
-from .exceptions import UpsertKeyError
 from .helpers import all_dict, classproperty, filter_out, throw
 from .serializers import as_json
 from .types import (
-    UPSERT_KEY_TYPES,
+    AffectedSet,
     AnyCallable,
     AnyDict,
     Condition,
@@ -48,8 +47,7 @@ from .types import (
     merge_permissions,
     require_permission,
 )
-from .updates import AffectedSet
-from .upsert import HookRegistration, check_before_hooks, execute_upsert, register_before_hook
+from .upsert import HookRegistration, check_before_hooks, execute_upsert, register_before_hook, validate_upsert
 
 if t.TYPE_CHECKING:
     from .relationships import Relationship
@@ -327,30 +325,7 @@ class TableMeta(type):
         table = self._ensure_table_defined()
         require_permission(self._permissions, "insert")
         require_permission(self._permissions, "update")
-        if not isinstance(key, t.Mapping) or not key:
-            raise UpsertKeyError("upsert requires a nonempty key mapping")
-        key = dict(key)
-        id_names = {"id", table._id.name}
-        if id_names & key.keys():
-            raise UpsertKeyError("upsert key must not contain id")
-        if id_names & values.keys():
-            raise UpsertKeyError("upsert values must not contain id; it would re-key the existing row")
-        if any(value is None for value in key.values()):
-            raise UpsertKeyError("upsert key values must not be None")
-        if invalid := sorted(name for name, value in key.items() if not isinstance(value, UPSERT_KEY_TYPES)):
-            raise UpsertKeyError(f"upsert key values must be plain scalars; invalid for: {', '.join(invalid)}")
-        if overlap := key.keys() & values.keys():
-            # field names only: values may come from request data and should not end up in logs
-            lookup = ", ".join(f"{name!r}: ..." for name in key)
-            kwargs = ", ".join(f"{name}=..." for name in key | values)
-            raise UpsertKeyError(
-                f"upsert key fields must not also be supplied as values ({', '.join(sorted(overlap))}). "
-                f"To change a key field, use {self.__name__}.update_or_insert({{{lookup}}}, {kwargs})."
-            )
-        unknown = (key.keys() | values.keys()) - set(table.fields)
-        if unknown:
-            raise UpsertKeyError(f"Unknown upsert fields: {', '.join(sorted(unknown))}")
-
+        key = validate_upsert(table, key, values, self.__name__)
         return self(execute_upsert(table, key, values).row)
 
     def validate_and_insert(
@@ -886,6 +861,13 @@ class TableMeta(type):
         (register or hooks.append)(wraps)
         return cls
 
+    def _register_before(
+        cls, branch: t.Literal["insert", "update"], fn: AnyCallable, upsert: UpsertHookPolicy | None
+    ) -> None:
+        """Add a before-hook to PyDAL's list for `branch` and record its upsert policy."""
+        hooks = cls._before_insert if branch == "insert" else cls._before_update
+        register_before_hook(hooks, cls._upsert_hook_registrations, branch, fn, upsert)
+
     def before_insert(
         cls: t.Type[T_MetaInstance],
         fn: t.Callable[[T_MetaInstance], t.Optional[bool]] | t.Callable[[OpRow], t.Optional[bool]],
@@ -894,7 +876,7 @@ class TableMeta(type):
         """
         Add a before insert hook; upsert='error' blocks upsert, 'ignore' skips silently.
         """
-        register_before_hook(cls._before_insert, cls._upsert_hook_registrations, "insert", fn, upsert)
+        cls._register_before("insert", fn, upsert)
         return cls
 
     def before_insert_once(
@@ -905,10 +887,7 @@ class TableMeta(type):
         """
         Add a before insert hook that only fires once and then removes itself (see before_insert for `upsert`).
         """
-
-        def register(hook: AnyCallable) -> None:
-            register_before_hook(cls._before_insert, cls._upsert_hook_registrations, "insert", hook, upsert)
-
+        register = functools.partial(cls._register_before, "insert", upsert=upsert)
         return cls._hook_once(cls._before_insert, fn, register)  # type: ignore
 
     def after_insert(
@@ -943,7 +922,7 @@ class TableMeta(type):
         """
         Add a before update hook; upsert='error' blocks upsert, 'ignore' skips silently.
         """
-        register_before_hook(cls._before_update, cls._upsert_hook_registrations, "update", fn, upsert)
+        cls._register_before("update", fn, upsert)
         return cls
 
     def before_update_once(
@@ -954,10 +933,7 @@ class TableMeta(type):
         """
         Add a before update hook that only fires once and then removes itself (see before_update for `upsert`).
         """
-
-        def register(hook: AnyCallable) -> None:
-            register_before_hook(cls._before_update, cls._upsert_hook_registrations, "update", hook, upsert)
-
+        register = functools.partial(cls._register_before, "update", upsert=upsert)
         return cls._hook_once(cls._before_update, fn, register)  # type: ignore
 
     def after_update(

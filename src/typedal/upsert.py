@@ -14,8 +14,9 @@ from pydal.helpers._internals import Dispatcher
 from pydal.helpers.methods import attempt_upload, delete_uploaded_files
 
 from .exceptions import UpsertAmbiguityError, UpsertHookError, UpsertKeyError
-from .types import AnyCallable, AnyDict, Field, OpRow, Query, Reference, Row, Table, UpsertHookPolicy
-from .updates import UpdateDialect, affected_set
+from .set_types import affected_set, match_fields
+from .types import UPSERT_KEY_TYPES, AnyCallable, AnyDict, Field, OpRow, Reference, Row, Table, UpsertHookPolicy
+from .updates import parse_returned, update_returning_row
 from .warnings import UpsertHooksWarning
 
 upsert_dialects = Dispatcher("upsert dialect")
@@ -204,6 +205,33 @@ class PostgreUpsertDialect(SQLUpsertDialect):
         return sql + ";"
 
 
+def validate_upsert(table: Table, key: t.Any, values: AnyDict, model_name: str) -> AnyDict:
+    """Reject an invalid key or values before any SQL runs; returns the key as a dict."""
+    if not isinstance(key, t.Mapping) or not key:
+        raise UpsertKeyError("upsert requires a nonempty key mapping")
+    key = dict(key)
+    id_names = {"id", table._id.name}
+    if id_names & key.keys():
+        raise UpsertKeyError("upsert key must not contain id")
+    if id_names & values.keys():
+        raise UpsertKeyError("upsert values must not contain id; it would re-key the existing row")
+    if any(value is None for value in key.values()):
+        raise UpsertKeyError("upsert key values must not be None")
+    if invalid := sorted(name for name, value in key.items() if not isinstance(value, UPSERT_KEY_TYPES)):
+        raise UpsertKeyError(f"upsert key values must be plain scalars; invalid for: {', '.join(invalid)}")
+    if overlap := key.keys() & values.keys():
+        # field names only: values may come from request data and should not end up in logs
+        lookup = ", ".join(f"{name!r}: ..." for name in key)
+        kwargs = ", ".join(f"{name}=..." for name in key | values)
+        raise UpsertKeyError(
+            f"upsert key fields must not also be supplied as values ({', '.join(sorted(overlap))}). "
+            f"To change a key field, use {model_name}.update_or_insert({{{lookup}}}, {kwargs})."
+        )
+    if unknown := (key.keys() | values.keys()) - set(table.fields):
+        raise UpsertKeyError(f"Unknown upsert fields: {', '.join(sorted(unknown))}")
+    return key
+
+
 def _execute_native(adapter: SQLAdapter, sql: str) -> None:
     try:
         adapter.execute(sql)
@@ -213,12 +241,17 @@ def _execute_native(adapter: SQLAdapter, sql: str) -> None:
         raise
 
 
+def _require_row(record: Row | None) -> Row:
+    """The row a write just produced; a concurrent delete (or a trigger) can make it disappear before it's read."""
+    if record is None:
+        raise RuntimeError("The upserted row could not be retrieved; it may have been deleted concurrently")
+    return record
+
+
 def _lookup(table: Table, key: AnyDict) -> Row | None:
-    query = None
-    for name, value in key.items():
-        condition = table[name] == value
-        query = condition if query is None else query & condition
-    rows = table._db(query).select(table.ALL, limitby=(0, 2))
+    rows = table._db(match_fields((table[name], value) for name, value in key.items())).select(
+        table.ALL, limitby=(0, 2)
+    )
     if len(rows) > 1:
         raise UpsertAmbiguityError("upsert key matches multiple rows; use a unique key")
     return t.cast(Row | None, rows.first())
@@ -260,23 +293,8 @@ def _is_filtered(table: Table) -> bool:
     return bool(table._common_filter) or (tenant in table.fields and table[tenant].default is not None)
 
 
-def _update_returning_row(
-    adapter: SQLAdapter, table: Table, query: Query | None, fields: list[tuple[Field, t.Any]]
-) -> Row | None:
-    """Update and read the row back in one statement; only for dialects with UPDATE ... RETURNING."""
-    dialect = t.cast(UpdateDialect, adapter.dialect)
-    columns = list(table)
-    sql = dialect.update_returning(adapter._update(table, query, fields), ", ".join(field._rname for field in columns))
-    adapter.execute(sql)
-    returned = adapter.fetchall()
-    colnames = [f"{table._tablename}.{field.name}" for field in columns]
-    return t.cast(Row | None, adapter.parse(returned, columns, colnames).first()) if returned else None
-
-
-def execute_upsert(table: Table, key: AnyDict, values: AnyDict) -> UpsertResult:
-    """Write without PyDAL callbacks, then run after-hooks for the actual branch."""
-    adapter = table._db._adapter
-    # Normalize once so lookup and insertion agree, including native key-only upserts.
+def _prepare(table: Table, key: AnyDict, values: AnyDict) -> tuple[AnyDict, AnyDict]:
+    """Convert the key once (so lookup and insert agree) and store uploaded files, like PyDAL's upload hooks."""
     _, key_fields = table._filter_fields_for_operation(key)
     key_operation = table._compute_fields_for_operation(key_fields, [])
     key = {name: key_operation[name] for name in key}
@@ -284,48 +302,71 @@ def execute_upsert(table: Table, key: AnyDict, values: AnyDict) -> UpsertResult:
         # same conversion PyDAL's attempt_upload_on_insert/update hooks do (store file objects, keep names)
         values = dict(values)
         attempt_upload(table, values)
-    autodelete = _autodelete_upload_fields(table, values)
-    # ON CONFLICT bypasses common filters and tenant defaults, and can't remove a replaced upload first,
-    # so those cases take the select-then-write path (which applies the filters to its lookup):
-    native = getattr(adapter.dialect, "upsert_supported", False) and not _is_filtered(table) and not autodelete
-    existing = _lookup(table, key) if not native or not values else None
-    if existing is not None and not values:
-        return UpsertResult(existing, "unchanged", OpRow(table))
-    if native:
-        operation = _insert_operation(table, key, values)
-        result = t.cast(UpsertAdapter, adapter).upsert(
-            table, [table[name] for name in key], operation.op_values(), [table[name] for name in values]
-        )
-    elif existing is None:
-        operation = _insert_operation(table, key, values)
-        row_id = adapter.insert(table, operation.op_values())
-        record = affected_set(table, [int(row_id)]).select(table.ALL).first()
-        result = UpsertResult(t.cast(Row, record), "inserted", operation)
+    return key, values
+
+
+def _write_native(table: Table, key: AnyDict, values: AnyDict) -> UpsertResult:
+    operation = _insert_operation(table, key, values)
+    return t.cast(UpsertAdapter, table._db._adapter).upsert(
+        table, [table[name] for name in key], operation.op_values(), [table[name] for name in values]
+    )
+
+
+def _write_insert(table: Table, key: AnyDict, values: AnyDict) -> UpsertResult:
+    operation = _insert_operation(table, key, values)
+    row_id = table._db._adapter.insert(table, operation.op_values())
+    record = affected_set(table, [int(row_id)]).select(table.ALL).first()
+    return UpsertResult(_require_row(record), "inserted", operation)
+
+
+def _write_update(table: Table, existing: Row, values: AnyDict, autodelete: list[str]) -> UpsertResult:
+    adapter = table._db._adapter
+    _, fields = table._filter_fields_for_operation(values)
+    operation = table._compute_fields_for_operation(fields, [])
+    rows = affected_set(table, [int(existing.id)])
+    if autodelete:
+        delete_uploaded_files(rows, {name: values[name] for name in autodelete})
+    if getattr(adapter.dialect, "update_returning_supported", False):  # Postgres, SQLite 3.35+
+        record = update_returning_row(adapter, table, rows.query, operation.op_values())
     else:
-        _, fields = table._filter_fields_for_operation(values)
-        operation = table._compute_fields_for_operation(fields, [])
-        rows = affected_set(table, [int(existing.id)])
-        if autodelete:
-            delete_uploaded_files(rows, {name: values[name] for name in autodelete})
-        if getattr(adapter.dialect, "update_returning_supported", False):  # Postgres, SQLite 3.35+
-            record = _update_returning_row(adapter, table, rows.query, operation.op_values())
-        else:
-            adapter.update(table, rows.query, operation.op_values())
-            record = rows.select(table.ALL).first()
-        if record is None:
-            raise RuntimeError("The upserted row was deleted concurrently")
-        result = UpsertResult(record, "updated", operation)
-    if result.row is None:
-        raise RuntimeError("The upserted row could not be retrieved; it may have been deleted concurrently")
+        adapter.update(table, rows.query, operation.op_values())
+        record = rows.select(table.ALL).first()
+    return UpsertResult(_require_row(record), "updated", operation)
+
+
+def _run_after_hooks(table: Table, result: UpsertResult) -> None:
+    """PyDAL's after-hooks for the branch that was actually taken; 'unchanged' runs none."""
     row_id = Reference(int(result.row.id))
     row_id._table = table
     if result.outcome == "inserted":
         for after_insert_hook in table._after_insert:
             after_insert_hook(result.operation, row_id)
-    elif result.outcome == "updated":  # pragma: no branch - 'unchanged' returned before writing
+    elif result.outcome == "updated":  # pragma: no branch - only a race makes a native upsert 'unchanged'
         rows = affected_set(table, [int(row_id)])
         for after_update_hook in table._after_update:
             after_update_hook(rows, result.operation)
+
+
+def execute_upsert(table: Table, key: AnyDict, values: AnyDict) -> UpsertResult:
+    """Write without PyDAL callbacks, then run after-hooks for the actual branch."""
+    key, values = _prepare(table, key, values)
+    autodelete = _autodelete_upload_fields(table, values)
+    # ON CONFLICT bypasses common filters and tenant defaults, and can't remove a replaced upload first,
+    # so those cases take the select-then-write path (which applies the filters to its lookup):
+    native = getattr(table._db._adapter.dialect, "upsert_supported", False) and not _is_filtered(table)
+    native = native and not autodelete
+    # a key-only call returns an existing row as-is, so look it up even when the write would be native:
+    existing = None if native and values else _lookup(table, key)
+    if existing is not None and not values:
+        return UpsertResult(existing, "unchanged", OpRow(table))
+
+    if native:
+        result = _write_native(table, key, values)
+    elif existing is None:
+        result = _write_insert(table, key, values)
+    else:
+        result = _write_update(table, existing, values, autodelete)
+    _run_after_hooks(table, result)
     return result
 
 
@@ -359,29 +400,22 @@ def _adapter_upsert(
     record = None
     outcome: t.Literal["inserted", "updated", "unchanged"] = "unchanged"
     if upsert_adapter.dialect.upsert_returning:  # pragma: no branch - the only native dialect returns rows
-        fields = list(table)
-        colnames = [f"{table._tablename}.{field.name}" for field in fields]
         returned = adapter.fetchall()
         if returned:
             outcome = "inserted" if returned[0][-1] else "updated"
-            record = adapter.parse([row[:-1] for row in returned], fields, colnames).first()
+            record = parse_returned(adapter, table, [row[:-1] for row in returned]).first()
     if record is None:
         key_names = {field.name for field in key_fields}
         # Reuse converted values instead of evaluating filter_in or callable values twice.
-        lookup = [(field, value) for field, value in insert_fields if field.name in key_names]
-        field, value = lookup[0]
-        query = field == value
-        for field, value in lookup[1:]:
-            query &= field == value
+        query = match_fields((field, value) for field, value in insert_fields if field.name in key_names)
         record = table._db(query, ignore_common_filters=True).select(table.ALL, limitby=(0, 1)).first()
-    if record is None:
-        raise RuntimeError("The upserted row could not be retrieved; it may have been deleted concurrently")
+    record = _require_row(record)
     names = {field.name for field in update_fields}
     operation = OpRow(table)
     for field, value in insert_fields:
         if outcome == "inserted" or field.name in names:
             operation.set_value(field.name, value, field)
-    return UpsertResult(t.cast(Row, record), outcome, operation)
+    return UpsertResult(record, outcome, operation)
 
 
 def install_upsert(adapter: BaseAdapter) -> None:

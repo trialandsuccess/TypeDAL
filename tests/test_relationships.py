@@ -33,22 +33,29 @@ class CacheUpsertArticle(TypedTable):
     title: str
 
 
-def test_lazy_reference_update_invalidates_cache() -> None:
-    author = CacheUpsertUser.insert(email="lazy@example.com", name="author")
+@pytest.mark.parametrize("moved", [False, True])
+def test_lazy_reference_update_invalidates_cache(moved: bool) -> None:
+    author = CacheUpsertUser.insert(email=f"lazy-{moved}@example.com", name="author")
+    other = CacheUpsertUser.insert(email=f"lazy-other-{moved}@example.com", name="other")
     article = CacheUpsertArticle.insert(author=author.id, title="old")
     query = CacheUpsertArticle.where(author=author.id).cache()
     try:
         assert query.collect().first().title == "old"
         assert query.collect().metadata["cache"]["status"] == "cached"
+        # a plain pydal Set: when the update moves the row out of its query (author == author.id),
+        # invalidation can't look the rows up afterwards and has to drop the table's cache:
+        changes = {"author": other.id} if moved else {"title": "new"}
         author_row = db.cache_upsert_user(author.id)
-        assert author_row.cache_upsert_article.update(title="new") == 1
+        assert author_row.cache_upsert_article.update(**changes) == 1
         refreshed = query.collect()
         assert refreshed.metadata["cache"]["status"] == "fresh"
-        assert refreshed.first().id == article.id
-        assert refreshed.first().title == "new"
+        if moved:
+            assert not refreshed
+        else:
+            assert (refreshed.first().id, refreshed.first().title) == (article.id, "new")
     finally:
-        CacheUpsertArticle.where(author=author.id).delete()
-        CacheUpsertUser.where(id=author.id).delete()
+        CacheUpsertArticle.where(id=article.id).delete()
+        CacheUpsertUser.where(CacheUpsertUser.id.belongs([author.id, other.id])).delete()
 
 
 def test_smart_query_update_invalidates_cache() -> None:
@@ -63,41 +70,6 @@ def test_smart_query_update_invalidates_cache() -> None:
         assert refreshed.metadata["cache"]["status"] == "fresh"
         assert refreshed.first().id == user.id
         assert refreshed.first().name == "new"
-    finally:
-        CacheUpsertUser.where(id=user.id).delete()
-
-
-def test_lazy_reference_update_of_filtered_column_invalidates_cache() -> None:
-    author = CacheUpsertUser.insert(email="lazy-moved@example.com", name="author")
-    other = CacheUpsertUser.insert(email="lazy-other@example.com", name="other")
-    article = CacheUpsertArticle.insert(author=author.id, title="title")
-    query = CacheUpsertArticle.where(author=author.id).cache()
-    try:
-        assert query.collect().first().id == article.id
-        assert query.collect().metadata["cache"]["status"] == "cached"
-        # a plain pydal Set: its query (author == author.id) no longer matches after this update,
-        # so invalidation can't look the rows up afterwards and has to drop the table's cache:
-        author_row = db.cache_upsert_user(author.id)
-        assert author_row.cache_upsert_article.update(author=other.id) == 1
-        refreshed = query.collect()
-        assert refreshed.metadata["cache"]["status"] == "fresh"
-        assert not refreshed
-    finally:
-        CacheUpsertArticle.where(id=article.id).delete()
-        CacheUpsertUser.where(CacheUpsertUser.id.belongs([author.id, other.id])).delete()
-
-
-def test_smart_query_update_of_filtered_column_invalidates_cache() -> None:
-    user = CacheUpsertUser.insert(email="smart-moved@example.com", name="old")
-    query = CacheUpsertUser.where(name="old").cache()
-    try:
-        assert query.collect().first().id == user.id
-        assert query.collect().metadata["cache"]["status"] == "cached"
-        rows = db.smart_query([CacheUpsertUser.name], "name = 'old'")
-        assert rows.update(name="new") == 1
-        refreshed = query.collect()
-        assert refreshed.metadata["cache"]["status"] == "fresh"
-        assert not refreshed
     finally:
         CacheUpsertUser.where(id=user.id).delete()
 
@@ -120,7 +92,7 @@ def test_empty_result_is_not_stored_and_does_not_shadow_later_results() -> None:
         CacheUpsertUser.where(id=user.id).delete()
 
 
-@pytest.mark.parametrize("operation", ["upsert", "update", "raw", "validated"])
+@pytest.mark.parametrize("operation", ["upsert", "update", "raw", "validated", "smart_query"])
 def test_cache_invalidation_after_changed_predicate(operation: str) -> None:
     CacheUpsertUser.where(CacheUpsertUser.id > 0).delete()
     inserted = CacheUpsertUser.insert(email="a@example.com", name="old")
@@ -135,6 +107,8 @@ def test_cache_invalidation_after_changed_predicate(operation: str) -> None:
     elif operation == "validated":
         result = db(CacheUpsertUser.name == "old").validate_and_update(name="new")
         assert result["updated"] == 1
+    elif operation == "smart_query":
+        assert db.smart_query([CacheUpsertUser.name], "name = 'old'").update(name="new") == 1
     else:
         assert CacheUpsertUser.where(name="old").update(name="new") == [inserted.id]
     assert not query.collect()

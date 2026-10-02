@@ -55,6 +55,8 @@ The key must be nonempty, contain known fields, exclude `id`, and have no `None`
 values; its values must be plain scalars (`str`, `int`, `float`, `bool`, `bytes`, `Decimal`, `UUID`,
 dates and times). Key fields cannot also occur in the values, and `id` can't be a value either
 (it would re-key the row). All of these raise `UpsertKeyError` (a `ValueError`) before any SQL runs.
+The upsert exceptions live in `typedal.exceptions` (all subclass `typedal.TypeDALError`),
+`UpsertHooksWarning` in `typedal.warnings`, and the `UpsertKey` types in `typedal.types`.
 To change a key field, use
 `update_or_insert({"email": "old@example.com"}, email="new@example.com")`.
 A call with only a key returns an existing row unchanged, without after-hooks,
@@ -115,7 +117,7 @@ finite number, so a string from request data can't change the statement.
 ### Affected-ID update hooks since 6.0
 
 Updates through TypeDAL's query builders, `db(query).update(...)`, and record updates
-pass an `AffectedSet` (matching the updated rows by primary key) to after-update hooks instead of the original
+pass an `AffectedSet` (`typedal.types.AffectedSet`, matching the updated rows by primary key) to after-update hooks instead of the original
 query, so hooks still find rows whose filtered columns the update changed. Its `affected_ids` lists the primary
 keys already captured by the write; for keyed tables (`primarykey=[...]`) these are the key values, or tuples for
 composite keys. Calling `.where(...)` or `rows(...)` on it returns a narrowed (plain) `UpdateSet`.

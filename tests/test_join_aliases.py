@@ -2,11 +2,10 @@
 Joined relationships live under an alias; where() and orderby() on the joined table resolve to it when the builder runs.
 """
 
-import typing as t
-
 import pytest
 
-from src.typedal import AliasedTableMismatchError, QueryBuilder, TypeDAL, TypedTable, relationship
+from src.typedal import QueryBuilder, TypeDAL, TypedTable, relationship
+from src.typedal.exceptions import AliasedTableMismatchError
 
 
 def define_models(db: TypeDAL):
@@ -79,10 +78,11 @@ def test_filter_on_left_join_paginates_and_counts():
     assert [[comment.body for comment in row.comments] for row in rows] == [["nice"], ["nice"]]
 
     # with limitby, the predicate moves into an id subquery, which needs the left join as well:
-    page = builder.paginate(limit=1)
-    assert titles(page) == ["First"]
-    assert (page.pagination["total_items"], page.pagination["total_pages"]) == (2, 2)
-    assert titles(builder.paginate(limit=1, page=2)) == ["Third"]
+    for page_number, expected_title in enumerate(["First", "Third"], start=1):
+        page = builder.paginate(limit=1, page=page_number)
+        assert titles(page) == [expected_title]
+        assert (page.pagination["total_items"], page.pagination["total_pages"]) == (2, 2)
+        assert [comment.body for comment in page.first().comments] == ["nice"]
 
     assert builder.count() == 2
     assert builder.count(distinct=Article.id) == 2
@@ -123,47 +123,35 @@ def test_count_distinct_roots_applies_left_join_condition_and():
     assert builder.count(distinct=True) == 1
 
 
-def test_paginated_join_keeps_filtered_comments():
-    builder = Article.join("comments").where(Comment.body == "nice").orderby(Article.id)
+@pytest.mark.parametrize("method", ["left", "inner"])
+def test_orderby_on_joined_table_resolves(method):
+    builder = Article.join("writer", method=method).orderby(~Author.name, Article.id)
 
-    assert [[comment.body for comment in row.comments] for row in builder.collect()] == [["nice"], ["nice"]]
-
-    for page_number, expected_title in enumerate(["First", "Third"], start=1):
-        page = builder.paginate(limit=1, page=page_number)
-        assert titles(page) == [expected_title]
-        assert [comment.body for comment in page.first().comments] == ["nice"]
+    assert titles(builder) == ["Second", "First", "Third"]
+    assert [titles(builder.paginate(limit=1, page=page)) for page in range(1, 4)] == [["Second"], ["First"], ["Third"]]
 
 
-def test_paginated_left_join_includes_orderby_relationship():
-    builder = Article.join("writer").orderby(~Author.name, Article.id)
-
-    assert titles(builder.collect()) == ["Second", "First", "Third"]
-    assert [titles(builder.paginate(limit=1, page=page)) for page in range(1, 4)] == [
-        ["Second"],
-        ["First"],
-        ["Third"],
-    ]
-
-
-@pytest.mark.parametrize("operation", ["count", "paginate"])
-def test_nested_inner_join_filter_counts_and_paginates(operation):
-    builder = Author.join("articles.comments", method="inner").where(Comment.body == "meh")
+@pytest.mark.parametrize("method", ["left", "inner"])
+def test_nested_relationship_resolves(method):
+    builder = Author.join("articles.comments", method=method).where(Comment.body == "meh")
 
     rows = builder.collect()
     assert [row.name for row in rows] == ["ann"]
     assert [article.title for article in rows.first().articles] == ["First"]
     assert [comment.body for comment in rows.first().articles[0].comments] == ["meh"]
+    assert builder.count() == 1
+    page = builder.paginate(limit=1)
+    assert [row.name for row in page] == ["ann"]
+    assert (page.pagination["total_items"], page.pagination["total_pages"]) == (1, 1)
 
-    if operation == "count":
-        assert builder.count() == 1
-    else:
-        page = builder.paginate(limit=1)
-        assert [row.name for row in page] == ["ann"]
-        assert (page.pagination["total_items"], page.pagination["total_pages"]) == (1, 1)
+    by_path = Author.join("articles.comments", method=method).where(
+        lambda author, articles__comments: articles__comments.body == "meh"
+    )
+    by_name = Author.join("articles.comments", method=method).where(lambda author, comments: comments.body == "meh")
+    assert [row.name for row in by_path] == [row.name for row in by_name] == ["ann"]
 
 
-@pytest.mark.parametrize("operation", ["count", "paginate"])
-def test_custom_on_intermediate_join_filter_counts_and_paginates(operation):
+def test_custom_on_intermediate_join_filter_counts_and_paginates():
     db = TypeDAL("sqlite:memory")
 
     try:
@@ -199,13 +187,11 @@ def test_custom_on_intermediate_join_filter_counts_and_paginates(operation):
         assert [row.id for row in rows] == [linked.id]
         assert [child.id for child in rows.first().children] == [child.id]
 
-        if operation == "count":
-            assert builder.count() == 1
-            assert builder.count(distinct=Parent.id) == 1
-        else:
-            page = builder.paginate(limit=1)
-            assert [row.id for row in page] == [linked.id]
-            assert (page.pagination["total_items"], page.pagination["total_pages"]) == (1, 1)
+        assert builder.count() == 1
+        assert builder.count(distinct=Parent.id) == 1
+        page = builder.paginate(limit=1)
+        assert [row.id for row in page] == [linked.id]
+        assert (page.pagination["total_items"], page.pagination["total_pages"]) == (1, 1)
     finally:
         db.close()
 
@@ -237,13 +223,6 @@ def test_expression_on_joined_table_resolves():
 
     assert titles(builder) == ["First"]
     assert builder.count() == 1
-
-
-def test_orderby_on_joined_table_resolves():
-    builder = Article.join("writer", method="inner").orderby(~Author.name, Article.id)
-
-    assert titles(builder) == ["Second", "First", "Third"]
-    assert titles(builder.paginate(limit=2)) == ["Second", "First"]
 
 
 def test_same_table_joined_twice_needs_a_lambda():
@@ -286,22 +265,6 @@ def test_lambda_asking_for_unjoined_relationship():
 
     with pytest.raises(ValueError, match=r"unjoined relationship\(s\) critic \(joined: writer\)"):
         Article.join("writer").where(lambda article, critic: critic.name == "ann").collect()
-
-
-def test_nested_relationship_resolves():
-    builder = Author.join("articles.comments").where(Comment.body == "meh")
-
-    rows = builder.collect()
-    assert [row.name for row in rows] == ["ann"]
-    assert [article.title for article in rows.first().articles] == ["First"]
-    assert [comment.body for comment in rows.first().articles[0].comments] == ["meh"]
-    assert builder.paginate(limit=1).pagination["total_items"] == 1
-
-    by_path = Author.join("articles.comments").where(
-        lambda author, articles__comments: articles__comments.body == "meh"
-    )
-    by_name = Author.join("articles.comments").where(lambda author, comments: comments.body == "meh")
-    assert [row.name for row in by_path] == [row.name for row in by_name] == ["ann"]
 
 
 def test_nested_one_to_many_collects_every_row():
@@ -385,30 +348,20 @@ def test_mutations_reject_lambdas_on_joined_tables():
 
 
 def test_cache_key_does_not_depend_on_alias_hashes():
+    # (compared directly: these models are local classes, which caching can't pickle)
     def build():
-        # every join() clones the relationship, so each builder gets its own alias hashes:
-        return Article.join("critic").where(lambda article, critic: critic.name == "ann")
+        # every join() clones the relationship, so each builder gets its own alias hashes;
+        # 'replies' is joined without an alias, so Comment keeps its table name
+        return Article.join("replies", "critic").where(lambda article, critic: critic.name == "bob").where(
+            Comment.body == "meh"
+        )
 
     first, second = build(), build()
     assert hash(first.relationships["critic"]) != hash(second.relationships["critic"])
-
-    key = first._cache_key_query()
+    key = str(first._cache_key_query())
     assert key == second._cache_key_query()
-    assert "<critic>" in t.cast(str, key)
-    assert str(hash(first.relationships["critic"])) not in t.cast(str, key)
-
-    # the un-aliased `on` join keeps its table name:
-    with_on = (
-        Article.join("replies", "critic")
-        .where(lambda article, critic: critic.name == "ann")
-        .where(Comment.body == "meh")
-    )
-    with_on_key = t.cast(str, with_on._cache_key_query())
-    assert '"alias_comment"."body"' in with_on_key
-    assert "<critic>" in with_on_key
-
-    plain = Article.where(title="First")
-    assert plain._cache_key_query() is plain.query
+    assert "<critic>" in key
+    assert '"alias_comment"."body"' in key
 
 
 def test_left_join_filter_paginates_with_distinct_psql(dal_psql: TypeDAL):

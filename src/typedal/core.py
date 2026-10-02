@@ -24,6 +24,7 @@ from .asynchronous import (
     run_async,
 )
 from .config import LazyPolicy, TypeDALConfig, default_async_workers, load_config
+from .extensions import install_extensions
 from .helpers import (
     SYSTEM_SUPPORTS_TEMPLATES,
     default_representer,
@@ -34,7 +35,7 @@ from .helpers import (
 from .serializers.typescript import TypedDictRegistry
 
 # noinspection PyUnusedImports
-from .types import CacheStatus, Expression, Field, Template
+from .types import CacheStatus, Expression, Field, Template, UpdateSet
 
 try:
     # python 3.14+
@@ -334,13 +335,7 @@ class TypeDAL(_TypeDALBase):
             table_hash,
         )
 
-        from .helpers import install_decimal_guard
-        from .updates import install_update
-        from .upsert import install_upsert
-
-        install_decimal_guard(self._adapter)
-        install_upsert(self._adapter)
-        install_update(self._adapter)
+        install_extensions(self._adapter)
 
         if config.caching:
             define_cache_models(self)
@@ -755,7 +750,6 @@ from .fields import *  # noqa: E402 F403 # isort: skip ; to fill globals() scope
 from .define import TableDefinitionBuilder  # noqa: E402
 from .rows import TypedRows, TypedSet  # noqa: E402
 from .tables import TypedTable  # noqa: E402
-from .updates import UpdateSet  # noqa: E402
 
 from .caching import (  # isort: skip # noqa: E402
     define_cache_models,

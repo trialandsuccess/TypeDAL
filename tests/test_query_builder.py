@@ -3,13 +3,13 @@ import inspect
 import pytest
 
 from src.typedal import (
-    ImplicitCrossJoinError,
     QueryBuilder,
     TypeDAL,
     TypedField,
     TypedTable,
     relationship,
 )
+from src.typedal.exceptions import ImplicitCrossJoinError
 from src.typedal.fields import rname
 from src.typedal.types import Query, Field
 from src.typedal.warnings import NoopQueryWarning, UnusedWindowWarning
@@ -111,14 +111,20 @@ def test_where_on_joined_table_resolves_to_its_alias():
         assert builder.count(distinct=TestQueryTable.id) == 1
         assert builder.paginate(limit=1).pagination["total_items"] == 1
 
-def test_where_on_unrelated_table_is_rejected():
-    with pytest.raises(ImplicitCrossJoinError, match="cross join"):
-        TestQueryTable.where(TestRelationship.value > 0).to_sql()
-
-
-def test_select_from_unrelated_table_is_rejected():
-    with pytest.raises(ImplicitCrossJoinError, match="cross join"):
-        TestQueryTable.select(TestRelationship.name).to_sql()
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda: TestQueryTable.where(TestRelationship.value > 0),
+        lambda: TestQueryTable.select(TestRelationship.name),
+        lambda: TestQueryTable.select(TestQueryTable.ALL, TestRelationship.ALL),
+    ],
+    ids=["where", "select_field", "select_all"],
+)
+def test_unrelated_table_is_rejected(build):
+    with pytest.raises(ImplicitCrossJoinError, match="cross join involving test_relationship"):
+        build().to_sql()
+    with pytest.raises(ImplicitCrossJoinError, match="cross join involving test_relationship"):
+        build().collect()
 
 
 def test_where_linking_two_tables_is_allowed():
@@ -129,10 +135,13 @@ def test_where_linking_two_tables_is_allowed():
 
 def test_explicit_cross_join_is_allowed():
     _setup_data()
-    query = TestQueryTable.join("relations", method="inner").cross_join(TestRelationship)
+    query = TestQueryTable.cross_join(TestRelationship)
+    assert query.cross_join(TestRelationship) is query
+    assert query.count() == 40
 
-    assert "CROSS JOIN" in query.to_sql()
-    assert len(query.collect()) == 2
+    joined = TestQueryTable.join("relations", method="inner").cross_join(TestRelationship)
+    assert "CROSS JOIN" in joined.to_sql()
+    assert len(joined.collect()) == 2
 
 
 def test_explicit_cross_join_is_exempt_from_alias_mismatch():
@@ -174,14 +183,6 @@ def test_computed_link_between_tables_is_allowed():
     assert {row.value for row in query.collect()} == {33}
 
 
-def test_selecting_all_fields_of_unrelated_table_is_rejected():
-    with pytest.raises(ImplicitCrossJoinError, match="test_relationship"):
-        TestQueryTable.select(TestQueryTable.ALL, TestRelationship.ALL).to_sql()
-
-    with pytest.raises(ImplicitCrossJoinError, match="test_relationship"):
-        TestQueryTable.select(TestQueryTable.ALL, TestRelationship.ALL).collect()
-
-
 def test_relationship_query_with_limitby_is_validated():
     _setup_data()
     TestThirdTable.truncate()
@@ -220,21 +221,16 @@ def test_bare_left_expression_is_accepted():
 
 def test_cross_join_rejects_table_from_another_database():
     other_db = TypeDAL("sqlite:memory")
+    try:
 
-    @other_db.define()
-    class OtherDatabaseTable(TypedTable):
-        value: int
+        @other_db.define()
+        class OtherDatabaseTable(TypedTable):
+            value: int
 
-    with pytest.raises(ValueError, match="same database"):
-        TestQueryTable.cross_join(OtherDatabaseTable)
-
-
-def test_cross_join_is_idempotent_and_counts_rows():
-    _setup_data()
-    query = TestQueryTable.cross_join(TestRelationship)
-
-    assert query.cross_join(TestRelationship) is query
-    assert query.count() == 40
+        with pytest.raises(ValueError, match="same database"):
+            TestQueryTable.cross_join(OtherDatabaseTable)
+    finally:
+        other_db.close()
 
 
 def test_where_builder():

@@ -117,8 +117,8 @@ This can be done just as web2py does (
 see [their docs](http://www.web2py.com/books/default/chapter/29/06/the-database-abstraction-layer#callbacks-on-record-insert-delete-and-update))
 
 ```python
-from typedal import AffectedSet, TypedTable
-from typedal.types import OpRow, Reference, Set
+from typedal import TypedTable
+from typedal.types import AffectedSet, OpRow, Reference, Set
 
 
 class MyTable(TypedTable): ...

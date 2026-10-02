@@ -176,7 +176,7 @@ Since 6.0, a query that mentions a table without relating it to the rest of the 
 This catches a common mistake: filtering on a table that isn't joined.
 
 ```python
-from typedal import ImplicitCrossJoinError
+from typedal.exceptions import ImplicitCrossJoinError
 
 Person.where(Article.title == "Hello")  # raises ImplicitCrossJoinError when the query is built
 Person.select(Person.ALL, Article.ALL)  # same: nothing relates article to person

@@ -27,6 +27,8 @@ from pydal.objects import Set as _Set
 from pydal.objects import Table as _Table
 from pydal.validators import Validator as _Validator
 
+from .set_types import AffectedSet, UpdateSet  # noqa: F401 - re-exported: `from typedal.types import AffectedSet`
+
 try:
     from string.templatelib import Template as TemplateAlias
 except ImportError:

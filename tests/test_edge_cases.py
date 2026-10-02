@@ -12,7 +12,8 @@ import pytest
 from pydal.validators import IS_NOT_EMPTY
 
 from src.typedal import TypeDAL, TypedField, TypedTable, relationship
-from src.typedal.helpers import _coerce_decimal, all_annotations, install_decimal_guard, sql_expression
+from src.typedal.extensions import _coerce_decimal, install_decimal_guard
+from src.typedal.helpers import all_annotations, sql_expression
 from src.typedal.mixins import HAS_UNIQUE_SLUG, SlugMixin
 from src.typedal.updates import SQLUpdateDialect
 
