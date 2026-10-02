@@ -24,6 +24,8 @@ from .exceptions import UpsertKeyError
 from .helpers import all_dict, classproperty, filter_out, throw
 from .serializers import as_json
 from .types import (
+    UPSERT_KEY_TYPES,
+    AnyCallable,
     AnyDict,
     Condition,
     Expression,
@@ -326,22 +328,28 @@ class TableMeta(type):
         require_permission(self._permissions, "insert")
         require_permission(self._permissions, "update")
         if not isinstance(key, t.Mapping) or not key:
-            raise ValueError("upsert requires a nonempty key mapping")
+            raise UpsertKeyError("upsert requires a nonempty key mapping")
         key = dict(key)
-        if "id" in key or table._id.name in key:
+        id_names = {"id", table._id.name}
+        if id_names & key.keys():
             raise UpsertKeyError("upsert key must not contain id")
+        if id_names & values.keys():
+            raise UpsertKeyError("upsert values must not contain id; it would re-key the existing row")
         if any(value is None for value in key.values()):
             raise UpsertKeyError("upsert key values must not be None")
-        insert_values = key | values
-        if key.keys() & values.keys():
-            kwargs = ", ".join(f"{name}={value!r}" for name, value in insert_values.items())
-            raise ValueError(
-                "upsert key fields must not also be supplied as values. "
-                f"To change a key field, use {self.__name__}.update_or_insert({key!r}, {kwargs})."
+        if invalid := sorted(name for name, value in key.items() if not isinstance(value, UPSERT_KEY_TYPES)):
+            raise UpsertKeyError(f"upsert key values must be plain scalars; invalid for: {', '.join(invalid)}")
+        if overlap := key.keys() & values.keys():
+            # field names only: values may come from request data and should not end up in logs
+            lookup = ", ".join(f"{name!r}: ..." for name in key)
+            kwargs = ", ".join(f"{name}=..." for name in key | values)
+            raise UpsertKeyError(
+                f"upsert key fields must not also be supplied as values ({', '.join(sorted(overlap))}). "
+                f"To change a key field, use {self.__name__}.update_or_insert({{{lookup}}}, {kwargs})."
             )
         unknown = (key.keys() | values.keys()) - set(table.fields)
         if unknown:
-            raise ValueError(f"Unknown upsert fields: {', '.join(sorted(unknown))}")
+            raise UpsertKeyError(f"Unknown upsert fields: {', '.join(sorted(unknown))}")
 
         return self(execute_upsert(table, key, values).row)
 
@@ -866,6 +874,7 @@ class TableMeta(type):
         cls: t.Type[T_MetaInstance],
         hooks: list[t.Callable[P, R]],
         fn: t.Callable[P, R],
+        register: t.Callable[[t.Callable[P, R]], None] | None = None,
     ) -> t.Type[T_MetaInstance]:
         @functools.wraps(fn)
         def wraps(*a: P.args, **kw: P.kwargs) -> R:
@@ -874,7 +883,7 @@ class TableMeta(type):
             finally:
                 hooks.remove(wraps)
 
-        hooks.append(wraps)
+        (register or hooks.append)(wraps)
         return cls
 
     def before_insert(
@@ -891,11 +900,16 @@ class TableMeta(type):
     def before_insert_once(
         cls: t.Type[T_MetaInstance],
         fn: t.Callable[[T_MetaInstance], t.Optional[bool]] | t.Callable[[OpRow], t.Optional[bool]],
+        upsert: UpsertHookPolicy | None = None,
     ) -> t.Type[T_MetaInstance]:
         """
-        Add a before insert hook that only fires once and then removes itself.
+        Add a before insert hook that only fires once and then removes itself (see before_insert for `upsert`).
         """
-        return cls._hook_once(cls._before_insert, fn)  # type: ignore
+
+        def register(hook: AnyCallable) -> None:
+            register_before_hook(cls._before_insert, cls._upsert_hook_registrations, "insert", hook, upsert)
+
+        return cls._hook_once(cls._before_insert, fn, register)  # type: ignore
 
     def after_insert(
         cls: t.Type[T_MetaInstance],
@@ -935,11 +949,16 @@ class TableMeta(type):
     def before_update_once(
         cls,
         fn: t.Callable[[Set, T_MetaInstance], t.Optional[bool]] | t.Callable[[Set, OpRow], t.Optional[bool]],
+        upsert: UpsertHookPolicy | None = None,
     ) -> t.Type[T_MetaInstance]:
         """
-        Add a before update hook that only fires once and then removes itself.
+        Add a before update hook that only fires once and then removes itself (see before_update for `upsert`).
         """
-        return cls._hook_once(cls._before_update, fn)  # type: ignore
+
+        def register(hook: AnyCallable) -> None:
+            register_before_hook(cls._before_update, cls._upsert_hook_registrations, "update", hook, upsert)
+
+        return cls._hook_once(cls._before_update, fn, register)  # type: ignore
 
     def after_update(
         cls: t.Type[T_MetaInstance],
@@ -1156,7 +1175,7 @@ class _TypedTable(metaclass=TableMeta):
 
                 property_hints = t.get_type_hints(getter, include_extras=True)
                 return_type = property_hints.get("return")
-                if return_type is not None:
+                if return_type is not None:  # pragma: no branch - unannotated properties are skipped
                     annotations[field_name] = return_type
 
         fields = {
@@ -1199,7 +1218,7 @@ class _TypedTable(metaclass=TableMeta):
 
         for field_name, relationship_value in relationship_items:
             relationship_type = cls._typedal_resolve_relationship_python_type(relationship_value)
-            if relationship_type is not None:
+            if relationship_type is not None:  # pragma: no branch - every relationship has a type
                 relationship_fields[field_name] = relationship_type
 
         return relationship_fields
@@ -1745,7 +1764,7 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
             # else: relationship, different logic:
 
         for relation_name in getattr(row, "_with", []):
-            if relation := self._relationships.get(relation_name):
+            if relation := self._relationships.get(relation_name):  # pragma: no branch - _with holds joined names
                 relation_table = relation.table
                 if isinstance(relation_table, str):
                     relation_table = self._db[relation_table]

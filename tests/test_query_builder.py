@@ -40,6 +40,12 @@ class TestRelationship(TypedTable):
     querytable: TestQueryTable
 
 
+@db.define()
+class TestThirdTable(TypedTable):
+    relation: TestRelationship
+    score: TypedField[int]
+
+
 class TestQueryTableBound(TestQueryTable):
     pass
 
@@ -83,12 +89,17 @@ def _setup_data():
 
 
 def test_where_on_unaliased_joined_table_is_rejected():
+    _setup_data()
     safe = TestQueryTable.join(
         "relations",
         method="inner",
-        condition_and=lambda _parent, relation: relation.value > 0,
-    ).select(TestRelationship.name)
+        condition_and=lambda _parent, relation: relation.value > 10,
+    )
     assert "CROSS JOIN" not in safe.to_sql()
+    rows = safe.collect()
+    # only the second parent has relations with value 33; dropping condition_and would also return the first
+    assert [row.number for row in rows] == [1]
+    assert [relation.value for relation in rows.first().relations] == [33, 33, 33, 33]
 
     unsafe = (
         TestQueryTable.join("relations", method="inner")
@@ -116,9 +127,94 @@ def test_where_linking_two_tables_is_allowed():
 
 
 def test_explicit_cross_join_is_allowed():
+    _setup_data()
     query = TestQueryTable.join("relations", method="inner").cross_join(TestRelationship)
 
     assert "CROSS JOIN" in query.to_sql()
+    assert len(query.collect()) == 2
+
+
+def test_explicit_cross_join_is_exempt_from_alias_mismatch():
+    _setup_data()
+    query = (
+        TestQueryTable.join("relations", method="inner")
+        .cross_join(TestRelationship)
+        .where(TestRelationship.value > 10)
+    )
+
+    assert "CROSS JOIN" in query.to_sql()
+    rows = query.collect()
+    assert [row.number for row in rows] == [0, 1]
+    # the alias-joined relations are untouched by the predicate on the cross-joined copy:
+    assert [len(row.relations) for row in rows] == [4, 4]
+
+
+def test_tables_linked_through_cross_joined_table_are_allowed():
+    _setup_data()
+    relation = TestRelationship.first_or_fail()
+    TestThirdTable.truncate()
+    TestThirdTable.insert(relation=relation, score=5)
+
+    query = TestQueryTable.cross_join(TestRelationship).where(TestRelationship.id == TestThirdTable.relation)
+
+    assert query.count() == 5
+    assert len(query.collect()) == 5
+
+
+def test_computed_link_between_tables_is_allowed():
+    _setup_data()
+    TestThirdTable.truncate()
+    TestThirdTable.insert(relation=TestRelationship.first_or_fail(), score=-30)
+
+    query = TestRelationship.where((TestRelationship.value + TestThirdTable.score) > 0)
+
+    # 33 - 30 > 0 for the four relations of the second parent:
+    assert query.count() == 4
+    assert {row.value for row in query.collect()} == {33}
+
+
+def test_selecting_all_fields_of_unrelated_table_is_rejected():
+    with pytest.raises(ImplicitCrossJoinError, match="test_relationship"):
+        TestQueryTable.select(TestQueryTable.ALL, TestRelationship.ALL).to_sql()
+
+    with pytest.raises(ImplicitCrossJoinError, match="test_relationship"):
+        TestQueryTable.select(TestQueryTable.ALL, TestRelationship.ALL).collect()
+
+
+def test_relationship_query_with_limitby_is_validated():
+    _setup_data()
+    TestThirdTable.truncate()
+    TestThirdTable.insert(relation=TestRelationship.first_or_fail(), score=5)
+    builder = TestQueryTable.join("relations", method="inner").where(TestThirdTable.score > 0)
+
+    with pytest.raises(ImplicitCrossJoinError, match="test_third_table"):
+        builder.select(limitby=(0, 1)).collect()
+    with pytest.raises(ImplicitCrossJoinError, match="test_third_table"):
+        builder.paginate(limit=1)
+    with pytest.raises(ImplicitCrossJoinError, match="test_third_table"):
+        builder.first()
+
+    linked = builder.where(TestThirdTable.relation == TestRelationship.id).cross_join(TestRelationship)
+    assert linked.select(limitby=(0, 1)).collect()
+
+
+def test_bare_left_expression_is_accepted():
+    _setup_data()
+    query = TestQueryTable.select(
+        TestQueryTable.number,
+        TestRelationship.name,
+        left=TestRelationship.on(TestRelationship.querytable == TestQueryTable.id),
+    )
+
+    assert "LEFT JOIN" in query.to_sql()
+    # 2 parents x 4 relations + 3 parents without relations:
+    assert len(query.execute()) == 11
+
+    with pytest.raises(ImplicitCrossJoinError, match="test_third_table"):
+        TestQueryTable.select(
+            TestThirdTable.score,
+            left=TestRelationship.on(TestRelationship.querytable == TestQueryTable.id),
+        ).to_sql()
 
 
 def test_cross_join_rejects_table_from_another_database():

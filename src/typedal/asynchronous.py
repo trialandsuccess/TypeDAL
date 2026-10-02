@@ -187,7 +187,7 @@ class ConnectionWorkerPool:
 
         while waiters:
             waiter = waiters.popleft()
-            if waiter.set_running_or_notify_cancel():
+            if waiter.set_running_or_notify_cancel():  # pragma: no branch - a cancelled waiter needs nothing
                 waiter.set_exception(RuntimeError("The async worker pool is shutting down."))
 
         errors: list[Exception] = []
@@ -273,14 +273,15 @@ class AsyncSession:
             # a no-op when the settle got through - by then there is no worker left to hold.
             self._abandon_worker()
 
-            if self._token is not None:
+            if self._token is not None:  # pragma: no branch - defensive, exit always follows enter
                 ACTIVE_SESSIONS.reset(self._token)
                 self._token = None
 
     async def run_sync[**P, T](self, fn: t.Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> T:
         """
-        Run ordinary *sync* TypeDAL code on this session's worker, sharing its connection and
-        transaction.
+        Run ordinary *sync* TypeDAL code on this session's worker.
+
+        It shares the session's connection and transaction.
         """
         worker = await self._acquire()
         return await worker.run(functools.partial(fn, *args, **kwargs))

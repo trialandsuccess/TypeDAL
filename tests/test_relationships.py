@@ -68,12 +68,67 @@ def test_smart_query_update_invalidates_cache() -> None:
         CacheUpsertUser.where(id=user.id).delete()
 
 
+def test_lazy_reference_update_of_filtered_column_invalidates_cache() -> None:
+    author = CacheUpsertUser.insert(email="lazy-moved@example.com", name="author")
+    other = CacheUpsertUser.insert(email="lazy-other@example.com", name="other")
+    article = CacheUpsertArticle.insert(author=author.id, title="title")
+    query = CacheUpsertArticle.where(author=author.id).cache()
+    try:
+        assert query.collect().first().id == article.id
+        assert query.collect().metadata["cache"]["status"] == "cached"
+        # a plain pydal Set: its query (author == author.id) no longer matches after this update,
+        # so invalidation can't look the rows up afterwards and has to drop the table's cache:
+        author_row = db.cache_upsert_user(author.id)
+        assert author_row.cache_upsert_article.update(author=other.id) == 1
+        refreshed = query.collect()
+        assert refreshed.metadata["cache"]["status"] == "fresh"
+        assert not refreshed
+    finally:
+        CacheUpsertArticle.where(id=article.id).delete()
+        CacheUpsertUser.where(CacheUpsertUser.id.belongs([author.id, other.id])).delete()
+
+
+def test_smart_query_update_of_filtered_column_invalidates_cache() -> None:
+    user = CacheUpsertUser.insert(email="smart-moved@example.com", name="old")
+    query = CacheUpsertUser.where(name="old").cache()
+    try:
+        assert query.collect().first().id == user.id
+        assert query.collect().metadata["cache"]["status"] == "cached"
+        rows = db.smart_query([CacheUpsertUser.name], "name = 'old'")
+        assert rows.update(name="new") == 1
+        refreshed = query.collect()
+        assert refreshed.metadata["cache"]["status"] == "fresh"
+        assert not refreshed
+    finally:
+        CacheUpsertUser.where(id=user.id).delete()
+
+
+def test_empty_result_is_not_stored_and_does_not_shadow_later_results() -> None:
+    CacheUpsertUser.where(CacheUpsertUser.id > 0).delete()
+    query = CacheUpsertUser.where(name="nobody-yet").cache()
+    entries = db(db.typedal_cache).count()
+    assert not query.collect()
+    assert not query.collect()
+    assert db(db.typedal_cache).count() == entries
+
+    user = CacheUpsertUser.insert(email="later@example.com", name="nobody-yet")
+    try:
+        assert query.collect().metadata["cache"]["status"] == "fresh"
+        cached = query.collect()
+        assert cached.metadata["cache"]["status"] == "cached"
+        assert cached.first().id == user.id
+    finally:
+        CacheUpsertUser.where(id=user.id).delete()
+
+
 @pytest.mark.parametrize("operation", ["upsert", "update", "raw", "validated"])
 def test_cache_invalidation_after_changed_predicate(operation: str) -> None:
     CacheUpsertUser.where(CacheUpsertUser.id > 0).delete()
     inserted = CacheUpsertUser.insert(email="a@example.com", name="old")
     query = CacheUpsertUser.where(name="old").cache()
     assert query.collect().first().name == "old"
+    # make sure the second read is served from the cache, otherwise the assertions below prove nothing:
+    assert query.collect().metadata["cache"]["status"] == "cached"
     if operation == "upsert":
         CacheUpsertUser.upsert({"email": "a@example.com"}, name="new")
     elif operation == "raw":
@@ -962,15 +1017,19 @@ def test_join_relationship_custom_on():
 
     rows2 = Tag.join(
         Tag.articles,
+        # each item must be a `table.on(...)` join; a bare table or query used to be dropped silently,
+        # which turned this into an implicit cross join with article:
         on=lambda tag, article: [
-            tagged := Tagged.unique_alias(),
-            (tagged.tag == tag.id) & (article.gid == tagged.entity) & (article.author == 3),
+            (tagged := Tagged.unique_alias()).on(tagged.tag == tag.id),
+            article.on((article.gid == tagged.entity) & (article.author == 3)),
         ],
         method="inner",
     )
 
     assert all([row.articles for row in rows1])
-    assert all([row.articles for row in rows2])
+    # custom `on` is always a left join, so tags without a matching article are kept (with no articles):
+    matched = {row.id: sorted(article.id for article in row.articles) for row in rows2 if row.articles}
+    assert matched == {row.id: sorted(article.id for article in row.articles) for row in rows1}
 
 
 def test_join_with_select():
@@ -1260,3 +1319,13 @@ def test_relationship_labels():
     # custom:
     assert TableWithRelationship.other_gid.label == "Relationship Reference"
     assert TableWithRelationship.target.label == "Other Gid"
+
+
+def _double(value: int) -> int:
+    return value * 2
+
+
+def test_memoize_ignores_plain_arguments_for_dependencies() -> None:
+    result, status = db.memoize(_double, 21, key="double-plain-arg")
+    assert (result, status) == (42, "fresh")
+    assert db.memoize(_double, 21, key="double-plain-arg") == (42, "cached")

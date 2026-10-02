@@ -47,6 +47,9 @@ Template: t.TypeAlias = TemplateAlias  # explicit export for mypy, NOT a `type` 
 type AnyCallable = t.Callable[..., t.Any]
 type AnyDict = dict[str, t.Any]
 type UpsertKeyValue = str | int | float | bool | bytes | Decimal | uuid.UUID | dt.date | dt.time
+UPSERT_KEY_TYPES: tuple[type, ...] = t.get_args(UpsertKeyValue.__value__)  # for isinstance checks
+# a row's primary key: its id, the key value for `primarykey=["k"]`, or a tuple of values for composite keys
+type PrimaryKey = UpsertKeyValue | tuple[UpsertKeyValue, ...]
 type UpsertKey = t.Mapping[str, UpsertKeyValue]
 type UpsertHookPolicy = t.Literal["error", "ignore"]
 
@@ -55,6 +58,8 @@ PermissionType = t.Literal["read", "insert", "update", "delete"]
 
 # type Permissions = dict[PermissionType, bool]
 class Permissions(t.TypedDict):
+    """Which operations a model or query may perform."""
+
     # note: extra source of truth because the dynamic dict doesn't work for all type checkers
     read: bool
     insert: bool
