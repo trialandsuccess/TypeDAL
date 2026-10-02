@@ -3,7 +3,6 @@ import inspect
 import pytest
 
 from src.typedal import (
-    AliasedTableMismatchError,
     ImplicitCrossJoinError,
     QueryBuilder,
     TypeDAL,
@@ -88,7 +87,7 @@ def _setup_data():
     db.commit()
 
 
-def test_where_on_unaliased_joined_table_is_rejected():
+def test_where_on_joined_table_resolves_to_its_alias():
     _setup_data()
     safe = TestQueryTable.join(
         "relations",
@@ -101,14 +100,16 @@ def test_where_on_unaliased_joined_table_is_rejected():
     assert [row.number for row in rows] == [1]
     assert [relation.value for relation in rows.first().relations] == [33, 33, 33, 33]
 
-    unsafe = (
-        TestQueryTable.join("relations", method="inner")
-        .select(TestRelationship.name)
-        .where(TestRelationship.value > 0)
-    )
-    with pytest.raises(AliasedTableMismatchError, match="alias"):
-        unsafe.to_sql()
-
+    # a builder that is extended later can't use condition_and anymore, so a plain where() on the joined table
+    # targets the alias too, whether it comes before or after the join:
+    joined_first = TestQueryTable.join("relations", method="inner").where(TestRelationship.value > 10)
+    where_first = TestQueryTable.where(TestRelationship.value > 10).join("relations", method="inner")
+    for builder in (joined_first, where_first):
+        assert "CROSS JOIN" not in builder.to_sql()
+        assert [row.number for row in builder.collect()] == [1]
+        assert builder.count() == 4
+        assert builder.count(distinct=TestQueryTable.id) == 1
+        assert builder.paginate(limit=1).pagination["total_items"] == 1
 
 def test_where_on_unrelated_table_is_rejected():
     with pytest.raises(ImplicitCrossJoinError, match="cross join"):
