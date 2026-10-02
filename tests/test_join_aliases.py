@@ -172,9 +172,51 @@ def test_nested_relationship_resolves():
     assert [comment.body for comment in rows.first().articles[0].comments] == ["meh"]
     assert builder.paginate(limit=1).pagination["total_items"] == 1
 
-    by_path = Author.join("articles.comments").where(lambda author, articles__comments: articles__comments.body == "meh")
+    by_path = Author.join("articles.comments").where(
+        lambda author, articles__comments: articles__comments.body == "meh"
+    )
     by_name = Author.join("articles.comments").where(lambda author, comments: comments.body == "meh")
     assert [row.name for row in by_path] == [row.name for row in by_name] == ["ann"]
+
+
+def test_nested_one_to_many_collects_every_row():
+    # "First" has two comments, which arrive on two rows that repeat ann and "First":
+    authors = Author.join("articles.comments").orderby(Author.id).collect()
+
+    assert [
+        (author.name, [(article.title, sorted(c.body for c in article.comments)) for article in author.articles])
+        for author in authors
+    ] == [
+        ("ann", [("First", ["meh", "nice"]), ("Third", ["nice"])]),
+        ("bob", [("Second", [])]),
+        ("cat", []),
+    ]
+
+
+def test_nested_relationship_back_to_the_root_table():
+    def overview(builder):
+        return [(row.title, row.writer.name, sorted(a.title for a in row.writer.articles)) for row in builder]
+
+    expected = [
+        ("First", "ann", ["First", "Third"]),
+        ("Second", "bob", ["Second"]),
+        ("Third", "ann", ["First", "Third"]),
+    ]
+
+    assert overview(Article.join("writer.articles").orderby(Article.id)) == expected
+    assert overview(Article.join("writer.articles", method="inner").orderby(Article.id)) == expected
+
+    # a selected root field stays the root's, it isn't moved to the nested 'articles' alias:
+    selected = Article.join("writer.articles").select(Article.title).orderby(Article.id).collect()
+    assert [row.title for row in selected] == ["First", "Second", "Third"]
+    assert [len(row.writer.articles) for row in selected] == [2, 1, 2]
+
+    # and a filter on the root table keeps meaning the root:
+    assert overview(Article.join("writer.articles").where(Article.title == "Second")) == [("Second", "bob", ["Second"])]
+    assert (
+        Article.join("writer.articles").where(Article.title == "Second").paginate(limit=1).pagination["total_items"]
+        == 1
+    )
 
 
 def test_ambiguous_nested_name_needs_full_path():

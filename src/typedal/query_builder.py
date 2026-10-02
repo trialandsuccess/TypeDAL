@@ -102,6 +102,10 @@ def _walk_tables(node: object, tables: set[str], parents: dict[str, str]) -> set
     return found
 
 
+# (id of the parent record, relationship path, related row id) -> the related instance attached to that parent
+type SeenRelations = dict[tuple[int, str, t.Any], t.Any]
+
+
 class _JoinedTable(t.NamedTuple):
     """A relationship table as it ends up in the SQL of a builder with joins."""
 
@@ -764,9 +768,9 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         joined: list[_JoinedTable],
     ) -> None:
         # mirrors the aliasing in _process_relationship_for_left_join and _build_inner_joins_recursive:
-        # everything is aliased, except an `on` relationship to another table.
+        # everything is aliased, except an `on` relationship to another table than its parent or the root.
         other = relation.get_table(self._get_db())
-        aliased = other is parent or not relation.on
+        aliased = other is parent or other is self.model or not relation.on
         table = other.with_alias(f"{key}_{hash(relation)}") if aliased else other
         joined.append(_JoinedTable(path, relation, t.cast(Table, table), other._tablename, aliased))
 
@@ -1363,9 +1367,10 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
 
         select_fields = ", ".join([str(_) for _ in select_args])
         pre_alias = str(other)
-        # Self-referencing relationship: 'other' is the same table as 'parent_table', so the
-        # name-based helpers below can't tell their fields apart. Alias upfront and skip them.
-        is_self_reference = other is parent_table
+        # Self-referencing relationship: 'other' is the same table as 'parent_table' (or, for a nested relationship
+        # like 'writer.articles', as the root table), so the name-based helpers below can't tell their fields apart.
+        # Alias upfront and skip them.
+        is_self_reference = other is parent_table or other is self.model
 
         if is_self_reference:
             other = other.with_alias(f"{key}_{hash(relation)}")
@@ -1476,8 +1481,8 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         # id: [Row]
         raw_per_id: dict[t.Any, list[t.Any]] = defaultdict(list)
 
-        # Track what we've seen: main_id -> "column-relation_id"
-        seen_relations: dict[str, set[str]] = defaultdict(set)
+        # Track what we've seen: (parent record, column, relation id) -> instance
+        seen_relations: SeenRelations = {}
 
         for row in rows:
             main = row[main_table]
@@ -1502,7 +1507,6 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
                     column=column,
                     relation=relation,
                     parent_record=records[main_id],
-                    parent_id=main_id,
                     seen_relations=seen_relations,
                     db=db,
                 )
@@ -1515,8 +1519,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         column: str,
         relation: Relationship[t.Any],
         parent_record: t.Any,
-        parent_id: t.Any,
-        seen_relations: dict[str, set[str]],
+        seen_relations: SeenRelations,
         db: t.Any,
         path: str = "",
     ) -> t.Any | None:
@@ -1530,13 +1533,12 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
             column: The relationship column name
             relation: The Relationship object
             parent_record: The parent model instance to attach data to
-            parent_id: ID of the parent for tracking
             seen_relations: Dict tracking which relationships we've already processed
             db: Database instance
             path: Current relationship path (e.g., "users.bestie")
 
         Returns:
-            The created relationship instance, or None if skipped
+            The created relationship instance, or None if skipped (no data, or already attached)
         """
         # Build the full path for tracking (e.g., "users", "users.bestie", "users.bestie.articles")
         current_path = f"{path}.{column}" if path else column
@@ -1551,16 +1553,19 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         if not relation_data or relation_data.id is None:
             return None
 
-        # Check if we've already seen this relationship instance
-        seen_key = f"{current_path}-{relation_data.id}"
-        if seen_key in seen_relations[parent_id]:
-            return None  # Already processed
-
-        seen_relations[parent_id].add(seen_key)
+        # Check if we've already attached this relationship instance to this parent. Keyed by the parent object:
+        # the same row (e.g. an author) reached through different parents is a separate instance for each of them.
+        seen_key = (id(parent_record), current_path, relation_data.id)
+        if (seen := seen_relations.get(seen_key)) is not None:
+            # a later row can still hold new data for its nested relationships (e.g. the author's second article)
+            if relation.nested:
+                self._process_nested_relationships(row, relation, seen, seen_relations, db, current_path)
+            return None
 
         # Create the relationship instance
         relation_table = relation.get_table(db)
         instance = relation_table(relation_data) if looks_like(relation_table, TypedTable) else relation_data
+        seen_relations[seen_key] = instance
 
         # Process nested relationships on this instance
         if relation.nested:
@@ -1568,7 +1573,6 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
                 row=row,
                 relation=relation,
                 instance=instance,
-                # parent_id=parent_id,
                 seen_relations=seen_relations,
                 db=db,
                 path=current_path,
@@ -1590,7 +1594,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         row: t.Any,
         relation: Relationship[t.Any],
         instance: t.Any,
-        seen_relations: dict[str, set[str]],
+        seen_relations: SeenRelations,
         db: t.Any,
         path: str,
     ) -> None:
@@ -1618,7 +1622,6 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
                 column=nested_col,
                 relation=nested_relation,
                 parent_record=instance,
-                parent_id=instance.id,
                 seen_relations=seen_relations,
                 db=db,
                 path=path,
