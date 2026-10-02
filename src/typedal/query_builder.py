@@ -4,8 +4,10 @@ Contains base functionality related to the Query Builder.
 
 from __future__ import annotations
 
+import copy
 import datetime as dt
 import functools
+import inspect
 import math
 import time
 import typing as t
@@ -100,6 +102,63 @@ def _walk_tables(node: object, tables: set[str], parents: dict[str, str]) -> set
     return found
 
 
+class _JoinedTable(t.NamedTuple):
+    """A relationship table as it ends up in the SQL of a builder with joins."""
+
+    path: str  # e.g. "users" or "users.bestie"
+    relation: Relationship[t.Any]
+    table: Table  # aliased when the relationship is joined under an alias
+    tablename: str  # the original, unaliased table name
+    aliased: bool
+
+
+def _rewrite_tables(node: t.Any, tables: dict[str, Table]) -> t.Any:
+    """
+    Rebuild node (a query, expression or field) with every field of a table in `tables` pointing at its alias.
+
+    Unchanged branches are returned as-is, so a query without such fields comes back as the same object.
+    """
+    if isinstance(node, Field):
+        alias = tables.get(t.cast(str, node.tablename))
+        return node if alias is None else alias[node.name]
+    if isinstance(node, (list, tuple)):
+        items = [_rewrite_tables(item, tables) for item in node]
+        changed = any(new is not old for new, old in zip(items, node, strict=True))
+        return type(node)(items) if changed else node
+    if not isinstance(node, (Expression, Query)):
+        return node
+
+    first = _rewrite_tables(node.first, tables)
+    second = _rewrite_tables(node.second, tables)
+    if first is node.first and second is node.second:
+        return node
+
+    clone = copy.copy(node)
+    clone.first = first
+    clone.second = second
+    if isinstance(clone, Expression):
+        # as Expression.__init__ derives it:
+        clone._table = getattr(first, "_table", None)
+    return clone
+
+
+def _requested_tables(part: t.Any) -> list[str]:
+    """
+    The joined tables a where() lambda asks for: its arguments after the model, e.g. `lambda article, tags: ...`.
+
+    Arguments with a default don't ask for anything.
+    """
+    if not callable(part) or isinstance(part, (Field, Query, Expression, dict)) or is_typed_field(part):
+        return []
+    try:
+        parameters = inspect.signature(part).parameters.values()
+    except (TypeError, ValueError):  # pragma: no cover - builtins without a signature
+        return []
+    positional = (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+    names = [p.name for p in parameters if p.kind in positional and p.default is inspect.Parameter.empty]
+    return names[1:]
+
+
 def warn_noop(method: str) -> None:
     """
     Warn that `method` was called without arguments, which has no effect.
@@ -125,6 +184,8 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
     metadata: Metadata
     _permissions: Permissions
     cross_joins: list[t.Type[TypedTable]]
+    # where() calls with a lambda asking for joined tables; resolved at collect time, ANDed with `query`:
+    deferred_queries: list[tuple[t.Any, ...]]
 
     def __setattr__(self, key: str, value: t.Any) -> None:
         """Keep QueryBuilder state independent from Select's table-like storage."""
@@ -155,6 +216,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         metadata: Metadata | None = None,
         permissions: Permissions | None = None,
         cross_joins: list[t.Type[TypedTable]] | None = None,
+        deferred_queries: list[tuple[t.Any, ...]] | None = None,
     ):
         """
         Normally, you wouldn't manually initialize a QueryBuilder but start using a method on a TypedTable.
@@ -172,6 +234,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         self.metadata = metadata or {}
         self._permissions = merge_permissions(getattr(model, "_permissions", None), permissions)
         self.cross_joins = cross_joins or []
+        self.deferred_queries = deferred_queries or []
 
     def _ensure_table_defined(self) -> Table:
         model = self.model
@@ -215,6 +278,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
                 self.relationships,
                 self.metadata,
                 self.cross_joins,
+                self.deferred_queries,
             ],
         )
 
@@ -228,6 +292,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         metadata: Metadata | None = None,
         permissions: Permissions | None = None,
         cross_joins: list[t.Type[TypedTable]] | None = None,
+        deferred_queries: list[tuple[t.Any, ...]] | None = None,
     ) -> "QueryBuilder[T_MetaInstance]":
         return QueryBuilder(
             self.model,
@@ -238,6 +303,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
             (self.metadata | (metadata or {})) if metadata else self.metadata,  # ty: ignore[invalid-argument-type]
             permissions=merge_permissions(self._permissions, permissions),
             cross_joins=self.cross_joins + (cross_joins or []),
+            deferred_queries=self.deferred_queries + (deferred_queries or []),
         )
 
     def permissions(self, **permissions: t.Unpack[Permissions]) -> "QueryBuilder[T_MetaInstance]":
@@ -346,7 +412,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
 
     def where(
         self,
-        *queries_or_lambdas: Query | t.Callable[[t.Type[T_MetaInstance]], Query] | dict[str, t.Any],
+        *queries_or_lambdas: Query | t.Callable[..., Query] | dict[str, t.Any],
         **filters: t.Any,
     ) -> "QueryBuilder[T_MetaInstance]":
         """
@@ -362,6 +428,12 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         When passing multiple queries to a single .where, they will be ORed:
             .where(lambda table: table.id == 5, lambda table: table.id == 6) == (table.id == 5) | (table.id=6)
 
+        Joined relationships live under an alias in the SQL. A field of a joined table (`.where(Tag.name == "x")`)
+        is resolved to that alias when the builder runs, so `.where(...).join(...)` and `.join(...).where(...)` both
+        work. When the same table is joined more than once, pick the join with extra lambda arguments, named after
+        the relationship (nested ones as `parent__child`), which are also resolved when the builder runs:
+            .join("tags").where(lambda article, tags: tags.name == "x")
+
         Calling this without any arguments on a builder that already has settings
         does nothing and emits a NoopQueryWarning.
         Starting an empty builder (e.g. `Model.where()`) is allowed and stays silent.
@@ -370,14 +442,28 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
             warn_noop("where")
             return self
 
-        new_query = self.query
-        table = self._ensure_table_defined()
-
         queries_or_lambdas = (
             *queries_or_lambdas,
             filters,
         )
 
+        if any(_requested_tables(query_part) for query_part in queries_or_lambdas):
+            # the joined tables (and their aliases) are only known once the builder runs:
+            return self._extend(deferred_queries=[queries_or_lambdas])
+
+        new_query = self.query
+        if subquery := self._where_group(queries_or_lambdas, {}):
+            new_query &= subquery
+
+        return self._extend(overwrite_query=new_query)
+
+    def _where_group(self, queries_or_lambdas: tuple[t.Any, ...], joined: dict[str, Table]) -> Query:
+        """
+        OR the parts of one where() call together.
+
+        `joined` maps relationship names to their (aliased) tables, for lambdas that ask for them by name.
+        """
+        table = self._ensure_table_defined()
         subquery = t.cast(Query, DummyQuery())
         for query_part in queries_or_lambdas:
             if isinstance(query_part, Field) or is_typed_field(query_part):
@@ -385,7 +471,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
             elif isinstance(query_part, (Query, Expression)):
                 subquery |= t.cast(Query, query_part)
             elif callable(query_part):
-                if result := query_part(self.model):
+                if result := query_part(self.model, *self._bind_joined_tables(query_part, joined)):
                     subquery |= t.cast(Query, result)
             elif isinstance(query_part, dict):
                 subsubquery = DummyQuery()
@@ -397,10 +483,15 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
             else:
                 raise ValueError(f"Unexpected query type ({type(query_part)}).")
 
-        if subquery:
-            new_query &= subquery
+        return subquery
 
-        return self._extend(overwrite_query=new_query)
+    def _bind_joined_tables(self, fn: t.Callable[..., t.Any], joined: dict[str, Table]) -> list[Table]:
+        """Look up the joined tables that a where() lambda asks for, by the names of its extra arguments."""
+        names = _requested_tables(fn)
+        if missing := [name for name in names if name not in joined]:
+            available = ", ".join(sorted(joined)) or "none"
+            raise ValueError(f"where() asks for unjoined relationship(s) {', '.join(missing)} (joined: {available})")
+        return [joined[name] for name in names]
 
     def _parse_relationships(
         self,
@@ -611,14 +702,25 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
 
         return arg
 
+    def _mutation_query(self) -> Query:
+        """
+        The query for delete and update, which ignore joins.
+
+        A where() lambda that asks for joined tables only filters through those joins, so leaving it out would
+        delete or update more rows than asked for.
+        """
+        if self.deferred_queries:
+            raise ValueError("delete() and update() can't use where() lambdas that ask for joined relationships")
+        return self.query
+
     def delete(self) -> list[int]:
         """
         Based on the current query, delete rows and return a list of deleted IDs.
         """
         require_permission(self._permissions, "delete")
         db = self._get_db()
-        removed_ids = [_.id for _ in db(self.query).select("id")]
-        if db(self.query).delete():
+        removed_ids = [_.id for _ in db(self._mutation_query()).select("id")]
+        if db(self._mutation_query()).delete():
             # success!
             return removed_ids
 
@@ -626,7 +728,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
 
     def _delete(self) -> str:
         db = self._get_db()
-        return str(db(self.query)._delete())
+        return str(db(self._mutation_query())._delete())
 
     # QueryBuilder subclasses Select for its query-building surface but yields
     # model instances rather than fields, so these two are not substitutable.
@@ -640,16 +742,115 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         from .updates import UpdateSet
 
         # a TypedTable's primary key is always its integer id
-        return t.cast(list[int], t.cast(UpdateSet, db(self.query)).update_ids(**fields))
+        return t.cast(list[int], t.cast(UpdateSet, db(self._mutation_query())).update_ids(**fields))
 
     def _update(self, **fields: t.Any) -> str:
         db = self._get_db()
-        return str(db(self.query)._update(**fields))
+        return str(db(self._mutation_query())._update(**fields))
+
+    def _joined_tables(self) -> list[_JoinedTable]:
+        """Every joined relationship (nested ones included) with the table it uses in the SQL."""
+        joined: list[_JoinedTable] = []
+        for key, relation in self.relationships.items():
+            self._collect_joined_tables(relation, key, self.model, key, joined)
+        return joined
+
+    def _collect_joined_tables(
+        self,
+        relation: Relationship[t.Any],
+        key: str,
+        parent: t.Any,
+        path: str,
+        joined: list[_JoinedTable],
+    ) -> None:
+        # mirrors the aliasing in _process_relationship_for_left_join and _build_inner_joins_recursive:
+        # everything is aliased, except an `on` relationship to another table.
+        other = relation.get_table(self._get_db())
+        aliased = other is parent or not relation.on
+        table = other.with_alias(f"{key}_{hash(relation)}") if aliased else other
+        joined.append(_JoinedTable(path, relation, t.cast(Table, table), other._tablename, aliased))
+
+        for nested_name, nested in relation.nested.items():
+            self._collect_joined_tables(nested, nested_name, table, f"{path}.{nested_name}", joined)
+
+    def _alias_rewrites(self, joined: list[_JoinedTable]) -> dict[str, Table]:
+        """
+        Map table names to the one alias they are joined under.
+
+        Left out (so the table name keeps meaning the table itself): the root table, `cross_join()` tables,
+        tables joined without an alias (`on=`) and tables joined more than once, which _validate_joins rejects.
+        """
+        excluded = {self._ensure_table_defined()._tablename}
+        excluded |= {table._ensure_table_defined()._tablename for table in self.cross_joins}
+
+        per_table: dict[str, list[_JoinedTable]] = defaultdict(list)
+        for entry in joined:
+            per_table[entry.tablename].append(entry)
+
+        return {
+            name: entries[0].table
+            for name, entries in per_table.items()
+            if len(entries) == 1 and entries[0].aliased and name not in excluded
+        }
+
+    @staticmethod
+    def _joined_by_name(joined: list[_JoinedTable]) -> dict[str, Table]:
+        """The names a where() lambda can ask for: `tags`, `tags__author` and, when unambiguous, `author`."""
+        names = {entry.path.replace(".", "__"): entry.table for entry in joined}
+
+        per_leaf: dict[str, list[Table]] = defaultdict(list)
+        for entry in joined:
+            per_leaf[entry.path.rsplit(".", 1)[-1]].append(entry.table)
+        for name, tables in per_leaf.items():
+            if len(tables) == 1:
+                names.setdefault(name, tables[0])
+
+        return names
+
+    def _resolve_query(self, joined: list[_JoinedTable], rewrites: dict[str, Table]) -> Query:
+        """The builder's query with the deferred where() lambdas applied and joined tables pointing at their alias."""
+        query = self.query
+        if self.deferred_queries:
+            by_name = self._joined_by_name(joined)
+            for queries_or_lambdas in self.deferred_queries:
+                if subquery := self._where_group(queries_or_lambdas, by_name):
+                    query &= subquery
+
+        return t.cast(Query, _rewrite_tables(query, rewrites)) if rewrites else query
+
+    @staticmethod
+    def _required_join_names(joined: list[_JoinedTable], *nodes: t.Any) -> set[str]:
+        """
+        The (aliased) names of the joined tables that `nodes` (a predicate, a counted field) use.
+
+        Includes the joins they hang from, since a nested join's ON clause references its parent's join.
+        """
+        referenced: set[str] = set()
+        for node in nodes:
+            referenced |= _walk_tables(node, set(), {})
+        paths = {entry.path for entry in joined if entry.table._tablename in referenced}
+        paths |= {path.rsplit(".", depth)[0] for path in paths for depth in range(1, path.count(".") + 1)}
+        return {entry.table._tablename for entry in joined if entry.path in paths}
+
+    @staticmethod
+    def _required_left_joins(names: set[str], left_joins: list[Expression]) -> list[Expression]:
+        """
+        The left joins of the tables in `names`, see _required_join_names.
+
+        Queries that replace the select (the id subquery of limitby, count) need these: without them, a filter on a
+        left-joined table references a table that isn't in their FROM clause.
+        """
+        return [join for join in left_joins if isinstance(join.first, Table) and join.first._tablename in names]
 
     def _before_query(self, mut_metadata: Metadata, add_id: bool = True) -> tuple[Query, list[t.Any], SelectKwargs]:
         select_args = [self._select_arg_convert(_) for _ in self.select_args] or [self.model.ALL]
         select_kwargs = self.select_kwargs.copy()
-        query = self.query
+        joined = self._joined_tables()
+        rewrites = self._alias_rewrites(joined)
+        query = self._resolve_query(joined, rewrites)
+        for option in ("orderby", "groupby", "having"):
+            if rewrites and option in select_kwargs:
+                select_kwargs[option] = _rewrite_tables(select_kwargs[option], rewrites)
         model = self.model
         mut_metadata["query"] = query
         # require at least id of main table:
@@ -661,9 +862,11 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
             select_args.append(model.id)
 
         if self.relationships:
-            query, select_args = self._handle_relationships_pre_select(query, select_args, select_kwargs, mut_metadata)
+            query, select_args = self._handle_relationships_pre_select(
+                query, select_args, select_kwargs, mut_metadata, joined
+            )
         else:
-            self._validate_joins([], select_args, select_kwargs)
+            self._validate_joins(query, [], select_args, select_kwargs, joined)
 
         for table in self.cross_joins:
             query &= table.id > 0
@@ -672,14 +875,16 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
 
     def _validate_joins(
         self,
+        query: Query,
         conditions: list[QueryLike],
         fields: list[t.Any],
         options: SelectKwargs,
+        joined: list[_JoinedTable],
     ) -> None:
         """
         Reject tables that would end up in the FROM clause without anything relating them to the root table.
 
-        Walks the user's predicate, the extra `conditions`, the selected `fields` and the ON clauses once.
+        Walks the (resolved) predicate, the extra `conditions`, the selected `fields` and the ON clauses once.
         Every table referenced inside a single comparison (`A.x == B.y`, but also `(A.x + B.y) > 3`) counts as
         linked. The root table, explicit JOIN targets and `cross_join()` tables seed the connected component.
         """
@@ -691,7 +896,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         parents: dict[str, str] = {}
         walk = functools.partial(_walk_tables, tables=tables, parents=parents)
 
-        predicate_tables = walk(self.query)
+        predicate_tables = walk(query)
         for condition in conditions:
             walk(condition)
         for field in fields:
@@ -706,13 +911,20 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
                 seeds.add(join.first._tablename)
             walk(join.second)
 
-        db = self._get_db()
-        for name, relation in self.relationships.items():
-            if not relation.condition:
+        # _alias_rewrites resolved every table joined under exactly one alias, what's left is ambiguous:
+        per_table: dict[str, list[_JoinedTable]] = defaultdict(list)
+        for entry in joined:
+            per_table[entry.tablename].append(entry)
+        for original, entries in per_table.items():
+            if original not in predicate_tables or original == root or original in explicit:
                 continue
-            original = relation.get_table(db)._tablename
-            if original in predicate_tables and original != root and original not in explicit:
-                raise AliasedTableMismatchError(f"Table {original!r} is joined under alias {name!r}")
+            if all(entry.aliased for entry in entries):
+                paths = ", ".join(repr(entry.path) for entry in entries)
+                pick = entries[0].path.replace(".", "__")
+                raise AliasedTableMismatchError(
+                    f"Table {original!r} is joined under multiple aliases ({paths}); "
+                    f"pick one with .where(lambda row, {pick}: ...)"
+                )
 
         tables |= seeds
         _link_tables(parents, seeds)
@@ -755,7 +967,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
             self.model,
             f"{into.__module__}.{into.__qualname__}",
             metadata,
-            self.query,
+            self._cache_key_query(),
             self.select_args,
             self.select_kwargs,
             self.relationships.keys(),
@@ -766,6 +978,19 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         metadata["cache"]["key"] = key
 
         return load_from_cache(key, self._get_db())
+
+    def _cache_key_query(self) -> Query | str:
+        """The resolved query, with alias names (which contain a per-process hash) replaced by relationship paths."""
+        joined = self._joined_tables()
+        query = self._resolve_query(joined, self._alias_rewrites(joined))
+        if query is self.query:
+            return query
+
+        key = str(query)
+        for entry in joined:
+            if entry.aliased:
+                key = key.replace(entry.table._tablename, f"<{entry.path}>")
+        return key
 
     def execute(self, add_id: bool = False) -> Rows:
         """
@@ -930,6 +1155,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         select_args: list[t.Any],
         select_kwargs: SelectKwargs,
         metadata: Metadata,
+        joined: list[_JoinedTable],
     ) -> tuple[Query, list[t.Any]]:
         """Handle relationship joins and field selection for database query."""
         # Collect all relationship keys including nested ones
@@ -941,8 +1167,15 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         select_args = self._build_left_joins_and_fields(select_args, left_joins)
 
         # validate before the limitby optimization replaces the predicate with an ID subquery:
-        self._validate_joins([], select_args, {"join": inner_joins or select_kwargs.get("join"), "left": left_joins})
-        query = self._apply_limitby_optimization(query, select_kwargs, inner_joins, metadata)
+        self._validate_joins(
+            query,
+            [],
+            select_args,
+            {"join": inner_joins or select_kwargs.get("join"), "left": left_joins},
+            joined,
+        )
+        required_left = self._required_left_joins(self._required_join_names(joined, query), left_joins)
+        query = self._apply_limitby_optimization(query, select_kwargs, inner_joins, metadata, required_left)
 
         if inner_joins:
             select_kwargs["join"] = inner_joins
@@ -1046,7 +1279,8 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         model = self.model
         id_field = t.cast(TypedField[int], model.id)
 
-        select_args: list[OrderBy] = [id_field]
+        # named, because a joined table's id can be among the orderby fields too:
+        select_args: list[OrderBy] = [t.cast(OrderBy, id_field.with_alias("typedal_paginate_id"))]
         seen = {str(model.id)}
 
         for field in self._selectable_orderby_fields(select_kwargs.get("orderby")):
@@ -1056,9 +1290,8 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
                 seen.add(key)
 
         ids = db(query)._select(*select_args, **select_kwargs).rstrip(";")
-        id_column = getattr(model.id, "_raw_rname", id_field.name)
-        return f'SELECT "{id_column}" FROM ({ids}) AS typedal_paginate_ids'  # noqa: S608
-        # id_column originates from code
+        id_column = db._adapter.dialect.quote("typedal_paginate_id")
+        return f"SELECT {id_column} FROM ({ids}) AS typedal_paginate_ids"  # noqa: S608
         # ids is a safe subquery, originating from code
 
     def _apply_limitby_optimization(
@@ -1067,8 +1300,13 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         select_kwargs: SelectKwargs,
         joins: list[t.Any],
         metadata: Metadata,
+        left_joins: list[Expression] | None = None,
     ) -> Query:
-        """Apply limitby optimization when relationships are present."""
+        """
+        Apply limitby optimization when relationships are present.
+
+        `left_joins` are the left joins the predicate filters on, see _required_left_joins.
+        """
         if not (limitby := select_kwargs.pop("limitby", ())):
             return query
 
@@ -1080,9 +1318,15 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
 
         if joins:
             kwargs["join"] = joins
+        if left_joins:
+            kwargs["left"] = left_joins
+        if joins or left_joins:
             kwargs["distinct"] = True
+        if left_joins and not kwargs.get("orderby") and kwargs.get("orderby_on_limitby", True):
+            # pydal's implicit limitby order includes the left-joined ids, which DISTINCT doesn't select:
+            kwargs["orderby"] = t.cast(OrderBy, model.id)
 
-        if joins and kwargs.get("orderby"):
+        if (joins or left_joins) and kwargs.get("orderby"):
             ids = self._select_distinct_ids_with_orderby_fields(query, kwargs)
         else:
             ids = db(query)._select(model.id, **kwargs)
@@ -1431,10 +1675,39 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         distinct: bool | Field | TypedField[t.Any] = False,
         *,
         include_left_for_distinct: bool = True,
-    ) -> Query:
-        # internal, shared logic between .count and ._count
+    ) -> tuple[Query | str, bool | Field | TypedField[t.Any]]:
+        """
+        Internal, shared logic between .count and ._count.
+
+        Returns the query to count, or the full SQL when the query filters on a left-joined table
+        (pydal's count can't LEFT JOIN), plus the `distinct` to count with.
+        """
         model = self.model
-        query = self.query
+        joined = self._joined_tables()
+        rewrites = self._alias_rewrites(joined)
+        query = self._resolve_query(joined, rewrites)
+        if rewrites and isinstance(distinct, (Field, Expression)):
+            distinct = _rewrite_tables(distinct, rewrites)
+
+        for table in self.cross_joins:
+            query &= table.id > 0
+
+        left_joins: list[Expression] = []
+        if names := self._required_join_names(joined, query, distinct):
+            self._build_left_joins_and_fields([], left_joins)
+        if left_joins := self._required_left_joins(names, left_joins):
+            inner_joins = self._build_inner_joins()
+            self._validate_joins(query, [], [model.id], {"join": inner_joins, "left": left_joins}, joined)
+            options: SelectKwargs = {"left": left_joins, "distinct": bool(distinct)}
+            if inner_joins:
+                options["join"] = inner_joins
+            counted = t.cast(Field, distinct if isinstance(distinct, (Field, Expression)) else model.id)
+            # COUNT(column) skips the NULL a left join yields, like COUNT(DISTINCT column) does:
+            subquery = db(query)._select(counted.with_alias("typedal_counted"), **options).rstrip().rstrip(";")
+            column = db._adapter.dialect.quote("typedal_counted")
+            return f"SELECT COUNT({column}) FROM ({subquery}) AS typedal_count;", distinct  # noqa: S608
+            # subquery is generated by pydal
+
         conditions: list[QueryLike] = []
         for key, relation in self.relationships.items():
             if not relation.condition:
@@ -1444,21 +1717,22 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
             if relation.join != "inner" and not include_left_join:
                 continue
 
-            other = relation.get_table(db)
-            if not distinct:
-                # todo: can this lead to other issues?
-                other = other.with_alias(f"{key}_{hash(relation)}")
+            # same alias as the select uses, so a filter on this relationship's table applies to this join:
+            other = relation.get_table(db).with_alias(f"{key}_{hash(relation)}")
 
             conditions.append(relation.condition(model, other))  # ty: ignore[invalid-argument-type]
             if callable(relation.condition_and):
                 conditions.append(relation.condition_and(model, other))  # ty: ignore[invalid-argument-type]
 
-        self._validate_joins(conditions, [model.id], {})
+        self._validate_joins(query, conditions, [model.id], {}, joined)
         for condition in conditions:
             query &= condition
-        for table in self.cross_joins:
-            query &= table.id > 0
-        return query
+        return query, distinct
+
+    def __execute_count(self, db: TypeDAL, query: Query | str, distinct: bool | Field | TypedField[t.Any]) -> int:
+        if isinstance(query, str):
+            return int(db.executesql(query)[0][0])
+        return db(query).count(distinct)
 
     def count(self, distinct: bool | Field | TypedField[t.Any] = False) -> int:
         """
@@ -1468,18 +1742,18 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         """
         require_permission(self._permissions, "read")
         db = self._get_db()
-        query = self.__count(db, distinct=distinct)
+        query, distinct = self.__count(db, distinct=distinct)
 
-        return db(query).count(distinct)
+        return self.__execute_count(db, query, distinct)
 
     def _count(self, distinct: bool | Field | TypedField[t.Any] = False) -> str:
         """
         Return the SQL for .count().
         """
         db = self._get_db()
-        query = self.__count(db, distinct=distinct)
+        query, distinct = self.__count(db, distinct=distinct)
 
-        return db(query)._count(distinct)
+        return query if isinstance(query, str) else db(query)._count(distinct)
 
     def exists(self) -> bool:
         """
@@ -1499,8 +1773,8 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
 
         db = self._get_db()
         distinct = t.cast(TypedField[int], self.model.id)
-        query = self.__count(db, distinct=distinct, include_left_for_distinct=False)
-        return db(query).count(distinct)
+        query, distinct = self.__count(db, distinct=distinct, include_left_for_distinct=False)
+        return self.__execute_count(db, query, distinct)
 
     def __paginate(
         self,

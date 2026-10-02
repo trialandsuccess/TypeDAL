@@ -195,19 +195,34 @@ Person.cross_join(Color)  # every person combined with every color
 Person.cross_join(Article).where(Article.id == Comment.article)  # comment is linked via article
 ```
 
-`AliasedTableMismatchError` (a subclass of `ImplicitCrossJoinError`) is raised when you filter on a table
-that is also joined through a relationship. A relationship join uses an alias, so `where(Article.x > 0)` refers to a
-*second*, unjoined copy of `article`. Put the condition on the relationship instead:
+A relationship join puts the related table in the SQL under an alias. Filtering or ordering on that table
+(`where()`, `orderby()`, `groupby()`, `having()`) is pointed at the alias when the query runs, so it doesn't matter
+whether `where()` comes before or after `join()`, or whether the builder is returned and extended somewhere else:
 
 ```python
-# wrong: Article here is not the joined (aliased) articles table
 Person.join("articles", method="inner").where(Article.published == True)
-
-# right:
-Person.join("articles", method="inner", condition_and=lambda person, article: article.published == True)
+Person.where(Article.published == True).join("articles", method="inner")  # the same query
 ```
 
-If you do want that second, independent copy, `cross_join(Article)` makes it explicit and exempts it from this check.
+Like `condition_and`, this filters the joined rows too: each person comes back with only their published articles.
+On a left join it also drops the persons without a matching article, and `where(Article.id == None)` finds the persons
+without any. Pagination and `count()` take the filter into account.
+
+When the same table is joined more than once, `Article` alone is ambiguous and raises `AliasedTableMismatchError`
+(a subclass of `ImplicitCrossJoinError`). Pick the join with extra lambda arguments, named after the relationship
+(a nested one as `parent__child`, or just `child` when that name is unique). These are resolved when the query runs,
+so they can also come before the `join()`:
+
+```python
+builder = Article.join("writer").join("reviewer")  # both relationships to Author
+builder.where(Author.name == "ann")  # raises: author is joined as 'writer' and as 'reviewer'
+builder.where(lambda article, reviewer: reviewer.name == "ann")
+```
+
+`delete()` and `update()` ignore joins, so they refuse a builder with such a lambda.
+
+If you want a second, independent copy of a joined table, `cross_join(Article)` makes it explicit: the table name
+then means that copy, not the joined one.
 
 ### groupby & having
 
