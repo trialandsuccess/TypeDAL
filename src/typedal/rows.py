@@ -94,7 +94,7 @@ class TypedRows(t.Collection[T_MetaInstance], Rows):
         """
         return len(self.records)
 
-    def __iter__(self) -> t.Iterator[T_MetaInstance]:
+    def __iter__(self) -> t.Iterator[T_MetaInstance]:  # ty: ignore[invalid-method-override]
         """
         Loop through the rows.
         """
@@ -159,8 +159,9 @@ class TypedRows(t.Collection[T_MetaInstance], Rows):
         self, f: t.Callable[[T_MetaInstance], Query]
     ) -> "TypedRows[T_MetaInstance]":
         """
-        Removes elements from the calling Rows object, filtered by the function `f`, \
-            and returns a new Rows object containing the removed elements.
+        Remove elements matching `f` from these rows.
+
+        Returns a new Rows object containing the removed elements.
         """
         if not self.records:
             return self.__class__(self, self.model, {})

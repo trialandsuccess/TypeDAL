@@ -127,7 +127,9 @@ class TypedField[T_Value](Expression):  # pragma: no cover
         owner: t.Type[t.Any],
     ) -> t.Union[T_Value, "TypedField[T_Value]"]:
         """
-        Since this class is a Descriptor field, \
+        Return the field on the class, or the value on an instance.
+
+        Since this class is a Descriptor field,
             it returns something else depending on if it's called on a class or instance.
 
         (this is mostly for mypy/typing)
@@ -284,7 +286,6 @@ def rname(field: TypedField[t.Any] | Field) -> str:
     """
     Return the full rname (table and field).
     """
-
     table = field._table
     inner_field = field._field if isinstance(field, TypedField) else field
 

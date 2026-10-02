@@ -57,7 +57,7 @@ def _expression_subclasses() -> t.Iterator[type[Expression]]:
     stack: list[type[Expression]] = [Expression]
     while stack:
         for subclass in stack.pop().__subclasses__():
-            if subclass not in seen:
+            if subclass not in seen:  # pragma: no branch - only multiple inheritance revisits a class
                 seen.add(subclass)
                 stack.append(subclass)
 
@@ -334,9 +334,11 @@ class TypeDAL(_TypeDALBase):
             table_hash,
         )
 
+        from .helpers import install_decimal_guard
         from .updates import install_update
         from .upsert import install_upsert
 
+        install_decimal_guard(self._adapter)
         install_upsert(self._adapter)
         install_update(self._adapter)
 
@@ -409,7 +411,7 @@ class TypeDAL(_TypeDALBase):
                     model.unbind()
             self._builder.class_map.clear()
 
-            if adapter is not None:
+            if adapter is not None:  # pragma: no branch - defensive cleanup
                 adapter.db = None
                 _purge_dialect_expressions(adapter)
 
@@ -427,10 +429,10 @@ class TypeDAL(_TypeDALBase):
                     "_after_delete",
                 ):
                     hooks = getattr(table, hook_name, None)
-                    if isinstance(hooks, list):
+                    if isinstance(hooks, list):  # pragma: no branch - defensive cleanup
                         hooks.clear()
 
-                if hasattr(table, "_db"):
+                if hasattr(table, "_db"):  # pragma: no branch - defensive cleanup
                     table._db = None
 
                 for field_name in getattr(table, "fields", ()):
@@ -438,15 +440,15 @@ class TypeDAL(_TypeDALBase):
                     if field is None:  # pragma: no cover
                         continue
 
-                    if hasattr(field, "_db"):
+                    if hasattr(field, "_db"):  # pragma: no branch - defensive cleanup
                         field._db = None
-                    if hasattr(field, "db"):
+                    if hasattr(field, "db"):  # pragma: no branch - defensive cleanup
                         field.db = None
-                    if hasattr(field, "table"):
+                    if hasattr(field, "table"):  # pragma: no branch - defensive cleanup
                         field.table = None
-                    if hasattr(field, "_table"):
+                    if hasattr(field, "_table"):  # pragma: no branch - defensive cleanup
                         field._table = None
-                    if hasattr(field, "requires"):
+                    if hasattr(field, "requires"):  # pragma: no branch - defensive cleanup
                         field.requires = []
 
     def try_define[T: t.Any](self, model: t.Type[T], verbose: bool = False) -> t.Type[T]:
@@ -458,7 +460,7 @@ class TypeDAL(_TypeDALBase):
         except Exception as e:
             # clean up:
             self.rollback()
-            if (tablename := self.to_snake(model.__name__)) and tablename in dir(self):
+            if (tablename := self.to_snake(model.__name__)) and tablename in dir(self):  # pragma: no branch
                 delattr(self, tablename)
 
             if verbose:
@@ -505,7 +507,9 @@ class TypeDAL(_TypeDALBase):
         **kwargs: t.Unpack[DefineKwargs],
     ) -> t.Type[T] | t.Callable[[t.Type[T]], t.Type[T]]:
         """
-        Can be used as a decorator on a class that inherits `TypedTable`, \
+        Define a `TypedTable` class on this database.
+
+        Can be used as a decorator on a class that inherits `TypedTable`,
           or as a regular method if you need to define your classes before you have access to a 'db' instance.
 
         You can also pass extra arguments to db.define_table.

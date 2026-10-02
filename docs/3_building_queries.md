@@ -169,6 +169,46 @@ Person.join("articles", method="inner")  # will only yield persons that have rel
 
 For more details about relationships and joins, see [4. Relationships](./4_relationships.md).
 
+### cross_join
+
+Since 6.0, a query that mentions a table without relating it to the rest of the query raises
+`ImplicitCrossJoinError` instead of silently producing a `CROSS JOIN` (every row combined with every other row).
+This catches a common mistake: filtering on a table that isn't joined.
+
+```python
+from typedal import ImplicitCrossJoinError
+
+Person.where(Article.title == "Hello")  # raises ImplicitCrossJoinError when the query is built
+Person.select(Person.ALL, Article.ALL)  # same: nothing relates article to person
+
+# fine, the comparison links the two tables:
+Person.where(Person.id == Article.author)
+# also fine: any comparison mentioning both tables counts as a link
+Person.where((Person.age + Article.word_count) > 1000)
+```
+
+If you really want a cross join, ask for it explicitly with `cross_join()`.
+Tables reached through a cross-joined table are accepted too:
+
+```python
+Person.cross_join(Color)  # every person combined with every color
+Person.cross_join(Article).where(Article.id == Comment.article)  # comment is linked via article
+```
+
+`AliasedTableMismatchError` (a subclass of `ImplicitCrossJoinError`) is raised when you filter on a table
+that is also joined through a relationship. A relationship join uses an alias, so `where(Article.x > 0)` refers to a
+*second*, unjoined copy of `article`. Put the condition on the relationship instead:
+
+```python
+# wrong: Article here is not the joined (aliased) articles table
+Person.join("articles", method="inner").where(Article.published == True)
+
+# right:
+Person.join("articles", method="inner", condition_and=lambda person, article: article.published == True)
+```
+
+If you do want that second, independent copy, `cross_join(Article)` makes it explicit and exempts it from this check.
+
 ### groupby & having
 
 Group query results by one or more fields, typically used with aggregate functions like `count()`, `sum()`, `avg()`,

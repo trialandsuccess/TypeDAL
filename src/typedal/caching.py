@@ -8,7 +8,7 @@ import hashlib
 import json
 import typing as t
 
-import dill  # nosec
+import dill
 
 from .fields import TypedField
 from .rows import TypedRows
@@ -21,10 +21,14 @@ if t.TYPE_CHECKING:
 
 
 class FunctionWithMetadata[T](t.Protocol):
+    """A callable with the name attributes memoize uses for its cache key."""
+
     __name__: str
     __qualname__: str
 
-    def __call__(self, *args: t.Any, **kwargs: t.Any) -> T: ...
+    def __call__(self, *args: t.Any, **kwargs: t.Any) -> T:
+        """Call the memoized function."""
+        ...
 
 
 def get_now(tz: dt.timezone = dt.timezone.utc) -> dt.datetime:
@@ -241,20 +245,26 @@ def clear_expired(db: "TypeDAL") -> int:
 
 def _remove_cache(db: "TypeDAL", s: Set, tablename: str) -> None:
     """
-    Obtain IDs before-delete, or after-update when PyDAL supplies a plain Set.
-    A plain Set retains its original query, which may no longer match updated rows.
+    Used as the table._before_delete for every TypeDAL table (on by default).
     """
     indeces = s.select("id").column("id")
     remove_cache(db, indeces, tablename)
 
 
 def _remove_cache_after_update(db: "TypeDAL", rows: Set, tablename: str) -> None:
-    """Reuse affected IDs when available, otherwise retain PyDAL's query-based invalidation."""
+    """
+    Used as the table._after_update for every TypeDAL table (on by default).
+
+    TypeDAL's own update paths pass an AffectedSet carrying the updated IDs, so only those rows are invalidated.
+    A plain PyDAL Set (from `db.smart_query` or a lazy reference set) still holds its original query, which may no
+    longer match the updated rows, so the whole table is invalidated instead.
+    """
     affected_ids = getattr(rows, "affected_ids", None)
     if affected_ids is None:
-        _remove_cache(db, rows, tablename)
+        remove_cache_for_table(db, tablename)
     else:
-        remove_cache(db, affected_ids, tablename)
+        # cache dependencies only exist for TypedTables, whose primary key is always the integer id
+        remove_cache(db, t.cast(list[int], affected_ids), tablename)
 
 
 def get_expire(
@@ -317,10 +327,12 @@ def save_to_cache[T_TypedTable: TypedTable](
     You can call .cache(...) with dependent fields (e.g. User.id) or this function will determine them automatically.
     """
     if (c := instance.metadata.get("cache", {})) and c.get("enabled") and (key := c.get("key")):
-        expires_at = get_expire(expires_at=expires_at, ttl=ttl) or c.get("expires_at")
-        deps = _determine_dependencies(instance, rows, c["depends_on"])
-
-        _insert_cache_entry(instance.db, key, instance, expires_at, deps)
+        # An empty result has no row dependencies, so no insert could ever invalidate it; loading also treats it
+        # as a miss. Storing it anyway only piles up dead entries that shadow this key for later, non-empty results.
+        if rows:
+            expires_at = get_expire(expires_at=expires_at, ttl=ttl) or c.get("expires_at")
+            deps = _determine_dependencies(instance, rows, c["depends_on"])
+            _insert_cache_entry(instance.db, key, instance, expires_at, deps)
 
         instance.metadata["cache"]["status"] = "fresh"
     return instance
@@ -373,7 +385,7 @@ def _fetch_cached_payload(key: str, db: "TypeDAL") -> tuple[t.Any, t.Any] | None
         return None
 
     # Only one place for deserialization to happen
-    return dill.loads(row.data), row  # nosec
+    return dill.loads(row.data), row  # noqa: S301 - written by TypeDAL itself, never by users
 
 
 def _load_from_cache(key: str, db: "TypeDAL") -> t.Any | None:

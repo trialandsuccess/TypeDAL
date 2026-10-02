@@ -7,7 +7,7 @@ import typing as t
 import warnings
 
 import pytest
-from pydal import DAL
+from pydal import DAL, Field
 from pydal.helpers.classes import ExecutionHandler
 from testcontainers.community.mysql import MySqlContainer
 
@@ -63,10 +63,6 @@ def upsert_db(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[Record
     db.statements = []
 
     db.define(UpsertUser)
-    for hook in list(UpsertUser._before_insert):
-        UpsertUser.before_insert(hook, upsert="ignore")
-    for hook in list(UpsertUser._before_update):
-        UpsertUser.before_update(hook, upsert="ignore")
     db.commit()
     db.statements.clear()
 
@@ -127,11 +123,12 @@ def test_composite_unique_key(upsert_db: RecordingDAL) -> None:
 
 
 def test_overlap_error_contains_concrete_alternative() -> None:
-    with pytest.raises(ValueError) as error:
-        UpsertUser.upsert({"email": "old@example.com"}, email="new@example.com", name="fixed")
-    assert "UpsertUser.update_or_insert({'email': 'old@example.com'}, email='new@example.com', name='fixed')" in str(
-        error.value
-    )
+    with pytest.raises(UpsertKeyError) as error:
+        UpsertUser.upsert({"email": "old@example.com"}, email="secret@example.com", name="hunter2")
+    assert "UpsertUser.update_or_insert({'email': ...}, email=..., name=...)" in str(error.value)
+    # values may come from request data and must not leak into logs:
+    assert "secret@example.com" not in str(error.value)
+    assert "hunter2" not in str(error.value)
     original = UpsertUser.insert(email="old@example.com", name="original")
     changed = UpsertUser.update_or_insert({"email": "old@example.com"}, email="new@example.com", name="fixed")
     assert changed.id == original.id
@@ -673,3 +670,325 @@ def test_native_path_reports_suppressed_insert(upsert_db: RecordingDAL) -> None:
     finally:
         upsert_db.executesql('DROP TRIGGER suppress_insert ON "upsert_user";')
         upsert_db.executesql("DROP FUNCTION suppress_upsert_insert();")
+
+
+def test_upsert_on_plain_table_does_not_warn() -> None:
+    # PyDAL's own upload hooks are registered on every table; they must not count as unmarked before-hooks
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UpsertHooksWarning)
+        UpsertUser.upsert({"email": "a@example.com"}, name="Alice")
+        UpsertUser.upsert({"email": "a@example.com"}, name="Bob")
+
+
+def test_upload_fields_are_stored_and_replaced_files_removed(upsert_db: RecordingDAL, tmp_path: Path) -> None:
+    from src.typedal.fields import UploadField
+
+    @upsert_db.define()
+    class UpsertDocument(TypedTable):
+        code = TypedField(str, unique=True)
+        attachment = UploadField(uploadfolder=str(tmp_path), autodelete=True)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UpsertHooksWarning)
+        first = UpsertDocument.upsert({"code": "a"}, attachment={"data": b"one", "filename": "one.txt"})
+        first_file = tmp_path / first.attachment
+        assert first_file.read_bytes() == b"one"
+
+        second = UpsertDocument.upsert({"code": "a"}, attachment={"data": b"two", "filename": "two.txt"})
+
+    assert second.id == first.id
+    assert second.attachment != first.attachment
+    assert (tmp_path / second.attachment).read_bytes() == b"two"
+    # same as a normal update with autodelete: the replaced file is removed
+    assert not first_file.exists()
+
+
+@pytest.mark.parametrize("values", [{"id": 5}, {"name": "x", "id": 5}])
+def test_id_is_rejected_as_upsert_value(upsert_db: RecordingDAL, values: dict[str, t.Any]) -> None:
+    original = UpsertUser.insert(email="a@example.com", name="Alice")
+    upsert_db.statements.clear()
+    with pytest.raises(UpsertKeyError, match="must not contain id"):
+        UpsertUser.upsert({"email": "a@example.com"}, **values)
+    assert upsert_db.statements == []
+    assert UpsertUser(original.id).name == "Alice"
+
+
+@pytest.mark.parametrize("value", [["a@example.com"], {"a": 1}, object()])
+def test_non_scalar_key_values_are_rejected(upsert_db: RecordingDAL, value: t.Any) -> None:
+    with pytest.raises(UpsertKeyError, match="plain scalars"):
+        UpsertUser.upsert({"email": value})
+    assert upsert_db.statements == []
+
+
+@pytest.mark.parametrize(
+    "key,values,match",
+    [({}, {}, "nonempty"), ({"missing": 1}, {}, "Unknown"), ({"email": "a"}, {"missing": 1}, "Unknown")],
+)
+def test_invalid_arguments_raise_upsert_key_error(key: dict[str, t.Any], values: dict[str, t.Any], match: str) -> None:
+    with pytest.raises(UpsertKeyError, match=match):
+        UpsertUser.upsert(key, **values)
+
+
+def test_decimal_values_are_coerced_not_inlined(upsert_db: RecordingDAL) -> None:
+    from decimal import Decimal
+
+    @upsert_db.define()
+    class UpsertPrice(TypedTable):
+        code = TypedField(str, unique=True)
+        amount = TypedField(Decimal, type="decimal(10,2)")
+
+    UpsertPrice.upsert({"code": "keep"}, amount=Decimal("1.00"))
+    for payload in ["1); DELETE FROM upsert_price; --", "1, code = 'pwned'", "NaN"]:
+        with pytest.raises(ValueError, match="Invalid decimal"):
+            UpsertPrice.upsert({"code": "keep"}, amount=payload)
+        with pytest.raises(ValueError, match="Invalid decimal"):
+            UpsertPrice.insert(code="other", amount=payload)
+        with pytest.raises(ValueError, match="Invalid decimal"):
+            UpsertPrice.where(UpsertPrice.amount == payload).collect()
+    upsert_db.rollback()
+
+    UpsertPrice.upsert({"code": "keep"}, amount=Decimal("1.00"))
+    updated = UpsertPrice.upsert({"code": "keep"}, amount=" 2.50 ")
+    assert updated.amount == Decimal("2.50")
+    assert [row.code for row in UpsertPrice.collect()] == ["keep"]
+
+
+def test_tenant_filtered_upsert_cannot_overwrite_other_tenant(upsert_db: RecordingDAL) -> None:
+    @upsert_db.define()
+    class UpsertTenantRow(TypedTable):
+        code = TypedField(str, unique=True)
+        secret: str
+        request_tenant = TypedField(str, default="tenant-a")
+
+    tenant = upsert_db.upsert_tenant_row.request_tenant
+    first = UpsertTenantRow.upsert({"code": "shared"}, secret="a-secret")
+    upsert_db.commit()
+
+    tenant.default = "tenant-b"
+    try:
+        upsert_db.statements.clear()
+        with pytest.raises(Exception) as error:
+            UpsertTenantRow.upsert({"code": "shared"}, secret="b-overwrite")
+        # the lookup is tenant-filtered, so the write is an INSERT that hits the unique constraint:
+        assert "ON CONFLICT" not in " ".join(upsert_db.statements)
+        assert not isinstance(error.value, AssertionError)
+        upsert_db.rollback()
+    finally:
+        tenant.default = "tenant-a"
+
+    row = upsert_db(upsert_db.upsert_tenant_row.id == first.id).select().first()
+    assert (row.secret, row.request_tenant) == ("a-secret", "tenant-a")
+
+
+def test_timestamps_and_slug_mixins_refuse_upsert(upsert_db: RecordingDAL) -> None:
+    from src.typedal.mixins import SlugMixin, TimestampsMixin
+
+    @upsert_db.define()
+    class UpsertArticle(TypedTable, SlugMixin, TimestampsMixin, slug_field="title"):
+        code = TypedField(str, unique=True)
+        title: str
+
+    upsert_db.statements.clear()
+    with pytest.raises(UpsertHookError, match="before_insert hook .*generate_slug"):
+        UpsertArticle.upsert({"code": "a"}, title="Hello")
+    assert upsert_db.statements == []
+
+    # update_or_insert runs the hooks, so it keeps working:
+    article = UpsertArticle.update_or_insert({"code": "a"}, code="a", title="Hello")
+    assert article.slug == "hello"
+
+
+def test_timestamps_mixin_alone_refuses_upsert(upsert_db: RecordingDAL) -> None:
+    from src.typedal.mixins import TimestampsMixin
+
+    @upsert_db.define()
+    class UpsertStamped(TypedTable, TimestampsMixin):
+        code = TypedField(str, unique=True)
+
+    with pytest.raises(UpsertHookError, match="before_update hook 'set_updated_at'"):
+        UpsertStamped.upsert({"code": "a"})
+
+
+@pytest.mark.parametrize("branch", ["insert", "update"])
+def test_once_hooks_accept_upsert_policy(upsert_db: RecordingDAL, branch: str) -> None:
+    def once_hook(*_args: t.Any) -> None:
+        pytest.fail("Before-hook must not run during upsert")
+
+    register = UpsertUser.before_insert_once if branch == "insert" else UpsertUser.before_update_once
+    register(once_hook, upsert="error")
+    with pytest.raises(UpsertHookError, match="once_hook"):
+        UpsertUser.upsert({"email": "a@example.com"})
+
+    events: list[str] = []
+    register(lambda *_args: events.append("once"), upsert="ignore")
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UpsertHooksWarning)
+        # the 'error' hook is still registered, so remove it first:
+        hooks = UpsertUser._before_insert if branch == "insert" else UpsertUser._before_update
+        hooks[:] = [hook for hook in hooks if getattr(hook, "__name__", "") != "once_hook"]
+        UpsertUser.upsert({"email": "a@example.com"})
+    assert events == []
+
+
+def test_affected_set_can_be_narrowed_inside_hook(upsert_db: RecordingDAL) -> None:
+    first = UpsertUser.insert(email="a@example.com", name="old")
+    second = UpsertUser.insert(email="b@example.com", name="old")
+    seen: dict[str, t.Any] = {}
+
+    def after_update(rows: AffectedSet, _row: OpRow) -> None:
+        narrowed = rows.where(UpsertUser.email == "a@example.com")
+        called = rows(UpsertUser.email == "b@example.com")
+        seen["types"] = (type(narrowed).__name__, type(called).__name__)
+        seen["narrowed"] = narrowed.select(UpsertUser.id).column(UpsertUser.id)
+        seen["called"] = called.select(UpsertUser.id).column(UpsertUser.id)
+        seen["none"] = rows.where(None) is rows
+
+    UpsertUser.after_update(after_update)
+    assert upsert_db(UpsertUser.name == "old").update(name="new") == 2
+    assert seen == {
+        "types": ("UpdateSet", "UpdateSet"),
+        "narrowed": [first.id],
+        "called": [second.id],
+        "none": True,
+    }
+
+
+@pytest.mark.parametrize("primarykey", [["k"], ["k", "n"]])
+def test_keyed_tables_support_after_update_hooks(upsert_db: RecordingDAL, primarykey: list[str]) -> None:
+    from pydal import Field
+
+    table = upsert_db.define_table(
+        f"upsert_keyed_{len(primarykey)}",
+        Field("k", "string", length=32),
+        Field("n", "integer"),
+        Field("v", "integer"),
+        primarykey=primarykey,
+    )
+    table.insert(k="a", n=1, v=0)
+    table.insert(k="a", n=2, v=0) if len(primarykey) > 1 else table.insert(k="b", n=2, v=0)
+    seen: list[t.Any] = []
+
+    def after_update(rows: AffectedSet, _row: OpRow) -> None:
+        seen.extend(rows.affected_ids)
+        assert rows.count() == len(rows.affected_ids)
+
+    table._after_update.append(after_update)
+    assert upsert_db(table.n == 1).update(v=5) == 1
+    expected = "a" if len(primarykey) == 1 else ("a", 1)
+    assert seen == [expected]
+    assert upsert_db(table.v == 5).count() == 1
+
+
+@pytest.mark.parametrize("upsert_db", ["sqlite"], indirect=True)
+def test_update_without_returning_is_restricted_to_selected_rows(tmp_path: Path) -> None:
+    # simulate MySQL / SQLite < 3.35 on a file database, so a second connection can write in between
+    uri = f"sqlite://{tmp_path / 'race.sqlite'}"
+    db = RecordingDAL(uri, enable_typedal_caching=False, folder=str(tmp_path))
+    other = DAL(uri, folder=str(tmp_path))
+    db.statements = []
+
+    class RaceRow(TypedTable):
+        name: str
+
+    try:
+        db.define(RaceRow)
+        db.commit()
+        other.define_table("race_row", Field("name"), migrate=False)
+        db._adapter.dialect.update_returning_supported = False
+        first = RaceRow.insert(name="old")
+        db.commit()
+        ids: list[int] = []
+        RaceRow.after_update(lambda rows, _row: ids.extend(rows.affected_ids))
+
+        original_execute = db._adapter.execute
+
+        def execute(sql: str, *args: t.Any, **kwargs: t.Any) -> t.Any:
+            if sql.startswith("UPDATE"):
+                # a concurrent writer adds a matching row between the SELECT and the UPDATE
+                other.race_row.insert(name="old")
+                other.commit()
+            return original_execute(sql, *args, **kwargs)
+
+        db._adapter.execute = execute
+        assert db(RaceRow.name == "old").update(name="new") == 1
+        db._adapter.execute = original_execute
+        assert ids == [first.id]
+        assert RaceRow.where(name="old").count() == 1  # the late row was not touched
+    finally:
+        db.rollback()
+        db.close()
+        other.close()
+
+
+class CachedUpsert(TypedTable):
+    """Module level: cached rows are pickled, which needs an importable class."""
+
+    code = TypedField(str, unique=True)
+    status: str
+
+
+@pytest.mark.parametrize("upsert_db", ["sqlite", "postgres", "mysql"], indirect=True)
+def test_upsert_invalidates_cache(upsert_db: RecordingDAL, tmp_path: Path) -> None:
+    # the shared fixture disables caching; this one needs it
+    uri = str(upsert_db._uri)
+    db = TypeDAL(uri, enable_typedal_caching=True, folder=str(tmp_path / "cached"))
+    try:
+        db.define(CachedUpsert)
+        first = CachedUpsert.upsert({"code": "a"}, status="draft")
+        drafts = CachedUpsert.where(status="draft").cache()
+        everything = CachedUpsert.where(CachedUpsert.id > 0).cache()
+        assert [row.id for row in drafts.collect()] == [first.id]
+        assert len(everything.collect()) == 1
+        assert drafts.collect().metadata["cache"]["status"] == "cached"
+        assert everything.collect().metadata["cache"]["status"] == "cached"
+
+        # update branch that moves the row out of the cached predicate:
+        updated = CachedUpsert.upsert({"code": "a"}, status="published")
+        assert updated.id == first.id
+        refreshed = drafts.collect()
+        assert refreshed.metadata["cache"]["status"] == "fresh"
+        assert not refreshed
+
+        # insert branch:
+        CachedUpsert.upsert({"code": "b"}, status="draft")
+        assert everything.collect().metadata["cache"]["status"] == "fresh"
+        assert len(everything.collect()) == 2
+    finally:
+        db.rollback()
+        # only our own table: the typedal_cache tables are shared with the rest of the suite on Postgres,
+        # and dropping them would wait on other connections' locks
+        if "cached_upsert" in db.tables:
+            db.cached_upsert.drop()
+        db.commit()
+        db.close()
+        CachedUpsert.unbind()
+
+
+@pytest.mark.parametrize("upsert_db", ["sqlite"], indirect=True)
+def test_paths_without_update_returning(upsert_db: RecordingDAL) -> None:
+    # what MySQL and SQLite < 3.35 do, checked on SQLite so it runs without a MySQL container
+    upsert_db._adapter.dialect.update_returning_supported = False
+    ids: list[int] = []
+    UpsertUser.after_update(lambda rows, _row: ids.extend(rows.affected_ids))
+
+    assert upsert_db(UpsertUser.email == "missing@example.com").update(name="x") == 0
+    original = UpsertUser.upsert({"email": "a@example.com"}, name="old")
+    updated = UpsertUser.upsert({"email": "a@example.com"}, name="new")
+    assert (updated.id, updated.name) == (original.id, "new")
+    assert ids == [original.id]
+
+
+def test_upload_without_pydal_autodelete_hook_keeps_old_file(upsert_db: RecordingDAL, tmp_path: Path) -> None:
+    from pydal.helpers.methods import delete_uploaded_files
+
+    from src.typedal.fields import UploadField
+
+    @upsert_db.define()
+    class UpsertKeepFile(TypedTable):
+        code = TypedField(str, unique=True)
+        attachment = UploadField(uploadfolder=str(tmp_path), autodelete=True)
+
+    UpsertKeepFile._before_update.remove(delete_uploaded_files)
+    first = UpsertKeepFile.upsert({"code": "a"}, attachment={"data": b"one", "filename": "one.txt"})
+    UpsertKeepFile.upsert({"code": "a"}, attachment={"data": b"two", "filename": "two.txt"})
+    assert (tmp_path / first.attachment).exists()

@@ -2,10 +2,9 @@
 
 [![PyPI - Version](https://img.shields.io/pypi/v/TypeDAL.svg)](https://pypi.org/project/TypeDAL)
 [![PyPI - Python Version](https://img.shields.io/pypi/pyversions/TypeDAL.svg)](https://pypi.org/project/TypeDAL)  
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)  
-[![su6 checks](https://github.com/trialandsuccess/TypeDAL/actions/workflows/su6.yml/badge.svg?branch=development)](https://github.com/trialandsuccess/TypeDAL/actions)
-![coverage.svg](coverage.svg)
+[![checks](https://github.com/trialandsuccess/TypeDAL/actions/workflows/checks.yml/badge.svg?branch=development)](https://github.com/trialandsuccess/TypeDAL/actions)
 
 Typing support for [PyDAL](http://web2py.com/books/default/chapter/29/6).
 This package aims to improve the typing support for PyDAL. By using classes instead of the define_table method,
