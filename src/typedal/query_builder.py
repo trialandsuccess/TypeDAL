@@ -39,6 +39,7 @@ from .types import (
     OrderBy,
     Permissions,
     Query,
+    QueryLike,
     Row,
     Rows,
     Select,
@@ -50,14 +51,16 @@ from .types import (
 )
 from .warnings import NoopQueryWarning, UnusedWindowWarning
 
-_BOOL_OPS = frozenset({"_and", "_or", "_not"})
+_BOOL_OPS = frozenset(("_and", "_or", "_not"))
 
 
-def _as_join_list(value: t.Any) -> list[t.Any]:
+def _as_join_list(value: Expression | Table | t.Sequence[Expression | Table] | None) -> list[Expression | Table]:
     """Normalize join/left: PyDAL accepts a bare expression as well as a list of them."""
-    if not value:
+    if value is None:
         return []
-    return list(value) if isinstance(value, (list, tuple)) else [value]
+    if isinstance(value, (Expression, Table)):
+        return [value]
+    return list(value)
 
 
 def _find_table(parents: dict[str, str], name: str) -> str:
@@ -74,7 +77,7 @@ def _link_tables(parents: dict[str, str], names: t.Iterable[str]) -> None:
         parents[_find_table(parents, name)] = anchor
 
 
-def _walk_tables(node: t.Any, tables: set[str], parents: dict[str, str]) -> set[str]:
+def _walk_tables(node: object, tables: set[str], parents: dict[str, str]) -> set[str]:
     """
     Collect the tables referenced by node (like adapter.tables) and link the tables of every comparison.
 
@@ -636,7 +639,8 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         db = self._get_db()
         from .updates import UpdateSet
 
-        return t.cast(UpdateSet, db(self.query)).update_ids(**fields)
+        # a TypedTable's primary key is always its integer id
+        return t.cast(list[int], t.cast(UpdateSet, db(self.query)).update_ids(**fields))
 
     def _update(self, **fields: t.Any) -> str:
         db = self._get_db()
@@ -668,7 +672,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
 
     def _validate_joins(
         self,
-        conditions: list[t.Any],
+        conditions: list[QueryLike],
         fields: list[t.Any],
         options: SelectKwargs,
     ) -> None:
@@ -1431,7 +1435,7 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         # internal, shared logic between .count and ._count
         model = self.model
         query = self.query
-        conditions: list[t.Any] = []
+        conditions: list[QueryLike] = []
         for key, relation in self.relationships.items():
             if not relation.condition:
                 continue

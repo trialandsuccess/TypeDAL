@@ -226,7 +226,8 @@ def _remove_cache_after_update(rows: Set, tablename: str) -> None:
     if affected_ids is None:
         remove_cache_for_table(tablename)
     else:
-        remove_cache(affected_ids, tablename)
+        # cache dependencies only exist for TypedTables, whose primary key is always the integer id
+        remove_cache(t.cast(list[int], affected_ids), tablename)
 
 
 def get_expire(

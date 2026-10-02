@@ -25,6 +25,7 @@ from .helpers import all_dict, classproperty, filter_out, throw
 from .serializers import as_json
 from .types import (
     UPSERT_KEY_TYPES,
+    AnyCallable,
     AnyDict,
     Condition,
     Expression,
@@ -905,7 +906,7 @@ class TableMeta(type):
         Add a before insert hook that only fires once and then removes itself (see before_insert for `upsert`).
         """
 
-        def register(hook: t.Callable[..., t.Any]) -> None:
+        def register(hook: AnyCallable) -> None:
             register_before_hook(cls._before_insert, cls._upsert_hook_registrations, "insert", hook, upsert)
 
         return cls._hook_once(cls._before_insert, fn, register)  # type: ignore
@@ -954,7 +955,7 @@ class TableMeta(type):
         Add a before update hook that only fires once and then removes itself (see before_update for `upsert`).
         """
 
-        def register(hook: t.Callable[..., t.Any]) -> None:
+        def register(hook: AnyCallable) -> None:
             register_before_hook(cls._before_update, cls._upsert_hook_registrations, "update", hook, upsert)
 
         return cls._hook_once(cls._before_update, fn, register)  # type: ignore

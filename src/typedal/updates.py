@@ -15,7 +15,7 @@ from pydal.dialects.postgre import PostgreDialect
 from pydal.dialects.sqlite import SQLiteDialect
 from pydal.helpers._internals import Dispatcher
 
-from .types import Field, OpRow, Query, Set, Table
+from .types import Field, OpRow, PrimaryKey, Query, Set, Table, UpsertKeyValue
 
 update_dialects = Dispatcher("update returning dialect")
 
@@ -25,7 +25,7 @@ class UpdateResult:
     """Rowcount and IDs, collected only when requested or needed by after-hooks."""
 
     count: int
-    ids: list[t.Any]
+    ids: list[PrimaryKey]
 
 
 class UpdateAdapter(t.Protocol):
@@ -90,17 +90,19 @@ def key_fields(table: Table) -> list[Field]:
     return [table._id]
 
 
-def _key_value(fields: list[Field], values: t.Sequence[t.Any]) -> t.Any:
+def _key_value(fields: list[Field], values: t.Sequence[UpsertKeyValue]) -> PrimaryKey:
     """A scalar for single-column keys (so integer ids stay plain ints), a tuple for composite keys."""
     return values[0] if len(fields) == 1 else tuple(values)
 
 
-def ids_query(table: Table, ids: list[t.Any]) -> Query:
+def ids_query(table: Table, ids: list[PrimaryKey]) -> Query:
     """Match exactly the rows identified by `ids` (as produced by `_key_value`)."""
     fields = key_fields(table)
     if len(fields) == 1 or not ids:
         return fields[0].belongs(ids)
-    matches = [functools.reduce(operator.and_, map(operator.eq, fields, values)) for values in ids]
+    # composite keys (more than one key field) are always tuples, see _key_value
+    composite = [t.cast(tuple[UpsertKeyValue, ...], key) for key in ids]
+    matches = [functools.reduce(operator.and_, map(operator.eq, fields, key)) for key in composite]
     return t.cast(Query, functools.reduce(operator.or_, matches))
 
 
@@ -139,7 +141,7 @@ def install_update(adapter: BaseAdapter) -> None:
     setattr(adapter, "update_with_ids", types.MethodType(_update_with_ids, adapter))
 
 
-def affected_set(table: Table, ids: list[t.Any]) -> AffectedSet:
+def affected_set(table: Table, ids: list[PrimaryKey]) -> AffectedSet:
     """After-hooks must still see rows that no longer match a common filter."""
     return AffectedSet(table._db, ids_query(table, ids), ids)
 
@@ -169,7 +171,7 @@ class UpdateSet(Set):
                 hook(rows, row)
         return result
 
-    def update_ids(self, **fields: t.Any) -> list[t.Any]:
+    def update_ids(self, **fields: t.Any) -> list[PrimaryKey]:
         """Update the matching rows, running hooks, and return the primary keys of the updated rows."""
         table = self.db._adapter.get_table(self.query)
         row = table._fields_and_values_for_update(fields)
@@ -201,7 +203,7 @@ class UpdateSet(Set):
 class AffectedSet(UpdateSet):
     """An ID-restricted hook Set carrying the IDs already obtained by the write."""
 
-    def __init__(self, db: DAL, query: Query, affected_ids: list[t.Any]):
+    def __init__(self, db: DAL, query: Query, affected_ids: list[PrimaryKey]):
         """Match the affected rows by key, ignoring common filters (the update may have moved them out)."""
         super().__init__(db, query, ignore_common_filters=True)
         self.affected_ids = affected_ids

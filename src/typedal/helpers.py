@@ -15,6 +15,7 @@ from collections import ChainMap
 from decimal import Decimal, InvalidOperation
 
 from pydal import DAL
+from pydal.adapters.base import BaseAdapter
 
 from .types import AnyDict, Expression, Field, Row, Table, Template
 
@@ -625,7 +626,7 @@ def throw(exc: BaseException) -> t.Never:
     raise exc
 
 
-def _coerce_decimal(value: t.Any) -> t.Any:
+def _coerce_decimal(value: object) -> object:
     if value is None or isinstance(value, (Decimal, int, float)):
         return value
     try:
@@ -637,7 +638,7 @@ def _coerce_decimal(value: t.Any) -> t.Any:
     return number
 
 
-def install_decimal_guard(adapter: t.Any) -> None:
+def install_decimal_guard(adapter: BaseAdapter) -> None:
     """
     Coerce values for decimal fields before PyDAL renders them into SQL.
 
@@ -650,7 +651,7 @@ def install_decimal_guard(adapter: t.Any) -> None:
         return
     represent = representer.represent
 
-    def guarded(value: t.Any, field_type: t.Any) -> t.Any:
+    def guarded(value: object, field_type: object) -> object:
         if isinstance(field_type, str) and field_type.startswith("decimal"):
             value = _coerce_decimal(value)
         return represent(value, field_type)

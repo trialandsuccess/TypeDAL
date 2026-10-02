@@ -14,7 +14,7 @@ from pydal.helpers._internals import Dispatcher
 from pydal.helpers.methods import attempt_upload, delete_uploaded_files
 
 from .exceptions import UpsertAmbiguityError, UpsertHookError, UpsertKeyError
-from .types import AnyDict, Field, OpRow, Reference, Row, Table, UpsertHookPolicy
+from .types import AnyCallable, AnyDict, Field, OpRow, Query, Reference, Row, Table, UpsertHookPolicy
 from .updates import UpdateDialect, affected_set
 from .warnings import UpsertHooksWarning
 
@@ -51,7 +51,7 @@ def register_before_hook(
     registrations.append(HookRegistration(branch, hook, policy))
 
 
-def is_pydal_upload_hook(hook: t.Callable[..., t.Any]) -> bool:
+def is_pydal_upload_hook(hook: AnyCallable) -> bool:
     """Recognize the upload before-hooks PyDAL registers on every table; upsert handles uploads itself."""
     if hook is delete_uploaded_files:
         return True
@@ -241,17 +241,17 @@ def _is_filtered(table: Table) -> bool:
     return bool(table._common_filter) or (tenant in table.fields and table[tenant].default is not None)
 
 
-def _update_returning_row(adapter: SQLAdapter, table: Table, query: t.Any, fields: list[tuple[Field, t.Any]]) -> t.Any:
-    """Update and read the row back in one statement where UPDATE ... RETURNING exists (Postgres, SQLite 3.35+)."""
+def _update_returning_row(
+    adapter: SQLAdapter, table: Table, query: Query | None, fields: list[tuple[Field, t.Any]]
+) -> Row | None:
+    """Update and read the row back in one statement; only for dialects with UPDATE ... RETURNING."""
     dialect = t.cast(UpdateDialect, adapter.dialect)
-    if not getattr(dialect, "update_returning_supported", False):
-        return NotImplemented
     columns = list(table)
     sql = dialect.update_returning(adapter._update(table, query, fields), ", ".join(field._rname for field in columns))
     adapter.execute(sql)
     returned = adapter.fetchall()
     colnames = [f"{table._tablename}.{field.name}" for field in columns]
-    return adapter.parse(returned, columns, colnames).first() if returned else None
+    return t.cast(Row | None, adapter.parse(returned, columns, colnames).first()) if returned else None
 
 
 def execute_upsert(table: Table, key: AnyDict, values: AnyDict) -> UpsertResult:
@@ -284,8 +284,9 @@ def execute_upsert(table: Table, key: AnyDict, values: AnyDict) -> UpsertResult:
         rows = affected_set(table, [int(existing.id)])
         if autodelete:
             delete_uploaded_files(rows, {name: values[name] for name in autodelete})
-        record = _update_returning_row(adapter, table, rows.query, operation.op_values())
-        if record is NotImplemented:
+        if getattr(adapter.dialect, "update_returning_supported", False):  # Postgres, SQLite 3.35+
+            record = _update_returning_row(adapter, table, rows.query, operation.op_values())
+        else:
             adapter.update(table, rows.query, operation.op_values())
             record = rows.select(table.ALL).first()
         if record is None:
