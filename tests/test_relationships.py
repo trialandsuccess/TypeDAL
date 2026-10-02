@@ -10,8 +10,7 @@ import pytest
 
 from src.typedal import Relationship, TypeDAL, TypedField, TypedRows, TypedTable, relationship
 from src.typedal.caching import (
-    _TypedalCache,
-    _TypedalCacheDependency,
+    cache_models,
     clear_cache,
     clear_expired,
     remove_cache,
@@ -570,6 +569,7 @@ def test_condition_and_counts_match_combined_condition():
 
 def test_caching():
     _setup_data()
+    _TypedalCache, _TypedalCacheDependency = cache_models(db)
 
     uncached = User.join().collect_or_fail()
     cached = User.cache().join().collect_or_fail()  # not actually cached yet!
@@ -656,8 +656,8 @@ def test_caching():
     assert User.cache().join().paginate(limit=1, page=2).metadata["cache"].get("status") == "cached"
     assert User.cache().join().paginate(limit=1, page=2).metadata["cache"].get("cached_at")
 
-    remove_cache(1, "user")
-    remove_cache([2], "user")
+    remove_cache(db, 1, "user")
+    remove_cache(db, [2], "user")
 
     assert User.cache("id").join().paginate(limit=1, page=1).metadata["cache"].get("status") == "fresh"
     assert User.cache().join().paginate(limit=1, page=2).metadata["cache"].get("status") == "fresh"
@@ -672,7 +672,7 @@ def test_caching():
     assert _TypedalCache.count() > 0
     assert _TypedalCacheDependency.count() > 0
 
-    clear_cache()
+    clear_cache(db)
     assert _TypedalCache.count() == 0
     assert _TypedalCacheDependency.count() == 0
 
@@ -693,8 +693,8 @@ def test_caching():
 
     time.sleep(3)  # for TTL
 
-    assert clear_expired()
-    assert not clear_expired()
+    assert clear_expired(db)
+    assert not clear_expired(db)
 
     assert not _TypedalCache.count()
     assert not _TypedalCacheDependency.count()

@@ -131,9 +131,10 @@ class TableDefinitionBuilder:
         if not tablename.startswith("typedal_") and cache_dependency:
             from .caching import _remove_cache, _remove_cache_after_update, remove_cache_for_table
 
-            table._after_insert.append(lambda _row, _id: remove_cache_for_table(tablename))
-            table._after_update.append(lambda rows, _row: _remove_cache_after_update(rows, tablename))
-            table._before_delete.append(lambda s: _remove_cache(s, tablename))
+            db = self.db
+            table._after_insert.append(lambda _row, _id: remove_cache_for_table(db, tablename))
+            table._after_update.append(lambda rows, _row: _remove_cache_after_update(db, rows, tablename))
+            table._before_delete.append(lambda s: _remove_cache(db, s, tablename))
 
         return cls
 

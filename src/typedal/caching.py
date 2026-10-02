@@ -11,7 +11,6 @@ import typing as t
 import dill  # nosec
 
 from .fields import TypedField
-from .helpers import throw
 from .rows import TypedRows
 from .tables import TypedTable
 from .types import CacheStatus, Field, Query, Rows, Set
@@ -54,6 +53,43 @@ class _TypedalCacheDependency(TypedTable):
     entry: TypedField[_TypedalCache]
     table: TypedField[str]
     idx: TypedField[int]
+
+
+CACHE_TABLE = "typedal_cache"
+CACHE_DEPENDENCY_TABLE = "typedal_cache_dependency"
+
+CacheModels = tuple[type[_TypedalCache], type[_TypedalCacheDependency]]
+
+
+def define_cache_models(db: "TypeDAL") -> CacheModels:
+    """
+    Define the cache tables on `db`, using subclasses that belong to this database only.
+
+    `db.define` binds the class it is given, so defining the module-level `_TypedalCache` itself on
+    every database would leave it bound to whichever database was created last (and `close()` on
+    any of them would unbind it for all). A fresh subclass per database keeps the bindings apart,
+    while the table names stay `typedal_cache` and `typedal_cache_dependency`.
+    """
+    cache: type[_TypedalCache] = type("_TypedalCache", (_TypedalCache,), {"__module__": __name__})
+    dependency: type[_TypedalCacheDependency] = type(
+        "_TypedalCacheDependency", (_TypedalCacheDependency,), {"__module__": __name__}
+    )
+    return db.try_define(cache), db.try_define(dependency)
+
+
+def cache_models(db: "TypeDAL") -> CacheModels:
+    """
+    Get the cache models bound to `db`.
+
+    Raises:
+        RuntimeError: when `db` was created with caching disabled.
+    """
+    cache = db._class_map.get(CACHE_TABLE)
+    dependency = db._class_map.get(CACHE_DEPENDENCY_TABLE)
+    if cache is None or dependency is None:
+        raise RuntimeError("TypeDAL caching is not enabled for this database (enable_typedal_caching=False)!")
+
+    return t.cast(type[_TypedalCache], cache), t.cast(type[_TypedalCacheDependency], dependency)
 
 
 def prepare(field: t.Any) -> str:
@@ -153,71 +189,72 @@ def _determine_dependencies(instance: TypedRows[t.Any], rows: Rows, depends_on: 
     return _get_dependency_ids(rows, dependency_keys)
 
 
-def remove_cache(idx: int | t.Iterable[int], table: str) -> None:
+def remove_cache(db: "TypeDAL", idx: int | t.Iterable[int], table: str) -> None:
     """
     Remove any cache entries that are dependant on one or multiple indices of a table.
     """
     if not isinstance(idx, t.Iterable):
         idx = [idx]
 
-    related = (
-        _TypedalCacheDependency.where(table=table).where(lambda row: row.idx.belongs(idx)).select("entry").to_sql()
-    )
+    cache, dependency = cache_models(db)
+    related = dependency.where(table=table).where(lambda row: row.idx.belongs(idx)).select("entry").to_sql()
 
-    _TypedalCache.where(_TypedalCache.id.belongs(related)).delete()
+    cache.where(cache.id.belongs(related)).delete()
 
 
-def remove_cache_for_table(table: str) -> None:
+def remove_cache_for_table(db: "TypeDAL", table: str | type[TypedTable]) -> None:
     """
     Remove all cache entries that depend on a table.
 
     Used for inserts where we don't know which cached queries
     the new row would match.
     """
-    related = _TypedalCacheDependency.where(table=table).select("entry").to_sql()
-    _TypedalCache.where(_TypedalCache.id.belongs(related)).delete()
+    if not isinstance(table, str):
+        table = str(table._table)
+
+    cache, dependency = cache_models(db)
+    related = dependency.where(table=table).select("entry").to_sql()
+    cache.where(cache.id.belongs(related)).delete()
 
 
-def clear_cache() -> None:
+def clear_cache(db: "TypeDAL") -> None:
     """
     Remove everything from the cache.
 
     Immediately commits
     """
-    db: TypeDAL = _TypedalCache._db or throw(
-        RuntimeError("@define or db.define is not called on typedal caching classes yet!")
-    )
-
-    _TypedalCache.truncate("RESTART IDENTITY CASCADE")
+    cache, _ = cache_models(db)
+    cache.truncate("RESTART IDENTITY CASCADE")
     db.commit()
 
 
-def clear_expired() -> int:
+def clear_expired(db: "TypeDAL") -> int:
     """
     Remove all expired items from the cache.
 
     By default, expired items are only removed when trying to access them.
     """
+    cache, _ = cache_models(db)
     now = get_now()
-    return len(_TypedalCache.where(_TypedalCache.expires_at != None).where(_TypedalCache.expires_at < now).delete())
+    return len(cache.where(cache.expires_at != None).where(cache.expires_at < now).delete())
 
 
-def _remove_cache(s: Set, tablename: str) -> None:
+def _remove_cache(db: "TypeDAL", s: Set, tablename: str) -> None:
     """
     Obtain IDs before-delete, or after-update when PyDAL supplies a plain Set.
     A plain Set retains its original query, which may no longer match updated rows.
     """
     indeces = s.select("id").column("id")
-    remove_cache(indeces, tablename)
+    remove_cache(db, indeces, tablename)
 
 
-def _remove_cache_after_update(rows: Set, tablename: str) -> None:
+def _remove_cache_after_update(db: "TypeDAL", rows: Set, tablename: str) -> None:
     """Reuse affected IDs when available, otherwise retain PyDAL's query-based invalidation."""
     affected_ids = getattr(rows, "affected_ids", None)
     if affected_ids is None:
-        _remove_cache(rows, tablename)
+        _remove_cache(db, rows, tablename)
     else:
-        remove_cache(affected_ids, tablename)
+        remove_cache(db, affected_ids, tablename)
 
 
 def get_expire(
@@ -243,6 +280,7 @@ def get_expire(
 
 
 def _insert_cache_entry(
+    db: "TypeDAL",
     key: str,
     data: t.Any,
     expires_at: dt.datetime | None,
@@ -257,13 +295,14 @@ def _insert_cache_entry(
     into a half-applied one. The entry lands with the caller's own next commit instead - and is
     rolled back with everything else when there isn't one, which is the correct outcome for a cache.
     """
-    entry = _TypedalCache.insert(
+    cache, dependency = cache_models(db)
+    entry = cache.insert(
         key=key,
         data=dill.dumps(data),
         expires_at=expires_at,
     )
 
-    _TypedalCacheDependency.bulk_insert([{"entry": entry, "table": table, "idx": idx} for table, idx in deps])
+    dependency.bulk_insert([{"entry": entry, "table": table, "idx": idx} for table, idx in deps])
 
 
 def save_to_cache[T_TypedTable: TypedTable](
@@ -281,7 +320,7 @@ def save_to_cache[T_TypedTable: TypedTable](
         expires_at = get_expire(expires_at=expires_at, ttl=ttl) or c.get("expires_at")
         deps = _determine_dependencies(instance, rows, c["depends_on"])
 
-        _insert_cache_entry(key, instance, expires_at, deps)
+        _insert_cache_entry(instance.db, key, instance, expires_at, deps)
 
         instance.metadata["cache"]["status"] = "fresh"
     return instance
@@ -305,7 +344,7 @@ class CacheMiss:
 _CACHE_SENTINEL: t.Final[CacheMiss] = CacheMiss()
 
 
-def _fetch_cached_payload(key: str) -> tuple[t.Any, t.Any] | None:
+def _fetch_cached_payload(key: str, db: "TypeDAL") -> tuple[t.Any, t.Any] | None:
     """
     Retrieves and validates a cache entry from the database.
 
@@ -314,11 +353,13 @@ def _fetch_cached_payload(key: str) -> tuple[t.Any, t.Any] | None:
 
     Args:
         key: The unique string identifier for the cache entry.
+        db: The database whose cache tables to read.
 
     Returns:
         A tuple of (deserialized_data, db_row) if valid; None if missing or expired.
     """
-    row = _TypedalCache.where(key=key).first()
+    cache, _ = cache_models(db)
+    row = cache.where(key=key).first()
     if not row:
         return None
 
@@ -349,7 +390,7 @@ def _load_from_cache(key: str, db: "TypeDAL") -> t.Any | None:
     Returns:
         The re-hydrated model instance, or None if the load fails.
     """
-    result = _fetch_cached_payload(key)
+    result = _fetch_cached_payload(key, db)
     if not result:
         return None
 
@@ -366,7 +407,7 @@ def _load_from_cache(key: str, db: "TypeDAL") -> t.Any | None:
     return inst
 
 
-def _load_memoize_from_cache(key: str) -> t.Any:
+def _load_memoize_from_cache(key: str, db: "TypeDAL") -> t.Any:
     """
     Low-level retrieval for memoized results.
 
@@ -374,12 +415,13 @@ def _load_memoize_from_cache(key: str) -> t.Any:
 
     Args:
         key: Cache key.
+        db: The database whose cache tables to read.
 
     Returns:
         The deserialized data or the _CACHE_SENTINEL object if not found.
     """
     with contextlib.suppress(Exception):
-        if result := _fetch_cached_payload(key):
+        if result := _fetch_cached_payload(key, db):
             return result[0]
 
     return _CACHE_SENTINEL
@@ -422,14 +464,13 @@ def humanize_bytes(size: int | float) -> str:
     return f"{size:.2f} {suffixes[suffix_index]}"
 
 
-def _expired_and_valid_query() -> tuple[str, str]:
+def _expired_and_valid_query(db: "TypeDAL") -> tuple[str, str]:
+    cache, _ = cache_models(db)
     expired_items = (
-        _TypedalCache.where(lambda row: (row.expires_at < get_now()) & (row.expires_at != None))
-        .select(_TypedalCache.id)
-        .to_sql()
+        cache.where(lambda row: (row.expires_at < get_now()) & (row.expires_at != None)).select(cache.id).to_sql()
     )
 
-    valid_items = _TypedalCache.where(~_TypedalCache.id.belongs(expired_items)).select(_TypedalCache.id).to_sql()
+    valid_items = cache.where(~cache.id.belongs(expired_items)).select(cache.id).to_sql()
 
     return expired_items, valid_items
 
@@ -451,11 +492,12 @@ RowStats = t.TypedDict(
 
 
 def _row_stats(db: "TypeDAL", table: str, query: Query) -> RowStats:
-    count_field = _TypedalCacheDependency.entry.count()
-    stats: TypedRows[_TypedalCacheDependency] = db(query & (_TypedalCacheDependency.table == table)).select(
-        _TypedalCacheDependency.entry,
+    _, dependency = cache_models(db)
+    count_field = dependency.entry.count()
+    stats: TypedRows[_TypedalCacheDependency] = db(query & (dependency.table == table)).select(
+        dependency.entry,
         count_field,
-        groupby=_TypedalCacheDependency.entry,
+        groupby=dependency.entry,
     )
     return {
         "Dependent Cache Entries": len(stats),
@@ -466,14 +508,15 @@ def row_stats(db: "TypeDAL", table: str, row_id: str) -> Stats[RowStats]:
     """
     Collect caching stats for a specific table row (by ID).
     """
-    expired_items, valid_items = _expired_and_valid_query()
+    _, dependency = cache_models(db)
+    expired_items, valid_items = _expired_and_valid_query(db)
 
-    query = _TypedalCacheDependency.idx == row_id
+    query = dependency.idx == row_id
 
     return {
         "total": _row_stats(db, table, query),
-        "valid": _row_stats(db, table, _TypedalCacheDependency.entry.belongs(valid_items) & query),
-        "expired": _row_stats(db, table, _TypedalCacheDependency.entry.belongs(expired_items) & query),
+        "valid": _row_stats(db, table, dependency.entry.belongs(valid_items) & query),
+        "expired": _row_stats(db, table, dependency.entry.belongs(expired_items) & query),
     }
 
 
@@ -487,11 +530,12 @@ TableStats = t.TypedDict(
 
 
 def _table_stats(db: "TypeDAL", table: str, query: Query) -> TableStats:
-    count_field = _TypedalCacheDependency.entry.count()
-    stats: TypedRows[_TypedalCacheDependency] = db(query & (_TypedalCacheDependency.table == table)).select(
-        _TypedalCacheDependency.entry,
+    _, dependency = cache_models(db)
+    count_field = dependency.entry.count()
+    stats: TypedRows[_TypedalCacheDependency] = db(query & (dependency.table == table)).select(
+        dependency.entry,
         count_field,
-        groupby=_TypedalCacheDependency.entry,
+        groupby=dependency.entry,
     )
     return {
         "Dependent Cache Entries": len(stats),
@@ -503,12 +547,13 @@ def table_stats(db: "TypeDAL", table: str) -> Stats[TableStats]:
     """
     Collect caching stats for a table.
     """
-    expired_items, valid_items = _expired_and_valid_query()
+    _, dependency = cache_models(db)
+    expired_items, valid_items = _expired_and_valid_query(db)
 
     return {
-        "total": _table_stats(db, table, _TypedalCacheDependency.id > 0),
-        "valid": _table_stats(db, table, _TypedalCacheDependency.entry.belongs(valid_items)),
-        "expired": _table_stats(db, table, _TypedalCacheDependency.entry.belongs(expired_items)),
+        "total": _table_stats(db, table, dependency.id > 0),
+        "valid": _table_stats(db, table, dependency.entry.belongs(valid_items)),
+        "expired": _table_stats(db, table, dependency.entry.belongs(expired_items)),
     }
 
 
@@ -523,14 +568,15 @@ GenericStats = t.TypedDict(
 
 
 def _calculate_stats(db: "TypeDAL", query: Query) -> GenericStats:
-    sum_len_field = _TypedalCache.data.len().sum()
+    cache, dependency = cache_models(db)
+    sum_len_field = cache.data.len().sum()
     size_row = db(query).select(sum_len_field).first()
 
     size = size_row[sum_len_field] if size_row else 0
 
     return {
-        "entries": _TypedalCache.where(query).count(),
-        "dependencies": db(_TypedalCacheDependency.entry.belongs(query)).count(),
+        "entries": cache.where(query).count(),
+        "dependencies": db(dependency.entry.belongs(query)).count(),
         "size": humanize_bytes(size),
     }
 
@@ -539,12 +585,13 @@ def calculate_stats(db: "TypeDAL") -> Stats[GenericStats]:
     """
     Collect generic caching stats.
     """
-    expired_items, valid_items = _expired_and_valid_query()
+    cache, _ = cache_models(db)
+    expired_items, valid_items = _expired_and_valid_query(db)
 
     return {
-        "total": _calculate_stats(db, _TypedalCache.id > 0),
-        "valid": _calculate_stats(db, _TypedalCache.id.belongs(valid_items)),
-        "expired": _calculate_stats(db, _TypedalCache.id.belongs(expired_items)),
+        "total": _calculate_stats(db, cache.id > 0),
+        "valid": _calculate_stats(db, cache.id.belongs(valid_items)),
+        "expired": _calculate_stats(db, cache.id.belongs(expired_items)),
     }
 
 
@@ -593,7 +640,7 @@ def memoize[T: t.Any](
     _, hashed_key = create_and_hash_cache_key(key, *[getattr(arg, "id", None) for arg in args], kwargs)
 
     # Try to load from cache
-    cached = _load_memoize_from_cache(hashed_key)
+    cached = _load_memoize_from_cache(hashed_key, db)
     if cached is not _CACHE_SENTINEL:
         return cached, "cached"
     # Cache miss - compute result
@@ -631,6 +678,6 @@ def memoize[T: t.Any](
     else:
         expires_at = get_expire(ttl=ttl)
 
-    _insert_cache_entry(hashed_key, result, expires_at, deps)
+    _insert_cache_entry(db, hashed_key, result, expires_at, deps)
 
     return result, "fresh"

@@ -83,19 +83,24 @@ db.memoize(func, data, ttl=datetime(2026, 1, 7))
 
 ## Cache Maintenance
 
-The `typedal.caching` module provides utilities for cache management:
+The `typedal.caching` module provides utilities for cache management.
+Every database with caching enabled has its own cache tables, so each function takes the database to act on:
 
 ```python
-from typedal.caching import clear_cache, remove_cache_for_table, clear_expired
+from typedal.caching import cache_models, clear_cache, remove_cache_for_table, clear_expired
 
 # Remove all cache entries
-clear_cache()
+clear_cache(db)
 
 # Invalidate all cache entries related to a specific table
-remove_cache_for_table(User)
+remove_cache_for_table(db, User)
 
 # Clean up expired entries only
-clear_expired()
+clear_expired(db)
+
+# The cache models bound to this database, e.g. to count entries:
+Cache, CacheDependency = cache_models(db)
+Cache.count()
 ```
 
 You can also use the CLI:
