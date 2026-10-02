@@ -664,10 +664,10 @@ def cache_clear(
     db = TypeDAL(config=config, migrate=False, fake_migrate=False)
 
     if purge:
-        caching.clear_cache()
+        caching.clear_cache(db)
         print("Emptied cache")
     else:
-        n = caching.clear_expired()
+        n = caching.clear_expired(db)
         print(f"Removed {n} expired from cache")
 
     db.commit()
