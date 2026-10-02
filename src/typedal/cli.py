@@ -227,7 +227,8 @@ def setup(
     data.pop("connection", None)
 
     # ignore any None:
-    old_contents["tool"]["typedal"] = {k: v for k, v in data.items() if v is not None}
+    # older tomlkit types this lookup as `Item` (not subscriptable); [tool] is always a table:
+    t.cast(AnyDict, old_contents["tool"])["typedal"] = {k: v for k, v in data.items() if v is not None}
 
     with toml_path.open("w") as f:
         tomlkit.dump(old_contents, f)
