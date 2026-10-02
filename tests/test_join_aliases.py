@@ -99,6 +99,69 @@ def test_count_distinct_joined_field():
     assert Article.join("comments").where(Article.title != "Third").count(distinct=Comment.body) == 2
 
 
+def test_count_distinct_roots_applies_left_join_condition_and():
+    """Distinct root counts include only comments matching the additional join condition."""
+    builder = Article.join("comments", condition_and=lambda _article, comment: comment.body == "meh")
+
+    rows = builder.orderby(Article.id).collect()
+    assert titles(rows) == ["First", "Second", "Third"]
+    assert [[comment.body for comment in row.comments] for row in rows] == [["meh"], [], []]
+    assert builder.count(distinct=True) == 1
+
+
+def test_paginated_join_keeps_filtered_comments():
+    builder = Article.join("comments").where(Comment.body == "nice").orderby(Article.id)
+
+    assert [[comment.body for comment in row.comments] for row in builder.collect()] == [["nice"], ["nice"]]
+
+    for page_number, expected_title in enumerate(["First", "Third"], start=1):
+        page = builder.paginate(limit=1, page=page_number)
+        assert titles(page) == [expected_title]
+        assert [comment.body for comment in page.first().comments] == ["nice"]
+
+
+def test_paginated_left_join_includes_orderby_relationship():
+    builder = Article.join("writer").orderby(~Author.name, Article.id)
+
+    assert titles(builder.collect()) == ["Second", "First", "Third"]
+    assert [titles(builder.paginate(limit=1, page=page)) for page in range(1, 4)] == [
+        ["Second"],
+        ["First"],
+        ["Third"],
+    ]
+
+
+@pytest.mark.parametrize("operation", ["count", "paginate"])
+def test_nested_inner_join_filter_counts_and_paginates(operation):
+    builder = Author.join("articles.comments", method="inner").where(Comment.body == "meh")
+
+    rows = builder.collect()
+    assert [row.name for row in rows] == ["ann"]
+    assert [article.title for article in rows.first().articles] == ["First"]
+    assert [comment.body for comment in rows.first().articles[0].comments] == ["meh"]
+
+    if operation == "count":
+        assert builder.count() == 1
+    else:
+        page = builder.paginate(limit=1)
+        assert [row.name for row in page] == ["ann"]
+        assert (page.pagination["total_items"], page.pagination["total_pages"]) == (1, 1)
+
+
+def test_paginated_join_deduplicates_root_ids_before_limit():
+    builder = Article.join("comments").where(Comment.id > 0).orderby(Comment.id)
+
+    assert titles(builder.collect()) == ["First", "Third"]
+    assert builder.count(distinct=Article.id) == 2
+
+    first_page = builder.paginate(limit=1)
+    second_page = builder.paginate(limit=1, page=2)
+
+    assert (first_page.pagination["total_items"], first_page.pagination["total_pages"]) == (2, 2)
+    assert titles(first_page) == ["First"]
+    assert titles(second_page) == ["Third"]
+
+
 def test_filter_for_missing_left_join_rows():
     builder = Article.join("comments").where(Comment.id == None)
 
