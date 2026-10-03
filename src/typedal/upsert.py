@@ -39,7 +39,7 @@ def register_before_hook(
     policy: UpsertHookPolicy | None,
 ) -> None:
     """Register the callable with PyDAL and the policy with its TypeDAL model."""
-    if policy is not None and policy not in t.get_args(UpsertHookPolicy.__value__):
+    if policy is not None and policy not in t.get_args(UpsertHookPolicy):
         raise ValueError(f"Invalid upsert hook policy: {policy!r}")
     if hook not in hooks:
         hooks.append(hook)

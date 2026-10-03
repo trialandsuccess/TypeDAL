@@ -62,7 +62,7 @@ class _TypedalCacheDependency(TypedTable):
 CACHE_TABLE = "typedal_cache"
 CACHE_DEPENDENCY_TABLE = "typedal_cache_dependency"
 
-CacheModels = tuple[type[_TypedalCache], type[_TypedalCacheDependency]]
+type CacheModels = tuple[type[_TypedalCache], type[_TypedalCacheDependency]]
 
 
 def define_cache_models(db: "TypeDAL") -> CacheModels:
@@ -142,8 +142,8 @@ def create_and_hash_cache_key(*fields: t.Any) -> tuple[str, str]:
     return key, hash_cache_key(key)
 
 
-DependencyTuple = tuple[str, int]  # table + id
-DependencyTupleSet = set[DependencyTuple]
+type DependencyTuple = tuple[str, int]  # table + id
+type DependencyTupleSet = set[DependencyTuple]
 
 
 def _get_table_name(field: Field) -> str:

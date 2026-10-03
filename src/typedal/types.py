@@ -45,6 +45,7 @@ if t.TYPE_CHECKING:
 # Aliases
 # ---------------------------------------------------------------------------
 
+# `type` aliases, except Literals (plain, so t.get_args works) and names used at runtime (isinstance, subclassing)
 Template: t.TypeAlias = TemplateAlias  # explicit export for mypy, NOT a `type` because it's used at runtime
 type AnyCallable = t.Callable[..., t.Any]
 type AnyDict = dict[str, t.Any]
@@ -53,7 +54,7 @@ UPSERT_KEY_TYPES: tuple[type, ...] = t.get_args(UpsertKeyValue.__value__)  # for
 # a row's primary key: its id, the key value for `primarykey=["k"]`, or a tuple of values for composite keys
 type PrimaryKey = UpsertKeyValue | tuple[UpsertKeyValue, ...]
 type UpsertKey = t.Mapping[str, UpsertKeyValue]
-type UpsertHookPolicy = t.Literal["error", "ignore"]
+UpsertHookPolicy = t.Literal["error", "ignore"]
 
 PermissionType = t.Literal["read", "insert", "update", "delete"]
 

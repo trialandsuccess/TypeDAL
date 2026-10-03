@@ -563,7 +563,7 @@ def tabulate_data(data: AnyNestedDict) -> None:
     print(tabulate(flattened_data, headers="keys"))
 
 
-type FormatOptions = t.Literal["plaintext", "json", "yaml", "toml"]
+FormatOptions = t.Literal["plaintext", "json", "yaml", "toml"]
 
 
 def get_output_format(fmt: FormatOptions) -> t.Callable[[AnyNestedDict], None]:
