@@ -6,7 +6,7 @@ build-backend = "uv_build"
 name = "TypeDAL"
 description = 'Typing support for PyDAL'
 readme = "README.md"
-version = "5.1.5"
+version = "6.0.0b1"
 requires-python = ">=3.12"
 license-expression = "MIT"
 keywords = []
@@ -14,16 +14,19 @@ authors = [
     { name = "Robin van der Noord", email = "contact@trialandsuccess.nl" },
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dependencies = [
-    "pydal >= 20251012.3", # core
+    # core; 20260520.0 is the first release with Set._apply_update, which UpdateSet relies on.
+    # Note: pydal's newer 3.YYYYMMDD versions sort *below* this under PEP 440 and are excluded on purpose for now.
+    "pydal >= 20260520.0",
     "pydal-stubs >= 0.2.0", # improved typing for pydal
     "dill < 1", # caching
     "configuraptor >= 2.1.0, < 3", # config
@@ -85,14 +88,18 @@ all = [
 dev = [
     # build:
     "ewok",
+    # lint (`edwh lint`: ruff + ty), format (`edwh fmt`) and test (`edwh test.run`):
+    "edwh>=1.18",
     # test:
-    "su6[all]>=1.9.0",
+    "pytest",
+    "pytest-cov",
+    "mypy", # used by pytest-typing
     # "pytest-mypy-testing",
     "pytest-typing",
     "pytest-asyncio",
     "pyright < 1.1.400",
     "contextlib-chdir",
-    "testcontainers",
+    "testcontainers[mysql]>=4.15", # testcontainers.community.mysql
     "pydantic < 3",
     "psycopg2-binary",
     # depends on ->
@@ -166,41 +173,19 @@ fix = "patch"
 perf = "patch"
 
 [tool.edwh.test]
-# measure coverage over src/ only, matching su6
+# measure coverage over src/ only
 directory = "src"
-
-### required in every su6 pyproject: ###
-[tool.su6]
-directory = "src"
-stop-after-first-failure = true
-include = []
-exclude = []
-coverage = 100
-badge = true
-
-[tool.su6.default-flags]
-mypy = "--disable-error-code misc"
-
-[tool.black]
-target-version = ["py312"]
-line-length = 120
-# 'extend-exclude' excludes files or directories in addition to the defaults
-extend-exclude = '''
-# A regex preceded with ^/ will apply only to files and directories
-# in the root of the project.
-(
-  ^.*\.bak\/.+     # ignore every .bak directory
-  ^.*venv.+\/.+    # ignore every venv directory
-  venv.+|.+\.bak   # idk why it suddenly works, let's not touch it
-)
-'''
 
 [tool.coverage.run]
-# measure src/ only, whatever invokes coverage: `su6 pytest` passes `--cov src` itself, but a
+# measure src/ only, whatever invokes coverage: `edwh test.run` passes `--cov=src` itself, but a
 # bare `pytest --cov` would otherwise measure the whole tree (tests, tasks.py, example_*.py).
 source = ["src"]
+# line coverage alone hides untested branches (an `if` that is never false still counts as 100%):
+branch = true
 
 [tool.coverage.report]
+# the CI gate: pytest-cov fails the run below this
+fail_under = 100
 exclude_also = [
     "if TYPE_CHECKING:",
     "if t.TYPE_CHECKING:",
@@ -256,7 +241,9 @@ select = [
     # "COM", # comma's - NO: annoying
     # "PTH", # use pathlib - NO: annoying
     "RUF", # ruff rules
-    # "D", # docs
+    "D", # docstrings (google convention, see below)
+    "D213", # multi-line docstring summary on the second line (not part of the google convention)
+    "S", # security (bandit)
 ]
 unfixable = [
     # Don't touch unused imports
@@ -273,35 +260,13 @@ extend-ignore = [
 ignore = [
     "RUF012", # mutable class attributes
     "RUF013", # implicit optional
+    "S101", # assert: used for type narrowing and invariants
+    "S108", # hard coded /tmp/... files are fine
 ]
 
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
-
-[tool.bandit]
-# bandit -c pyproject.toml -r .
-exclude_dirs = [".bak", "venv"]
-skips = [
-    "B108"  # hard coded /tmp/... files are fine for me tbh
-]
-
-[tool.isort]
-profile = "black"
-extend_skip_glob = ["*.bak/*"]
-
-[tool.pydocstyle]
-convention = "google"
-match-dir = '(?!venv)[^\.].*'
-add_select = [
-    "D213", # = Multi-line docstring summary should start at the second line
-    "D416", # = Google-style section name checks.
-    "D417", # = Missing argument descriptions in the docstring
-]
-add_ignore = [
-    "D200", # = One-line docstring should fit on one line with quotes
-    "D212", # = Multi-line docstring summary should start at the first line
-]
 
 ### and if it's a project and NOT a package, add this to make it not look for anything buildable: ###
 # make this a meta package: not a library but simply allow me to run `pip install .[dev]`

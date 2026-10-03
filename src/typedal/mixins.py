@@ -71,7 +71,8 @@ class TimestampsMixin(Mixin):
             """
             row["updated_at"] = dt.datetime.now()
 
-        cls._before_update.append(set_updated_at)
+        # upsert skips before-hooks, which would leave updated_at stale, so it refuses instead:
+        cls.before_update(set_updated_at, upsert="error")
 
 
 def slug_random_suffix(length: int = 8) -> str:
@@ -122,7 +123,7 @@ class HAS_UNIQUE_SLUG(IS_NOT_IN_DB):
         row_id = record_id or self.record_id
         if isinstance(row_id, dict):  # pragma: no cover
             row_id = table(**row_id)
-        if row_id is not None:
+        if row_id:  # IS_NOT_IN_DB defaults record_id to 0, meaning "no record to exclude"
             query &= table._id != row_id
         subset = self.dbset(query)
 
@@ -215,7 +216,8 @@ class SlugMixin(Mixin):
         settings = cls.__settings__
 
         # slugs should not be editable (for SEO reasons), so there is only a before insert hook:
-        cls._before_insert.append(cls.__generate_slug_before_insert)
+        # upsert skips before-hooks, so the slug would be missing on insert; refuse instead:
+        cls.before_insert(cls.__generate_slug_before_insert, upsert="error")
 
         if settings["slug_suffix"] == 0:
             # add a validator to the field that will be slugified:

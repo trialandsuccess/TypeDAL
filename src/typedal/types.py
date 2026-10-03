@@ -10,6 +10,8 @@ Stuff to make mypy happy.
 import datetime as dt
 import types
 import typing as t
+import uuid
+from decimal import Decimal
 
 # Third-party
 from pydal.helpers.classes import OpRow as _OpRow
@@ -24,6 +26,8 @@ from pydal.objects import Select as _Select
 from pydal.objects import Set as _Set
 from pydal.objects import Table as _Table
 from pydal.validators import Validator as _Validator
+
+from .set_types import AffectedSet, UpdateSet  # noqa: F401 - re-exported: `from typedal.types import AffectedSet`
 
 try:
     from string.templatelib import Template as TemplateAlias
@@ -41,15 +45,24 @@ if t.TYPE_CHECKING:
 # Aliases
 # ---------------------------------------------------------------------------
 
+# `type` aliases, except Literals (plain, so t.get_args works) and names used at runtime (isinstance, subclassing)
 Template: t.TypeAlias = TemplateAlias  # explicit export for mypy, NOT a `type` because it's used at runtime
 type AnyCallable = t.Callable[..., t.Any]
 type AnyDict = dict[str, t.Any]
+type UpsertKeyValue = str | int | float | bool | bytes | Decimal | uuid.UUID | dt.date | dt.time
+UPSERT_KEY_TYPES: tuple[type, ...] = t.get_args(UpsertKeyValue.__value__)  # for isinstance checks
+# a row's primary key: its id, the key value for `primarykey=["k"]`, or a tuple of values for composite keys
+type PrimaryKey = UpsertKeyValue | tuple[UpsertKeyValue, ...]
+type UpsertKey = t.Mapping[str, UpsertKeyValue]
+UpsertHookPolicy = t.Literal["error", "ignore"]
 
 PermissionType = t.Literal["read", "insert", "update", "delete"]
 
 
 # type Permissions = dict[PermissionType, bool]
 class Permissions(t.TypedDict):
+    """Which operations a model or query may perform."""
+
     # note: extra source of truth because the dynamic dict doesn't work for all type checkers
     read: bool
     insert: bool

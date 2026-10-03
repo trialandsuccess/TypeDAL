@@ -227,7 +227,8 @@ def setup(
     data.pop("connection", None)
 
     # ignore any None:
-    old_contents["tool"]["typedal"] = {k: v for k, v in data.items() if v is not None}  # type: ignore
+    # older tomlkit types this lookup as `Item` (not subscriptable); [tool] is always a table:
+    t.cast(AnyDict, old_contents["tool"])["typedal"] = {k: v for k, v in data.items() if v is not None}
 
     with toml_path.open("w") as f:
         tomlkit.dump(old_contents, f)
@@ -562,13 +563,14 @@ def tabulate_data(data: AnyNestedDict) -> None:
     print(tabulate(flattened_data, headers="keys"))
 
 
-type FormatOptions = t.Literal["plaintext", "json", "yaml", "toml"]
+FormatOptions = t.Literal["plaintext", "json", "yaml", "toml"]
 
 
 def get_output_format(fmt: FormatOptions) -> t.Callable[[AnyNestedDict], None]:
     """
-    This function takes a format option as input and \
-        returns a function that can be used to output data in the specified format.
+    Get the output function for a format option.
+
+    The returned function prints data in the specified format.
     """
     match fmt:
         case "plaintext":
@@ -662,10 +664,10 @@ def cache_clear(
     db = TypeDAL(config=config, migrate=False, fake_migrate=False)
 
     if purge:
-        caching.clear_cache()
+        caching.clear_cache(db)
         print("Emptied cache")
     else:
-        n = caching.clear_expired()
+        n = caching.clear_expired(db)
         print(f"Removed {n} expired from cache")
 
     db.commit()

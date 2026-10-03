@@ -4,6 +4,7 @@ TypeDAL Library.
 
 from .asynchronous import AsyncSession, BlockingAccessHandler, BlockingDatabaseAccessWarning
 from .core import TypeDAL
+from .exceptions import TypeDALError
 from .fields import TypedField
 from .helpers import sql_expression
 from .query_builder import QueryBuilder
@@ -27,6 +28,7 @@ __all__ = [
     "Ref",
     "Relationship",
     "TypeDAL",
+    "TypeDALError",
     "TypedField",
     "TypedRows",
     "TypedTable",
