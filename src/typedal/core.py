@@ -24,6 +24,7 @@ from .asynchronous import (
     run_async,
 )
 from .config import LazyPolicy, TypeDALConfig, default_async_workers, load_config
+from .extensions import install_extensions
 from .helpers import (
     SYSTEM_SUPPORTS_TEMPLATES,
     default_representer,
@@ -34,7 +35,7 @@ from .helpers import (
 from .serializers.typescript import TypedDictRegistry
 
 # noinspection PyUnusedImports
-from .types import CacheStatus, Expression, Field, Template
+from .types import CacheStatus, Expression, Field, Template, UpdateSet
 
 try:
     # python 3.14+
@@ -57,7 +58,7 @@ def _expression_subclasses() -> t.Iterator[type[Expression]]:
     stack: list[type[Expression]] = [Expression]
     while stack:
         for subclass in stack.pop().__subclasses__():
-            if subclass not in seen:
+            if subclass not in seen:  # pragma: no branch - only multiple inheritance revisits a class
                 seen.add(subclass)
                 stack.append(subclass)
 
@@ -334,9 +335,10 @@ class TypeDAL(_TypeDALBase):
             table_hash,
         )
 
+        install_extensions(self._adapter)
+
         if config.caching:
-            self.try_define(_TypedalCache)
-            self.try_define(_TypedalCacheDependency)
+            define_cache_models(self)
 
     def session(self) -> AsyncSession:
         """
@@ -399,10 +401,12 @@ class TypeDAL(_TypeDALBase):
             super().close()
         finally:
             for model in set(self._builder.class_map.values()):
-                model.unbind()
+                # a model defined on several databases is bound to the last one; leave that binding be:
+                if model._db is self:
+                    model.unbind()
             self._builder.class_map.clear()
 
-            if adapter is not None:
+            if adapter is not None:  # pragma: no branch - defensive cleanup
                 adapter.db = None
                 _purge_dialect_expressions(adapter)
 
@@ -420,10 +424,10 @@ class TypeDAL(_TypeDALBase):
                     "_after_delete",
                 ):
                     hooks = getattr(table, hook_name, None)
-                    if isinstance(hooks, list):
+                    if isinstance(hooks, list):  # pragma: no branch - defensive cleanup
                         hooks.clear()
 
-                if hasattr(table, "_db"):
+                if hasattr(table, "_db"):  # pragma: no branch - defensive cleanup
                     table._db = None
 
                 for field_name in getattr(table, "fields", ()):
@@ -431,15 +435,15 @@ class TypeDAL(_TypeDALBase):
                     if field is None:  # pragma: no cover
                         continue
 
-                    if hasattr(field, "_db"):
+                    if hasattr(field, "_db"):  # pragma: no branch - defensive cleanup
                         field._db = None
-                    if hasattr(field, "db"):
+                    if hasattr(field, "db"):  # pragma: no branch - defensive cleanup
                         field.db = None
-                    if hasattr(field, "table"):
+                    if hasattr(field, "table"):  # pragma: no branch - defensive cleanup
                         field.table = None
-                    if hasattr(field, "_table"):
+                    if hasattr(field, "_table"):  # pragma: no branch - defensive cleanup
                         field._table = None
-                    if hasattr(field, "requires"):
+                    if hasattr(field, "requires"):  # pragma: no branch - defensive cleanup
                         field.requires = []
 
     def try_define[T: t.Any](self, model: t.Type[T], verbose: bool = False) -> t.Type[T]:
@@ -451,7 +455,7 @@ class TypeDAL(_TypeDALBase):
         except Exception as e:
             # clean up:
             self.rollback()
-            if (tablename := self.to_snake(model.__name__)) and tablename in dir(self):
+            if (tablename := self.to_snake(model.__name__)) and tablename in dir(self):  # pragma: no branch
                 delattr(self, tablename)
 
             if verbose:
@@ -498,7 +502,9 @@ class TypeDAL(_TypeDALBase):
         **kwargs: t.Unpack[DefineKwargs],
     ) -> t.Type[T] | t.Callable[[t.Type[T]], t.Type[T]]:
         """
-        Can be used as a decorator on a class that inherits `TypedTable`, \
+        Define a `TypedTable` class on this database.
+
+        Can be used as a decorator on a class that inherits `TypedTable`,
           or as a regular method if you need to define your classes before you have access to a 'db' instance.
 
         You can also pass extra arguments to db.define_table.
@@ -553,6 +559,11 @@ class TypeDAL(_TypeDALBase):
 
         _set = super().__call__(*args, **kwargs)
         return t.cast(TypedSet, _set)
+
+    def where(self, query: T_Query | AnyDict | None = None, ignore_common_filters: bool | None = None) -> "UpdateSet":
+        """Build a PyDAL Set with TypeDAL's affected-ID update callbacks."""
+        rows = super().where(query, ignore_common_filters=ignore_common_filters)
+        return UpdateSet(self, rows.query)
 
     def __getitem__(self, key: str) -> "Table":
         """
@@ -741,7 +752,6 @@ from .rows import TypedRows, TypedSet  # noqa: E402
 from .tables import TypedTable  # noqa: E402
 
 from .caching import (  # isort: skip # noqa: E402
+    define_cache_models,
     memoize,
-    _TypedalCache,
-    _TypedalCacheDependency,
 )

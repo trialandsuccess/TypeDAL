@@ -118,7 +118,7 @@ see [their docs](http://www.web2py.com/books/default/chapter/29/06/the-database-
 
 ```python
 from typedal import TypedTable
-from typedal.types import OpRow, Reference, Set
+from typedal.types import AffectedSet, OpRow, Reference, Set
 
 
 class MyTable(TypedTable): ...
@@ -144,8 +144,12 @@ def my_before_update(query: Set, changes: OpRow):
     # return True to cancel
 
 
-def my_after_update(query: Set, changes: OpRow):
-    """`changes` that were applied to the row selection Set"""
+def my_after_update(rows: AffectedSet, changes: OpRow):
+    """
+    `changes` that were applied. `rows` selects exactly the updated rows (by id), even if the update
+    changed the columns the original query filtered on. `rows.affected_ids` lists their ids.
+    Only called when at least one row was updated.
+    """
 
 
 MyTable.before_update(my_before_update)
@@ -167,6 +171,11 @@ def my_after_delete(query: Set):
 row.delete_record()  # to trigger
 MyTable.where(...).delete()  # to trigger
 ```
+
+Since 6.0, `after_update` receives an `AffectedSet` instead of a Set with the original update query
+(see [10. Advanced APIs](./10_advanced_apis.md#affected-id-update-hooks-since-60)).
+Before-hooks also accept an `upsert=` policy, which decides what `upsert()` does with them,
+since upsert can't run before-hooks (see [Unique-key upsert](./10_advanced_apis.md#unique-key-upsert-in-v6)).
 
 Now that we have some tables, it's time to actually query them! Let's go
 to [3. Building Queries](./3_building_queries.md) to learn how.

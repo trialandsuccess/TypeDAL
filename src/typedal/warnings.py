@@ -7,3 +7,7 @@ class UnusedWindowWarning(RuntimeWarning):
 
 class NoopQueryWarning(RuntimeWarning):
     """Warn when a query builder method is called without arguments, so it does nothing."""
+
+
+class UpsertHooksWarning(RuntimeWarning):
+    """Warn that upsert skips before-hooks without an explicit upsert policy."""

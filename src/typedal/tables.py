@@ -23,6 +23,8 @@ from .core import TypeDAL
 from .helpers import all_dict, classproperty, filter_out, throw
 from .serializers import as_json
 from .types import (
+    AffectedSet,
+    AnyCallable,
     AnyDict,
     Condition,
     Expression,
@@ -40,9 +42,12 @@ from .types import (
     T_MetaInstance,
     T_Query,
     Table,
+    UpsertHookPolicy,
+    UpsertKey,
     merge_permissions,
     require_permission,
 )
+from .upsert import HookRegistration, check_before_hooks, execute_upsert, register_before_hook, validate_upsert
 
 if t.TYPE_CHECKING:
     from .relationships import Relationship
@@ -105,6 +110,7 @@ class TableMeta(type):
     _table: Table | None = None
     _relationships: dict[str, Relationship[t.Any]] | None = None
     _permissions: Permissions | None = None
+    _upsert_hook_registrations: list[HookRegistration]
     _singular: str
     _plural: str
 
@@ -126,6 +132,7 @@ class TableMeta(type):
         self._table = table
         self._relationships = relationships
         self._permissions = merge_permissions(permissions)
+        self._upsert_hook_registrations = []
 
     def unbind(self) -> None:
         """Remove the database bindings created by `db.define`."""
@@ -288,6 +295,38 @@ class TableMeta(type):
 
         record.update_record(**values)
         return self(record)
+
+    def upsert(
+        self: t.Type[T_MetaInstance],
+        key: UpsertKey,
+        /,
+        **values: t.Any,
+    ) -> T_MetaInstance:
+        """
+        Insert or update by a database unique key and return the resulting instance.
+
+        Before-hooks never run; after-hooks run only for the branch performed.
+        Unmarked before-hooks warn, 'error' policies block, and 'ignore' is silent.
+        Updates write only explicit values, without omitted Field(update=...) or
+        compute fields. Inserts apply defaults and computations. A key-only call
+        returns an existing row without hooks or inserts a new row.
+
+        PostgreSQL uses atomic ON CONFLICT and requires a matching unique index.
+        SQLite, MySQL, and common-filter tables select then write without atomicity;
+        their keys must match at most one visible row. Another unique-column
+        conflict raises the normal database integrity error on every backend.
+        """
+        table = self._ensure_table_defined()
+        check_before_hooks(table._before_insert, table._before_update, self._upsert_hook_registrations, self.__name__)
+        return self._upsert(key, **values)
+
+    def _upsert(self: t.Type[T_MetaInstance], key: UpsertKey, /, **values: t.Any) -> T_MetaInstance:
+        """Validate and execute after the caller has checked its hook policies."""
+        table = self._ensure_table_defined()
+        require_permission(self._permissions, "insert")
+        require_permission(self._permissions, "update")
+        key = validate_upsert(table, key, values, self.__name__)
+        return self(execute_upsert(table, key, values).row)
 
     def validate_and_insert(
         self: t.Type[T_MetaInstance],
@@ -482,6 +521,10 @@ class TableMeta(type):
         """
         return QueryBuilder(self).join(*fields, on=on, condition=condition, method=method, condition_and=condition_and)
 
+    def cross_join(self: t.Type[T_MetaInstance], table: t.Type[TypedTable]) -> "QueryBuilder[T_MetaInstance]":
+        """See QueryBuilder.cross_join!"""
+        return QueryBuilder(self).cross_join(table)
+
     def window(self: t.Type[T_MetaInstance], window_size: int) -> "QueryBuilder[T_MetaInstance]":
         """
         See QueryBuilder.window!
@@ -544,6 +587,17 @@ class TableMeta(type):
             query,
             **values,
         )
+
+    async def upsert_async(
+        self: t.Type[T_MetaInstance],
+        key: UpsertKey,
+        /,
+        **values: t.Any,
+    ) -> T_MetaInstance:
+        """Async twin of upsert(), including its before-hook policies and after-hook contract."""
+        table = self._ensure_table_defined()
+        check_before_hooks(table._before_insert, table._before_update, self._upsert_hook_registrations, self.__name__)
+        return await run_async(self._ensure_db(), self._upsert, key, **values)  # ty: ignore[invalid-return-type]
 
     async def validate_and_insert_async(
         self: t.Type[T_MetaInstance],
@@ -795,6 +849,7 @@ class TableMeta(type):
         cls: t.Type[T_MetaInstance],
         hooks: list[t.Callable[P, R]],
         fn: t.Callable[P, R],
+        register: t.Callable[[t.Callable[P, R]], None] | None = None,
     ) -> t.Type[T_MetaInstance]:
         @functools.wraps(fn)
         def wraps(*a: P.args, **kw: P.kwargs) -> R:
@@ -803,28 +858,37 @@ class TableMeta(type):
             finally:
                 hooks.remove(wraps)
 
-        hooks.append(wraps)
+        (register or hooks.append)(wraps)
         return cls
+
+    def _register_before(
+        cls, branch: t.Literal["insert", "update"], fn: AnyCallable, upsert: UpsertHookPolicy | None
+    ) -> None:
+        """Add a before-hook to PyDAL's list for `branch` and record its upsert policy."""
+        hooks = cls._before_insert if branch == "insert" else cls._before_update
+        register_before_hook(hooks, cls._upsert_hook_registrations, branch, fn, upsert)
 
     def before_insert(
         cls: t.Type[T_MetaInstance],
         fn: t.Callable[[T_MetaInstance], t.Optional[bool]] | t.Callable[[OpRow], t.Optional[bool]],
+        upsert: UpsertHookPolicy | None = None,
     ) -> t.Type[T_MetaInstance]:
         """
-        Add a before insert hook.
+        Add a before insert hook; upsert='error' blocks upsert, 'ignore' skips silently.
         """
-        if fn not in cls._before_insert:
-            cls._before_insert.append(fn)
+        cls._register_before("insert", fn, upsert)
         return cls
 
     def before_insert_once(
         cls: t.Type[T_MetaInstance],
         fn: t.Callable[[T_MetaInstance], t.Optional[bool]] | t.Callable[[OpRow], t.Optional[bool]],
+        upsert: UpsertHookPolicy | None = None,
     ) -> t.Type[T_MetaInstance]:
         """
-        Add a before insert hook that only fires once and then removes itself.
+        Add a before insert hook that only fires once and then removes itself (see before_insert for `upsert`).
         """
-        return cls._hook_once(cls._before_insert, fn)  # type: ignore
+        register = functools.partial(cls._register_before, "insert", upsert=upsert)
+        return cls._hook_once(cls._before_insert, fn, register)  # type: ignore
 
     def after_insert(
         cls: t.Type[T_MetaInstance],
@@ -853,29 +917,32 @@ class TableMeta(type):
     def before_update(
         cls: t.Type[T_MetaInstance],
         fn: t.Callable[[Set, T_MetaInstance], t.Optional[bool]] | t.Callable[[Set, OpRow], t.Optional[bool]],
+        upsert: UpsertHookPolicy | None = None,
     ) -> t.Type[T_MetaInstance]:
         """
-        Add a before update hook.
+        Add a before update hook; upsert='error' blocks upsert, 'ignore' skips silently.
         """
-        if fn not in cls._before_update:
-            cls._before_update.append(fn)
+        cls._register_before("update", fn, upsert)
         return cls
 
     def before_update_once(
         cls,
         fn: t.Callable[[Set, T_MetaInstance], t.Optional[bool]] | t.Callable[[Set, OpRow], t.Optional[bool]],
+        upsert: UpsertHookPolicy | None = None,
     ) -> t.Type[T_MetaInstance]:
         """
-        Add a before update hook that only fires once and then removes itself.
+        Add a before update hook that only fires once and then removes itself (see before_update for `upsert`).
         """
-        return cls._hook_once(cls._before_update, fn)  # type: ignore
+        register = functools.partial(cls._register_before, "update", upsert=upsert)
+        return cls._hook_once(cls._before_update, fn, register)  # type: ignore
 
     def after_update(
         cls: t.Type[T_MetaInstance],
-        fn: t.Callable[[Set, T_MetaInstance], t.Optional[bool]] | t.Callable[[Set, OpRow], t.Optional[bool]],
+        fn: t.Callable[[AffectedSet, T_MetaInstance], t.Optional[bool]]
+        | t.Callable[[AffectedSet, OpRow], t.Optional[bool]],
     ) -> t.Type[T_MetaInstance]:
         """
-        Add an after update hook.
+        Add an after update hook receiving an AffectedSet with its known affected_ids.
         """
         if fn not in cls._after_update:
             cls._after_update.append(fn)
@@ -883,7 +950,8 @@ class TableMeta(type):
 
     def after_update_once(
         cls: t.Type[T_MetaInstance],
-        fn: t.Callable[[Set, T_MetaInstance], t.Optional[bool]] | t.Callable[[Set, OpRow], t.Optional[bool]],
+        fn: t.Callable[[AffectedSet, T_MetaInstance], t.Optional[bool]]
+        | t.Callable[[AffectedSet, OpRow], t.Optional[bool]],
     ) -> t.Type[T_MetaInstance]:
         """
         Add an after update hook that only fires once and then removes itself.
@@ -959,7 +1027,9 @@ class _TypedTable(metaclass=TableMeta):
         t.Callable[[t.Self, Reference], t.Optional[bool]] | t.Callable[[OpRow, Reference], t.Optional[bool]]
     ]
     _before_update: list[t.Callable[[Set, t.Self], t.Optional[bool]] | t.Callable[[Set, OpRow], t.Optional[bool]]]
-    _after_update: list[t.Callable[[Set, t.Self], t.Optional[bool]] | t.Callable[[Set, OpRow], t.Optional[bool]]]
+    _after_update: list[
+        t.Callable[[AffectedSet, t.Self], t.Optional[bool]] | t.Callable[[AffectedSet, OpRow], t.Optional[bool]]
+    ]
     _before_delete: list[t.Callable[[Set], t.Optional[bool]]]
     _after_delete: list[t.Callable[[Set], t.Optional[bool]]]
     _rows: tuple[Row, ...]
@@ -1081,7 +1151,7 @@ class _TypedTable(metaclass=TableMeta):
 
                 property_hints = t.get_type_hints(getter, include_extras=True)
                 return_type = property_hints.get("return")
-                if return_type is not None:
+                if return_type is not None:  # pragma: no branch - unannotated properties are skipped
                     annotations[field_name] = return_type
 
         fields = {
@@ -1124,7 +1194,7 @@ class _TypedTable(metaclass=TableMeta):
 
         for field_name, relationship_value in relationship_items:
             relationship_type = cls._typedal_resolve_relationship_python_type(relationship_value)
-            if relationship_type is not None:
+            if relationship_type is not None:  # pragma: no branch - every relationship has a type
                 relationship_fields[field_name] = relationship_type
 
         return relationship_fields
@@ -1670,7 +1740,7 @@ class TypedTable(_TypedTable, metaclass=TableMeta):
             # else: relationship, different logic:
 
         for relation_name in getattr(row, "_with", []):
-            if relation := self._relationships.get(relation_name):
+            if relation := self._relationships.get(relation_name):  # pragma: no branch - _with holds joined names
                 relation_table = relation.table
                 if isinstance(relation_table, str):
                     relation_table = self._db[relation_table]

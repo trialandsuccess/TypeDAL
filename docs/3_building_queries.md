@@ -169,6 +169,61 @@ Person.join("articles", method="inner")  # will only yield persons that have rel
 
 For more details about relationships and joins, see [4. Relationships](./4_relationships.md).
 
+### cross_join
+
+Since 6.0, a query that mentions a table without relating it to the rest of the query raises
+`ImplicitCrossJoinError` instead of silently producing a `CROSS JOIN` (every row combined with every other row).
+This catches a common mistake: filtering on a table that isn't joined.
+
+```python
+from typedal.exceptions import ImplicitCrossJoinError
+
+Person.where(Article.title == "Hello")  # raises ImplicitCrossJoinError when the query is built
+Person.select(Person.ALL, Article.ALL)  # same: nothing relates article to person
+
+# fine, the comparison links the two tables:
+Person.where(Person.id == Article.author)
+# also fine: any comparison mentioning both tables counts as a link
+Person.where((Person.age + Article.word_count) > 1000)
+```
+
+If you really want a cross join, ask for it explicitly with `cross_join()`.
+Tables reached through a cross-joined table are accepted too:
+
+```python
+Person.cross_join(Color)  # every person combined with every color
+Person.cross_join(Article).where(Article.id == Comment.article)  # comment is linked via article
+```
+
+A relationship join puts the related table in the SQL under an alias. Filtering or ordering on that table
+(`where()`, `orderby()`, `groupby()`, `having()`) is pointed at the alias when the query runs, so it doesn't matter
+whether `where()` comes before or after `join()`, or whether the builder is returned and extended somewhere else:
+
+```python
+Person.join("articles", method="inner").where(Article.published == True)
+Person.where(Article.published == True).join("articles", method="inner")  # the same query
+```
+
+Like `condition_and`, this filters the joined rows too: each person comes back with only their published articles.
+On a left join it also drops the persons without a matching article, and `where(Article.id == None)` finds the persons
+without any. Pagination and `count()` take the filter into account.
+
+When the same table is joined more than once, `Article` alone is ambiguous and raises `AliasedTableMismatchError`
+(a subclass of `ImplicitCrossJoinError`). Pick the join with extra lambda arguments, named after the relationship
+(a nested one as `parent__child`, or just `child` when that name is unique). These are resolved when the query runs,
+so they can also come before the `join()`:
+
+```python
+builder = Article.join("writer").join("reviewer")  # both relationships to Author
+builder.where(Author.name == "ann")  # raises: author is joined as 'writer' and as 'reviewer'
+builder.where(lambda article, reviewer: reviewer.name == "ann")
+```
+
+`delete()` and `update()` ignore joins, so they refuse a builder with such a lambda.
+
+If you want a second, independent copy of a joined table, `cross_join(Article)` makes it explicit: the table name
+then means that copy, not the joined one.
+
 ### groupby & having
 
 Group query results by one or more fields, typically used with aggregate functions like `count()`, `sum()`, `avg()`,

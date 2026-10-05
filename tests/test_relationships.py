@@ -10,8 +10,7 @@ import pytest
 
 from src.typedal import Relationship, TypeDAL, TypedField, TypedRows, TypedTable, relationship
 from src.typedal.caching import (
-    _TypedalCache,
-    _TypedalCacheDependency,
+    cache_models,
     clear_cache,
     clear_expired,
     remove_cache,
@@ -20,6 +19,100 @@ from src.typedal.relationships import Ref, resolve_relationship_type
 from src.typedal.serializers import as_json
 
 db = TypeDAL("sqlite:memory", lazy_policy="warn")
+
+
+@db.define
+class CacheUpsertUser(TypedTable):
+    email = TypedField(str, unique=True)
+    name: str
+
+
+@db.define
+class CacheUpsertArticle(TypedTable):
+    author: CacheUpsertUser
+    title: str
+
+
+@pytest.mark.parametrize("moved", [False, True])
+def test_lazy_reference_update_invalidates_cache(moved: bool) -> None:
+    author = CacheUpsertUser.insert(email=f"lazy-{moved}@example.com", name="author")
+    other = CacheUpsertUser.insert(email=f"lazy-other-{moved}@example.com", name="other")
+    article = CacheUpsertArticle.insert(author=author.id, title="old")
+    query = CacheUpsertArticle.where(author=author.id).cache()
+    try:
+        assert query.collect().first().title == "old"
+        assert query.collect().metadata["cache"]["status"] == "cached"
+        # a plain pydal Set: when the update moves the row out of its query (author == author.id),
+        # invalidation can't look the rows up afterwards and has to drop the table's cache:
+        changes = {"author": other.id} if moved else {"title": "new"}
+        author_row = db.cache_upsert_user(author.id)
+        assert author_row.cache_upsert_article.update(**changes) == 1
+        refreshed = query.collect()
+        assert refreshed.metadata["cache"]["status"] == "fresh"
+        if moved:
+            assert not refreshed
+        else:
+            assert (refreshed.first().id, refreshed.first().title) == (article.id, "new")
+    finally:
+        CacheUpsertArticle.where(id=article.id).delete()
+        CacheUpsertUser.where(CacheUpsertUser.id.belongs([author.id, other.id])).delete()
+
+
+def test_smart_query_update_invalidates_cache() -> None:
+    user = CacheUpsertUser.insert(email="smart@example.com", name="old")
+    query = CacheUpsertUser.where(email=user.email).cache()
+    try:
+        assert query.collect().first().name == "old"
+        assert query.collect().metadata["cache"]["status"] == "cached"
+        rows = db.smart_query([CacheUpsertUser.email], "email = 'smart@example.com'")
+        assert rows.update(name="new") == 1
+        refreshed = query.collect()
+        assert refreshed.metadata["cache"]["status"] == "fresh"
+        assert refreshed.first().id == user.id
+        assert refreshed.first().name == "new"
+    finally:
+        CacheUpsertUser.where(id=user.id).delete()
+
+
+def test_empty_result_is_not_stored_and_does_not_shadow_later_results() -> None:
+    CacheUpsertUser.where(CacheUpsertUser.id > 0).delete()
+    query = CacheUpsertUser.where(name="nobody-yet").cache()
+    entries = db(db.typedal_cache).count()
+    assert not query.collect()
+    assert not query.collect()
+    assert db(db.typedal_cache).count() == entries
+
+    user = CacheUpsertUser.insert(email="later@example.com", name="nobody-yet")
+    try:
+        assert query.collect().metadata["cache"]["status"] == "fresh"
+        cached = query.collect()
+        assert cached.metadata["cache"]["status"] == "cached"
+        assert cached.first().id == user.id
+    finally:
+        CacheUpsertUser.where(id=user.id).delete()
+
+
+@pytest.mark.parametrize("operation", ["upsert", "update", "raw", "validated", "smart_query"])
+def test_cache_invalidation_after_changed_predicate(operation: str) -> None:
+    CacheUpsertUser.where(CacheUpsertUser.id > 0).delete()
+    inserted = CacheUpsertUser.insert(email="a@example.com", name="old")
+    query = CacheUpsertUser.where(name="old").cache()
+    assert query.collect().first().name == "old"
+    # make sure the second read is served from the cache, otherwise the assertions below prove nothing:
+    assert query.collect().metadata["cache"]["status"] == "cached"
+    if operation == "upsert":
+        CacheUpsertUser.upsert({"email": "a@example.com"}, name="new")
+    elif operation == "raw":
+        db(CacheUpsertUser.name == "old").update(name="new")
+    elif operation == "validated":
+        result = db(CacheUpsertUser.name == "old").validate_and_update(name="new")
+        assert result["updated"] == 1
+    elif operation == "smart_query":
+        assert db.smart_query([CacheUpsertUser.name], "name = 'old'").update(name="new") == 1
+    else:
+        assert CacheUpsertUser.where(name="old").update(name="new") == [inserted.id]
+    assert not query.collect()
+    assert CacheUpsertUser(inserted.id).name == "new"
 
 
 class TaggableMixin:
@@ -314,8 +407,7 @@ def test_typedal_way():
     author1 = User.where(id=4).join("articles").first()
 
     assert (
-            len(author1.as_dict()["articles"]) == len(author1.__dict__["articles"]) == len(
-        dict(author1)["articles"]) == 2
+        len(author1.as_dict()["articles"]) == len(author1.__dict__["articles"]) == len(dict(author1)["articles"]) == 2
     )
 
 
@@ -453,8 +545,60 @@ def test_join_with_different_condition():
     assert role_with_users.users[0].name != "Reader 1"
 
 
+def test_condition_and_counts_match_combined_condition():
+    with contextlib.closing(TypeDAL("sqlite:memory", enable_typedal_caching=False)) as local_db:
+
+        @local_db.define()
+        class Parent(TypedTable):
+            name: str
+            children = relationship(list["Child"], lambda parent, child: child.parent == parent.id)
+
+        @local_db.define()
+        class Child(TypedTable):
+            parent: Parent
+            active: bool
+
+        first = Parent.insert(name="First")
+        second = Parent.insert(name="Second")
+        filtered = Parent.insert(name="Filtered")
+        Child.insert(parent=first, active=True)
+        Child.insert(parent=first, active=True)
+        Child.insert(parent=first, active=False)
+        Child.insert(parent=second, active=True)
+        Child.insert(parent=filtered, active=False)
+
+        combined = Parent.join(
+            "children",
+            method="inner",
+            condition=lambda parent, child: (child.parent == parent.id) & (child.active == True),
+        ).orderby(Parent.id)
+        additional = Parent.join(
+            "children",
+            method="inner",
+            condition_and=lambda _parent, child: child.active == True,
+        ).orderby(Parent.id)
+
+        combined_rows = combined.collect()
+        additional_rows = additional.collect()
+        assert combined_rows.as_list() == additional_rows.as_list()
+        assert [row.name for row in additional_rows] == ["First", "Second"]
+        assert [len(row.children) for row in additional_rows] == [2, 1]
+        assert all(child.active for row in additional_rows for child in row.children)
+
+        combined_page = combined.paginate(limit=1)
+        additional_page = additional.paginate(limit=1)
+        assert combined_page.as_list() == additional_page.as_list()
+        assert (additional.count(), additional_page.pagination["total_items"]) == (
+            combined.count(),
+            combined_page.pagination["total_items"],
+        ) == (3, 2)
+        assert additional.count(distinct=Parent.id) == combined.count(distinct=Parent.id) == 2
+        assert additional_page.pagination["total_pages"] == combined_page.pagination["total_pages"] == 2
+
+
 def test_caching():
     _setup_data()
+    _TypedalCache, _TypedalCacheDependency = cache_models(db)
 
     uncached = User.join().collect_or_fail()
     cached = User.cache().join().collect_or_fail()  # not actually cached yet!
@@ -485,12 +629,12 @@ def test_caching():
     cached_user_only2 = User.join().cache(User.id).collect_or_fail()
 
     assert (
-            len(uncached2)
-            == len(uncached)
-            == len(cached2)
-            == len(cached)
-            == len(cached_user_only2)
-            == len(cached_user_only)
+        len(uncached2)
+        == len(uncached)
+        == len(cached2)
+        == len(cached)
+        == len(cached_user_only2)
+        == len(cached_user_only)
     )
 
     assert uncached.as_json() == uncached2.as_json() == cached.as_json() == cached2.as_json()
@@ -498,9 +642,9 @@ def test_caching():
     assert cached.first().gid == cached2.first().gid
 
     assert (
-            [_.name for _ in uncached2.first().roles]
-            == [_.name for _ in cached.first().roles]
-            == [_.name for _ in cached2.first().roles]
+        [_.name for _ in uncached2.first().roles]
+        == [_.name for _ in cached.first().roles]
+        == [_.name for _ in cached2.first().roles]
     )
 
     assert not uncached2.metadata.get("cache", {}).get("enabled")
@@ -541,8 +685,8 @@ def test_caching():
     assert User.cache().join().paginate(limit=1, page=2).metadata["cache"].get("status") == "cached"
     assert User.cache().join().paginate(limit=1, page=2).metadata["cache"].get("cached_at")
 
-    remove_cache(1, "user")
-    remove_cache([2], "user")
+    remove_cache(db, 1, "user")
+    remove_cache(db, [2], "user")
 
     assert User.cache("id").join().paginate(limit=1, page=1).metadata["cache"].get("status") == "fresh"
     assert User.cache().join().paginate(limit=1, page=2).metadata["cache"].get("status") == "fresh"
@@ -557,7 +701,7 @@ def test_caching():
     assert _TypedalCache.count() > 0
     assert _TypedalCacheDependency.count() > 0
 
-    clear_cache()
+    clear_cache(db)
     assert _TypedalCache.count() == 0
     assert _TypedalCacheDependency.count() == 0
 
@@ -578,8 +722,8 @@ def test_caching():
 
     time.sleep(3)  # for TTL
 
-    assert clear_expired()
-    assert not clear_expired()
+    assert clear_expired(db)
+    assert not clear_expired(db)
 
     assert not _TypedalCache.count()
     assert not _TypedalCacheDependency.count()
@@ -828,6 +972,7 @@ def test_memoize_with_empty_table():
 
 def test_illegal():
     with pytest.raises(ValueError), pytest.warns(UserWarning):
+
         class HasRelationship:
             something = relationship("...", condition=lambda: 1, on=lambda: 2)
 
@@ -846,15 +991,19 @@ def test_join_relationship_custom_on():
 
     rows2 = Tag.join(
         Tag.articles,
+        # each item must be a `table.on(...)` join; a bare table or query used to be dropped silently,
+        # which turned this into an implicit cross join with article:
         on=lambda tag, article: [
-            tagged := Tagged.unique_alias(),
-            (tagged.tag == tag.id) & (article.gid == tagged.entity) & (article.author == 3),
+            (tagged := Tagged.unique_alias()).on(tagged.tag == tag.id),
+            article.on((article.gid == tagged.entity) & (article.author == 3)),
         ],
         method="inner",
     )
 
     assert all([row.articles for row in rows1])
-    assert all([row.articles for row in rows2])
+    # custom `on` is always a left join, so tags without a matching article are kept (with no articles):
+    matched = {row.id: sorted(article.id for article in row.articles) for row in rows2 if row.articles}
+    assert matched == {row.id: sorted(article.id for article in row.articles) for row in rows1}
 
 
 def test_join_with_select():
@@ -1092,16 +1241,16 @@ def test_relationship_self():
         key: str
         value: str
 
-        related_directly = relationship(list["SelfReferencing"],
-                                        lambda self, other: self.value == other.value
-                                        )
+        related_directly = relationship(list["SelfReferencing"], lambda self, other: self.value == other.value)
 
-        related_indirectly = relationship(list["SelfReferencing"],
-                                          on=lambda self, other: [
-                                              via := IntermediateTable.unique_alias(),
-                                              via.on(via.left == self.value),
-                                              other.on(via.right == other.value)
-                                          ])
+        related_indirectly = relationship(
+            list["SelfReferencing"],
+            on=lambda self, other: [
+                via := IntermediateTable.unique_alias(),
+                via.on(via.left == self.value),
+                other.on(via.right == other.value),
+            ],
+        )
 
     IntermediateTable.insert(left="two", right="two")
     IntermediateTable.insert(left="three", right="one")
@@ -1121,6 +1270,7 @@ def test_relationship_self():
     assert rows.value == "two"
     assert len(rows.related_directly) == 2
     assert set(row.value for row in rows.related_directly) == {"two"}
+
 
 def test_relationship_labels():
 
@@ -1144,3 +1294,12 @@ def test_relationship_labels():
     assert TableWithRelationship.other_gid.label == "Relationship Reference"
     assert TableWithRelationship.target.label == "Other Gid"
 
+
+def _double(value: int) -> int:
+    return value * 2
+
+
+def test_memoize_ignores_plain_arguments_for_dependencies() -> None:
+    result, status = db.memoize(_double, 21, key="double-plain-arg")
+    assert (result, status) == (42, "fresh")
+    assert db.memoize(_double, 21, key="double-plain-arg") == (42, "cached")

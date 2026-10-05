@@ -1,0 +1,44 @@
+name: run checks
+on:
+  push:
+    branches-ignore:
+      - master
+jobs:
+  check_min:
+    name: Lint, format and test on lowest Python
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+      - uses: yezz123/setup-uv@v4
+        with:
+          uv-venv: ".venv"
+      - run: uv pip install .[dev,all]
+      # ruff + ty
+      - run: edwh lint --output ci
+      # what `edwh fmt` would change: import order and formatting
+      - run: ruff check --select I . && ruff format --check .
+      # pytest with coverage over src/; [tool.coverage.report] fail_under enforces 100%
+      - run: edwh test.run
+
+  check_max:
+    name: Lint, format and test on highest Python
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.15'
+          allow-prereleases: true
+      - uses: yezz123/setup-uv@v4
+        with:
+          uv-venv: ".venv"
+      - run: uv pip install .[dev,all]
+      # ruff + ty
+      - run: edwh lint --output ci
+      # what `edwh fmt` would change: import order and formatting
+      - run: ruff check --select I . && ruff format --check .
+      # pytest with coverage over src/; [tool.coverage.report] fail_under enforces 100%
+      - run: edwh test.run
