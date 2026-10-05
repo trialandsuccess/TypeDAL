@@ -13,7 +13,8 @@ from .upsert import install_upsert
 
 
 def _coerce_decimal(value: object) -> object:
-    if value is None:
+    # PyDAL's own pre-representer turns "" into NULL for non-string types (an empty optional form field):
+    if value is None or value == "":
         return value
     try:
         number = value if isinstance(value, Decimal) else Decimal(str(value).strip())

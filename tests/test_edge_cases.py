@@ -9,6 +9,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from pydal import Field
 from pydal.validators import IS_NOT_EMPTY
 
 from src.typedal import TypeDAL, TypedField, TypedTable, relationship
@@ -87,6 +88,17 @@ def test_decimal_coercion_preserves_null_and_finite_values(value: t.Any) -> None
 def test_decimal_coercion_rejects_nonfinite_and_invalid_values(value: t.Any) -> None:
     with pytest.raises(ValueError, match="Invalid decimal"):
         _coerce_decimal(value)
+
+
+def test_decimal_coercion_passes_empty_values_to_pydal(db: TypeDAL) -> None:
+    assert _coerce_decimal(None) is None
+    assert _coerce_decimal("") == ""
+
+    # PyDAL renders "" as NULL for decimal fields, as it did before the guard existed:
+    table = db.define_table("decimal_empty", Field("price", "decimal(10,2)"))
+    row_id = table.insert(price="")
+    assert table[row_id].price is None
+    assert db(table.price == "").count() == 0
 
 
 def test_decimal_guard_is_installed_once_and_skips_adapters_without_representer(db: TypeDAL) -> None:

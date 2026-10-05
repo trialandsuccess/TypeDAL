@@ -856,6 +856,16 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
                     query &= subquery
 
         if rewrites:
+            # a plain table relating to another table (`Article.reviewer == Author.id`) was an independent copy in v5;
+            # rewriting it to the join's alias would silently change the result, so refuse instead:
+            parents: dict[str, str] = {}
+            tables = _walk_tables(query, set(), parents)
+            for name in rewrites.keys() & tables:
+                if any(other != name and _find_table(parents, other) == _find_table(parents, name) for other in tables):
+                    raise AliasedTableMismatchError(
+                        f"Table {name!r} is joined, so a plain {name!r} in where() means that join and can't be "
+                        f"compared with other tables; use a lambda to pick the join or cross_join() for a separate copy"
+                    )
             query = t.cast(Query, _rewrite_tables(query, rewrites))
         return ResolvedQuery(query, joined, rewrites)
 
