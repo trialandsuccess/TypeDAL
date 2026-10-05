@@ -2,6 +2,26 @@
 
 <!--next-version-placeholder-->
 
+## v6.0.0 (2026-10-05)
+
+### Features
+* **upsert:** add unique-key upserts and affected-ID update hooks
+* **upsert:** add native and fallback table upserts ; todo: hooks
+
+### Fixes
+* **query:** preserve empty decimals and reject ambiguous joined tables
+* resolve PR review issues
+* **query-builder:** resolve filters against joined table aliases
+* **caching:** isolate cache models per database
+* **upsert:** preserve update errors and normalize keys
+* **decimal:** validate numeric values during coercion
+* **typedal:** harden queries, updates, and upserts
+* **async:** close connections when no pool is available
+* **relationships:** apply additional join conditions consistently
+
+### Breaking Change
+* **query-builder:** block implicit cross joins by default and support explicit cross joins
+
 ## v5.1.5 (2026-09-21)
 
 ### Fixes
