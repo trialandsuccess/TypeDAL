@@ -243,6 +243,18 @@ def test_same_table_joined_twice_needs_a_lambda():
     assert deferred.paginate(limit=1).pagination["total_items"] == 1
 
 
+def test_joined_table_compared_with_other_table_needs_a_lambda():
+    builder = Article.join("critic")
+
+    # in v5 this plain Author was an independent copy, rewriting it to the `critic` alias would change the result:
+    with pytest.raises(AliasedTableMismatchError, match="'alias_author' is joined"):
+        builder.where(Article.author == Author.id).to_sql()
+
+    assert titles(builder.where(lambda article, critic: article.author == critic.id)) == []
+    # on its own, the plain table still means the join:
+    assert titles(builder.where(Author.name == "cat")) == ["Third"]
+
+
 def test_lambda_mixes_with_other_where_parts():
     builder = Article.join("critic").where(
         lambda article, critic: critic.name == "cat",
