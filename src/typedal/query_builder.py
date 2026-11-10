@@ -30,8 +30,10 @@ from .helpers import (
     normalize_table_keys,
     throw,
 )
+from .pydal_compat import inline_sql
 from .tables import TableMeta, TypedTable, _TypedTable
 from .types import (
+    AnyDict,
     CacheMetadata,
     Condition,
     Expression,
@@ -225,6 +227,22 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         _, select_args, _ = self._before_query({}, add_id=False)
         return select_args
 
+    # Newer pyDAL (20261107.0+) translates a `belongs(subquery)` into its AST from these Select internals instead of
+    # calling `_compile`, so they describe the same query as `_qfields` (and as `to_sql`):
+    @property
+    def _db(self) -> TypeDAL:
+        return self._get_db()
+
+    @property
+    def _query(self) -> Query:
+        query, _, _ = self._before_query({}, add_id=False)
+        return query
+
+    @property
+    def _attributes(self) -> AnyDict:
+        _, _, select_kwargs = self._before_query({}, add_id=False)
+        return dict(select_kwargs)
+
     def _compile(
         self,
         outer_scoped: list[t.Any] | None = None,  # noqa ARG002 - inherit from Select
@@ -344,15 +362,14 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
 
         return self._extend(permissions=permissions)
 
-    def _normalize_select_option(
-        self, value: str | Field | Expression | bool | t.Iterable[str | Field]
-    ) -> str | bool | list[str]:
+    def _normalize_select_option(self, value: str | Field | Expression | bool | t.Iterable[str | Field]) -> str | bool:
         # currently only used for 'distinct' since orderby, ... are patched by pydal itself in select()
         if isinstance(value, bool):
             return value
 
         if isinstance(value, (list, tuple, set)):
-            return t.cast(list[str], [self._normalize_select_option(val) for val in value])
+            # one comma-separated string: pydal renders it as `DISTINCT ON (a, b)` (a list would end up as its repr)
+            return ", ".join(str(self._normalize_select_option(val)) for val in value)
 
         if rname := getattr(value, "_rname", None):
             return str(rname)
@@ -756,7 +773,8 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
 
     def _delete(self) -> str:
         db = self._get_db()
-        return str(db(self._mutation_query())._delete())
+        with inline_sql(db._adapter):
+            return str(db(self._mutation_query())._delete())
 
     # QueryBuilder subclasses Select for its query-building surface but yields
     # model instances rather than fields, so these two are not substitutable.
@@ -774,7 +792,8 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
 
     def _update(self, **fields: t.Any) -> str:
         db = self._get_db()
-        return str(db(self._mutation_query())._update(**fields))
+        with inline_sql(db._adapter):
+            return str(db(self._mutation_query())._update(**fields))
 
     def _joined_tables(self) -> list[JoinedTable]:
         """Every joined relationship (nested ones included) with the table it uses in the SQL."""
@@ -1844,7 +1863,10 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         db = self._get_db()
         query, distinct = self.__count(db, distinct=distinct)
 
-        return query if isinstance(query, str) else db(query)._count(distinct)
+        if isinstance(query, str):
+            return query
+        with inline_sql(db._adapter):
+            return str(db(query)._count(distinct))
 
     def exists(self) -> bool:
         """

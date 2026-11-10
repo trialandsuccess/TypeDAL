@@ -7,13 +7,11 @@ import typing as t
 import warnings
 from dataclasses import dataclass
 
-from pydal.adapters.base import BaseAdapter, SQLAdapter
-from pydal.dialects.base import SQLDialect
-from pydal.dialects.postgre import PostgreDialect
 from pydal.helpers._internals import Dispatcher
 from pydal.helpers.methods import attempt_upload, delete_uploaded_files
 
 from .exceptions import UpsertAmbiguityError, UpsertHookError, UpsertKeyError
+from .pydal_compat import BaseAdapter, PostgresDialect, SQLAdapter, SQLDialect
 from .set_types import affected_set, match_fields
 from .types import UPSERT_KEY_TYPES, AnyCallable, AnyDict, Field, OpRow, Reference, Row, Table, UpsertHookPolicy
 from .updates import parse_returned, update_returning_row
@@ -155,7 +153,6 @@ class UpsertAdapter(t.Protocol):
         ...
 
 
-@upsert_dialects.register_for(SQLDialect)
 class SQLUpsertDialect:
     """Dialect without native upsert; execution uses the Python implementation."""
 
@@ -179,7 +176,6 @@ class SQLUpsertDialect:
         raise NotImplementedError("This dialect does not support native upsert")
 
 
-@upsert_dialects.register_for(PostgreDialect)
 class PostgreUpsertDialect(SQLUpsertDialect):
     """PostgreSQL conflict handling returns the branch as execution metadata."""
 
@@ -203,6 +199,11 @@ class PostgreUpsertDialect(SQLUpsertDialect):
         if returning:  # pragma: no branch - the adapter always asks Postgres for the row
             sql += f" RETURNING {returning}, (xmax = 0) AS inserted"
         return sql + ";"
+
+
+# Plain calls rather than decorators: newer PyDAL annotates `register_for` as returning `type`.
+upsert_dialects.register_for(SQLDialect)(SQLUpsertDialect)
+upsert_dialects.register_for(PostgresDialect)(PostgreUpsertDialect)
 
 
 def validate_upsert(table: Table, key: t.Any, values: AnyDict, model_name: str) -> AnyDict:
