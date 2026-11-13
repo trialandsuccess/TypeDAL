@@ -2,6 +2,11 @@
 
 <!--next-version-placeholder-->
 
+## v6.1.0 (2026-11-13)
+
+### Feature
+* **pydal:** support newer backend and parameter APIs (#24)
+
 ## v6.0.0 (2026-10-05)
 
 ### Features
