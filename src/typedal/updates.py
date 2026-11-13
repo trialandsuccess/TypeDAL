@@ -5,12 +5,9 @@ from __future__ import annotations
 import types
 import typing as t
 
-from pydal.adapters.base import BaseAdapter, SQLAdapter
-from pydal.dialects.base import SQLDialect
-from pydal.dialects.postgre import PostgreDialect
-from pydal.dialects.sqlite import SQLiteDialect
 from pydal.helpers._internals import Dispatcher
 
+from .pydal_compat import BaseAdapter, PostgresDialect, SQLAdapter, SQLDialect, SQLiteDialect, bound_parameters
 from .set_types import UpdateResult, ids_query, key_fields, key_value
 from .types import Field, Query, Row, Rows, Table
 
@@ -27,7 +24,6 @@ class UpdateDialect(t.Protocol):
         ...
 
 
-@update_dialects.register_for(SQLDialect)
 class SQLUpdateDialect:
     """Dialect without UPDATE ... RETURNING; IDs are selected before updating."""
 
@@ -42,7 +38,6 @@ class SQLUpdateDialect:
         raise NotImplementedError("This dialect does not support UPDATE RETURNING")
 
 
-@update_dialects.register_for(PostgreDialect)
 class PostgreUpdateDialect(SQLUpdateDialect):
     """PostgreSQL returns the updated rows' keys in the UPDATE itself."""
 
@@ -53,7 +48,6 @@ class PostgreUpdateDialect(SQLUpdateDialect):
         return sql.rstrip().removesuffix(";") + f" RETURNING {field};"
 
 
-@update_dialects.register_for(SQLiteDialect)
 class SQLiteUpdateDialect(PostgreUpdateDialect):
     """SQLite has the same RETURNING syntax, from version 3.35 on."""
 
@@ -63,15 +57,21 @@ class SQLiteUpdateDialect(PostgreUpdateDialect):
         self.supported = getattr(self.adapter.driver, "sqlite_version_info", (0,)) >= (3, 35, 0)
 
 
+# Plain calls rather than decorators: newer PyDAL annotates `register_for` as returning `type`.
+update_dialects.register_for(SQLDialect)(SQLUpdateDialect)
+update_dialects.register_for(PostgresDialect)(PostgreUpdateDialect)
+update_dialects.register_for(SQLiteDialect)(SQLiteUpdateDialect)
+
+
 def _returning_update(
     adapter: SQLAdapter, table: Table, query: Query | None, fields: list[tuple[Field, t.Any]], returning: list[Field]
 ) -> list[t.Any]:
     """Run `UPDATE ... RETURNING` and return the raw rows, for dialects with `update_returning_supported`."""
     dialect = t.cast(UpdateDialect, adapter.dialect)
-    sql = dialect.update_returning(
-        adapter._update(table, query, fields), ", ".join(field._rname for field in returning)
-    )
-    adapter.execute(sql)
+    update = adapter._update(table, query, fields)
+    sql = dialect.update_returning(update, ", ".join(field._rname for field in returning))
+    # appending RETURNING turns PyDAL's parameterized SQL into a plain str, so pass its parameters on explicitly:
+    adapter.execute(sql, *bound_parameters(update))
     return t.cast(list[t.Any], adapter.fetchall())
 
 
