@@ -2,6 +2,11 @@
 
 <!--next-version-placeholder-->
 
+## v6.1.1 (2026-11-13)
+
+### Fix
+* **pydal:** revert support for pydal >= 20261107.0 and pin below it
+
 ## v6.1.0 (2026-11-13)
 
 ### Feature
