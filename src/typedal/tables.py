@@ -21,7 +21,6 @@ from .asynchronous import run_async
 from .constants import JOIN_OPTIONS
 from .core import TypeDAL
 from .helpers import all_dict, classproperty, filter_out, throw
-from .pydal_compat import inline_sql
 from .serializers import as_json
 from .types import (
     AffectedSet,
@@ -261,8 +260,7 @@ class TableMeta(type):
     def _insert(self, **fields: t.Any) -> str:
         table = self._ensure_table_defined()
 
-        with inline_sql(table._db._adapter):
-            return str(table._insert(**fields))
+        return str(table._insert(**fields))
 
     def bulk_insert(self: t.Type[T_MetaInstance], items: list[AnyDict]) -> "TypedRows[T_MetaInstance]":
         """

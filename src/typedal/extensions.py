@@ -4,10 +4,10 @@ Instance-local extensions TypeDAL installs on each database's PyDAL adapter.
 They patch only that adapter and its dialect, never PyDAL's global registrations.
 """
 
-import typing as t
 from decimal import Decimal, InvalidOperation
 
-from .pydal_compat import BaseAdapter
+from pydal.adapters.base import BaseAdapter
+
 from .updates import install_update
 from .upsert import install_upsert
 
@@ -45,42 +45,6 @@ def install_decimal_guard(adapter: BaseAdapter) -> None:
 
     representer.represent = guarded
     representer._typedal_decimal_guard = True
-    _install_bind_guard(adapter)
-
-
-# What PyDAL's representers did with numeric values before it started binding them as parameters:
-_NUMERIC_CONVERSIONS: dict[str, t.Callable[[t.Any], object]] = {
-    "integer": int,
-    "bigint": int,
-    "double": float,
-    "float": float,
-}
-
-
-def _install_bind_guard(adapter: BaseAdapter) -> None:
-    """
-    Validate numeric values PyDAL binds as parameters, like its representers did when it still inlined them.
-
-    Since PyDAL 20261107.0, the SQLite and PostgreSQL compilers bind values instead of inlining them, and pass integer,
-    float and decimal values through unconverted. That closes the decimal injection, but SQLite then stores any string
-    in a numeric column (`insert(age="abc")` used to raise and now succeeds) and fails when reading it back.
-    """
-    compiler = getattr(adapter, "compiler", None)
-    # Older PyDAL has no compiler, so this block only runs (and is only measured) on newer versions; CI tests both.
-    if compiler is not None:  # pragma: no cover
-        adapt_for_bind = compiler._adapt_for_bind
-
-        def guarded(value: object, field_type: str) -> object:
-            convert = _NUMERIC_CONVERSIONS.get(field_type)
-            if convert is None and not field_type.startswith("decimal"):
-                return adapt_for_bind(value, field_type)
-            # an empty form field means NULL, as PyDAL's representers make it:
-            if value == "":
-                return None
-            # bind a validated decimal as text, like the representer inlines it (sqlite3 can't bind a Decimal):
-            return convert(value) if convert else str(_coerce_decimal(value))
-
-        compiler._adapt_for_bind = guarded
 
 
 def install_extensions(adapter: BaseAdapter) -> None:

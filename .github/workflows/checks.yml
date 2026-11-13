@@ -4,32 +4,38 @@ on:
     branches-ignore:
       - master
 jobs:
-  check:
-    name: Python ${{ matrix.python }}, pydal ${{ matrix.pydal.name }}
+  check_min:
+    name: Lint, format and test on lowest Python
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        # lowest and highest supported Python
-        python: ['3.12', '3.15']
-        # pydal 20261107.0 moved adapters/dialects into pydal.backend_base and pydal.backends;
-        # typedal.pydal_compat supports both layouts, so test the oldest supported release and the newest.
-        pydal:
-          - name: 'oldest (20260520.0)'
-            spec: 'pydal==20260520.0'
-          - name: 'latest'
-            spec: 'pydal>=20261107.0'
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
         with:
-          python-version: ${{ matrix.python }}
-          allow-prereleases: true
-      - uses: yezz123/setup-uv@v4
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v6
         with:
-          uv-venv: ".venv"
-      - run: uv pip install ".[dev,all]" "${{ matrix.pydal.spec }}"
-      - run: uv pip list | grep -iE '^(pydal|py4web|pydal2sql-core) '
+          activate-environment: true
+      - run: uv pip install .[dev,all]
+      # ruff + ty
+      - run: edwh lint --output ci
+      # what `edwh fmt` would change: import order and formatting
+      - run: ruff check --select I . && ruff format --check .
+      # pytest with coverage over src/; [tool.coverage.report] fail_under enforces 100%
+      - run: edwh test.run
+
+  check_max:
+    name: Lint, format and test on highest Python
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.15'
+          allow-prereleases: true
+      - uses: astral-sh/setup-uv@v6
+        with:
+          activate-environment: true
+      - run: uv pip install .[dev,all]
       # ruff + ty
       - run: edwh lint --output ci
       # what `edwh fmt` would change: import order and formatting

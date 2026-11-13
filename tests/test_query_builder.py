@@ -777,16 +777,6 @@ def test_belongs_accepts_querybuilder_subquery():
     assert [row.number for row in results] == [1]
 
 
-def test_querybuilder_select_internals_match_to_sql():
-    # Newer pydal builds a belongs() subquery from these Select internals instead of QueryBuilder._compile:
-    builder = TestRelationship.select(TestRelationship.querytable, orderby=TestRelationship.value).where(
-        TestRelationship.value == 33
-    )
-
-    assert builder._db is db
-    assert str(db(builder._query)._select(*builder._qfields, **builder._attributes)) == builder.to_sql()
-
-
 def test_select_kwargs_use_rname_psql(dal_psql: TypeDAL):
     db = dal_psql
 

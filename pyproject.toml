@@ -25,10 +25,9 @@ classifiers = [
 ]
 dependencies = [
     # core; 20260520.0 is the first release with Set._apply_update, which UpdateSet relies on.
-    # 20261107.0 moved adapters/dialects into pydal.backend_base and pydal.backends; typedal.pydal_compat
-    # handles both layouts and CI tests against both (see .github/workflows/checks.yml).
     # Note: pydal's newer 3.YYYYMMDD versions sort *below* this under PEP 440 and are excluded on purpose for now.
-    "pydal >= 20260520.0",
+    # 20261107.0 moved adapters/dialects into pydal.backend_base/pydal.backends and is not supported yet.
+    "pydal >= 20260520.0, < 20261107.0",
     "pydal-stubs >= 0.2.0", # improved typing for pydal
     "dill < 1", # caching
     "configuraptor >= 2.1.0, < 3", # config
@@ -49,13 +48,13 @@ cli = [
     "questionary",
     "tomlkit",
     "pydal2sql>=1.3.5",
-    "pydal2sql-core>=0.7.3", # first release that supports pydal >= 20261107.0
+    "pydal2sql-core>=0.7.4", # pins pydal below 20261107.0, matching TypeDAL
 ]
 
 migrations = [
     "tabulate",
     "pydal2sql>=1.3.5",
-    "pydal2sql-core>=0.7.3", # first release that supports pydal >= 20261107.0
+    "pydal2sql-core>=0.7.4", # pins pydal below 20261107.0, matching TypeDAL
     "edwh-migrate>=0.8.0",
     # cli:
     "typer >=0.18, <0.19",
@@ -63,7 +62,7 @@ migrations = [
     "questionary",
     "tomlkit",
     "pydal2sql>=1.3.5",
-    "pydal2sql-core>=0.7.3", # first release that supports pydal >= 20261107.0
+    "pydal2sql-core>=0.7.4", # pins pydal below 20261107.0, matching TypeDAL
 ]
 
 typescript = [
@@ -74,7 +73,7 @@ typescript = [
     "questionary",
     "tomlkit",
     "pydal2sql>=1.3.5",
-    "pydal2sql-core>=0.7.3", # first release that supports pydal >= 20261107.0
+    "pydal2sql-core>=0.7.4", # pins pydal below 20261107.0, matching TypeDAL
 ]
 
 all = [
@@ -89,7 +88,7 @@ all = [
     "questionary",
     "tomlkit",
     "pydal2sql[all]>=1.3.5",
-    "pydal2sql-core>=0.7.3", # first release that supports pydal >= 20261107.0
+    "pydal2sql-core>=0.7.4", # pins pydal below 20261107.0, matching TypeDAL
 ]
 
 dev = [
@@ -109,6 +108,8 @@ dev = [
     "testcontainers[mysql]>=4.15", # testcontainers.community.mysql
     "pydantic < 3",
     "psycopg2-binary",
+    # depends on ->
+    "requests<2.32",
     # mypy:
     "types-tabulate",
     "types-PyYAML",
@@ -230,12 +231,6 @@ include = ["src"]
 
 [tool.ty.environment]
 python-version = "3.14"
-
-[[tool.ty.overrides]]
-# its type-checking imports only resolve with older PyDAL installed, so the ignores there are unused on that version
-include = ["src/typedal/pydal_compat.py"]
-[tool.ty.overrides.rules]
-unused-ignore-comment = "ignore"
 
 [tool.ruff.lint]
 
