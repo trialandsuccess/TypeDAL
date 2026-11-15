@@ -13,33 +13,40 @@ nav:
   - 9. Function Memoization: 9_memoization.md
   - 10. Advanced APIs: 10_advanced_apis.md
   - 11. Async: 11_async.md
-extra:
-  version:
-    default: stable
-
-#markdown_extensions:
-#  - pymdownx.highlight:
-#      anchor_linenums: true
-#      line_spans: __span
-#      pygments_lang_class: true
-#  - pymdownx.inlinehilite
-#  - pymdownx.snippets
-#  - pymdownx.superfences
+repo_url: https://github.com/trialandsuccess/TypeDAL
+repo_name: trialandsuccess/TypeDAL
 
 theme:
-  name: dracula
-  locale: en
-  highlightjs: true
-  hljs_style: tokyo-night-dark
-  hljs_languages:
-    - shell
-    - bash
-    - python
-    - sql
-
+  name: material
+  custom_dir: docs-theme
+  font: false
+  icon:
+    repo: fontawesome/brands/github
+  palette:
+    - scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
   features:
     - content.code.copy
+    - navigation.top
+    - navigation.footer
+    - search.highlight
+    - toc.follow
 
-extra_css:
-  - https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/tokyo-night-dark.min.css
-  - css/code_blocks.css
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.superfences

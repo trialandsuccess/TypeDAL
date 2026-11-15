@@ -1,0 +1,158 @@
+/* TypeDAL docs theme: the look of the TypeDAL landing page, applied to Material for MkDocs. */
+
+:root {
+  --td-green: #12382a;
+  --td-green-2: #1d4a39;
+  --td-mint: #bfe3cd;
+  --td-cream: #f5f0e4;
+  --td-paper: #fbf8f1;
+  --td-code: #f1ebdc;
+  --td-ink: #15231c;
+  --td-muted: #56635b;
+  --td-soft: #d8d2c2;
+  --td-rust: #8a3a1a;
+  --td-link: #1f6a43;
+
+  --md-text-font: "Archivo";
+  --md-code-font: "Martian Mono";
+}
+
+[data-md-color-primary="custom"] {
+  --md-primary-fg-color: var(--td-green);
+  --md-primary-fg-color--light: var(--td-green-2);
+  --md-primary-fg-color--dark: #0c2a1f;
+  --md-primary-bg-color: var(--td-cream);
+  --md-primary-bg-color--light: #dfe8dd;
+}
+
+[data-md-color-accent="custom"] {
+  --md-accent-fg-color: var(--td-link);
+  --md-accent-fg-color--transparent: rgba(31, 106, 67, .1);
+}
+
+[data-md-color-scheme="default"] {
+  --md-default-bg-color: var(--td-paper);
+  --md-default-fg-color: var(--td-ink);
+  --md-default-fg-color--light: var(--td-muted);
+  --md-default-fg-color--lighter: #8d968f;
+  --md-default-fg-color--lightest: var(--td-soft);
+  --md-typeset-color: var(--td-ink);
+  --md-typeset-a-color: var(--td-link);
+  --md-code-bg-color: var(--td-code);
+  --md-code-fg-color: var(--td-ink);
+  --md-code-hl-keyword-color: var(--td-rust);
+  --md-code-hl-string-color: var(--td-link);
+  --md-code-hl-number-color: var(--td-rust);
+  --md-code-hl-constant-color: var(--td-rust);
+  --md-code-hl-special-color: var(--td-rust);
+  --md-code-hl-function-color: var(--td-ink);
+  --md-code-hl-name-color: var(--td-ink);
+  --md-code-hl-operator-color: var(--td-muted);
+  --md-code-hl-punctuation-color: var(--td-muted);
+  --md-code-hl-comment-color: #7a8179;
+  --md-code-hl-generic-color: var(--td-muted);
+  --md-code-hl-variable-color: var(--td-ink);
+  --md-footer-bg-color: var(--td-green);
+  --md-footer-bg-color--dark: #0c2a1f;
+  --td-rule: var(--td-ink);
+}
+
+/* Dark mode: the green band becomes the page. */
+[data-md-color-scheme="slate"] {
+  --md-hue: 150;
+  --md-default-bg-color: #0f2c21;
+  --md-default-fg-color: #e6eee6;
+  --md-default-fg-color--light: #b5c4b9;
+  --md-default-fg-color--lighter: #7f9286;
+  --md-default-fg-color--lightest: #2c4a3d;
+  --md-typeset-color: #e6eee6;
+  --md-typeset-a-color: var(--td-mint);
+  --md-accent-fg-color: var(--td-mint);
+  --md-code-bg-color: #163a2c;
+  --md-code-fg-color: #e6eee6;
+  --md-code-hl-keyword-color: #f0b38f;
+  --md-code-hl-string-color: var(--td-mint);
+  --md-code-hl-number-color: #f0b38f;
+  --md-code-hl-constant-color: #f0b38f;
+  --md-code-hl-special-color: #f0b38f;
+  --md-code-hl-function-color: #e6eee6;
+  --md-code-hl-name-color: #e6eee6;
+  --md-code-hl-operator-color: #b5c4b9;
+  --md-code-hl-punctuation-color: #b5c4b9;
+  --md-code-hl-comment-color: #86a091;
+  --md-code-hl-variable-color: #e6eee6;
+  --md-footer-bg-color: #0a2219;
+  --md-footer-bg-color--dark: #071a13;
+  --td-rule: var(--td-mint);
+}
+
+/* Header: a deep green band with the wide wordmark. */
+.md-header { box-shadow: none; }
+.md-header__title { font-stretch: 125%; font-weight: 800; letter-spacing: -.01em; }
+.md-header__topic:first-child { font-weight: 800; }
+
+/* Body text and measure. */
+.md-typeset { font-size: .86rem; line-height: 1.65; }
+.md-typeset p, .md-typeset li { max-width: 46em; }
+
+/* Headings carry the poster type. */
+.md-typeset h1 {
+  font-stretch: 125%;
+  font-weight: 800;
+  font-size: 2.3em;
+  line-height: 1.02;
+  letter-spacing: -.02em;
+  color: var(--md-default-fg-color);
+  margin-bottom: .9em;
+}
+.md-typeset h2 {
+  font-stretch: 112%;
+  font-weight: 750;
+  font-size: 1.55em;
+  letter-spacing: -.015em;
+  border-top: 3px solid var(--td-rule);
+  padding-top: .9em;
+  margin-top: 2.2em;
+}
+.md-typeset h3 { font-stretch: 105%; font-weight: 700; }
+.md-typeset h4 { font-weight: 700; }
+
+/* Code blocks: heavy rule on top, square corners, like the landing page. */
+.md-typeset pre > code { border-top: 3px solid var(--td-rule); border-radius: 0; padding: 1.1em 1.3em; }
+.md-typeset code { font-stretch: 87.5%; border-radius: 2px; }
+.md-typeset pre { font-size: .82em; }
+.md-typeset .highlight .kn, .md-typeset .highlight .k { font-weight: 500; }
+
+/* Tables: rules instead of boxes. */
+.md-typeset table:not([class]) { border: 0; border-top: 3px solid var(--td-rule); border-radius: 0; font-size: .74rem; }
+.md-typeset table:not([class]) th { background: transparent; font-weight: 700; border-bottom: 1px solid var(--md-default-fg-color--lightest); }
+.md-typeset table:not([class]) td { border-top: 1px solid var(--md-default-fg-color--lightest); }
+
+/* The docs write notes as "> **Important:** ..." blockquotes. */
+.md-typeset blockquote {
+  border-left: 3px solid var(--md-accent-fg-color);
+  color: var(--md-default-fg-color);
+  background: var(--md-code-bg-color);
+  padding: .6em 1em;
+}
+
+/* Sidebar navigation. */
+.md-nav { font-size: .74rem; }
+.md-nav__link--active, .md-nav__item .md-nav__link--active { font-weight: 700; }
+.md-nav__title { font-stretch: 112%; font-weight: 700; }
+
+/* Footer and search. */
+.md-footer__title, .md-footer__direction { font-stretch: 105%; }
+.md-search__input { border-radius: 2px; }
+
+/* Focus: ink on paper, mint on green. */
+:focus-visible { outline: 3px solid var(--md-default-fg-color); outline-offset: 2px; }
+.md-header :focus-visible, .md-footer :focus-visible { outline-color: var(--td-mint); }
+
+/* The wordmark is enough; no generic book icon. */
+.md-header__button.md-logo { display: none; }
+@media screen and (min-width: 76.25em) { .md-header__title { margin-left: .8rem; } }
+
+/* Wide comparison tables scroll sideways instead of breaking code mid-word. */
+.md-typeset table:not([class]) code { white-space: nowrap; word-break: normal; }
+.md-typeset table:not([class]) th { white-space: nowrap; }

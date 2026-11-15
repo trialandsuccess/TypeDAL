@@ -116,7 +116,7 @@ dev = [
     "types-requests",
     # docs:
     'mkdocs',
-    'mkdocs-dracula-theme',
+    'mkdocs-material',
 ]
 
 [template.plugins.default]
