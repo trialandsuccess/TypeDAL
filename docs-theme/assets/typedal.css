@@ -12,6 +12,7 @@
   --td-soft: #d8d2c2;
   --td-rust: #8a3a1a;
   --td-link: #1f6a43;
+  --td-slate: #2c5a73;
 
   --md-text-font: "Archivo";
   --md-code-font: "Martian Mono";
@@ -43,15 +44,16 @@
   --md-code-hl-keyword-color: var(--td-rust);
   --md-code-hl-string-color: var(--td-link);
   --md-code-hl-number-color: var(--td-rust);
-  --md-code-hl-constant-color: var(--td-rust);
+  --md-code-hl-constant-color: var(--td-slate);
   --md-code-hl-special-color: var(--td-rust);
   --md-code-hl-function-color: var(--td-ink);
   --md-code-hl-name-color: var(--td-ink);
   --md-code-hl-operator-color: var(--td-muted);
   --md-code-hl-punctuation-color: var(--td-muted);
-  --md-code-hl-comment-color: #7a8179;
+  --md-code-hl-comment-color: #5d665f;
   --md-code-hl-generic-color: var(--td-muted);
   --md-code-hl-variable-color: var(--td-ink);
+  --td-block-bg: #efe7d4;
   --md-footer-bg-color: var(--td-green);
   --md-footer-bg-color--dark: #0c2a1f;
   --td-rule: var(--td-ink);
@@ -71,16 +73,17 @@
   --md-code-bg-color: #163a2c;
   --md-code-fg-color: #e6eee6;
   --md-code-hl-keyword-color: #f0b38f;
-  --md-code-hl-string-color: var(--td-mint);
+  --md-code-hl-string-color: #8fd3a8;
   --md-code-hl-number-color: #f0b38f;
-  --md-code-hl-constant-color: #f0b38f;
+  --md-code-hl-constant-color: #9fcbe0;
   --md-code-hl-special-color: #f0b38f;
   --md-code-hl-function-color: #e6eee6;
   --md-code-hl-name-color: #e6eee6;
   --md-code-hl-operator-color: #b5c4b9;
   --md-code-hl-punctuation-color: #b5c4b9;
-  --md-code-hl-comment-color: #86a091;
+  --md-code-hl-comment-color: #9db3a5;
   --md-code-hl-variable-color: #e6eee6;
+  --td-block-bg: #0a2219;
   --md-footer-bg-color: #0a2219;
   --md-footer-bg-color--dark: #071a13;
   --td-rule: var(--td-mint);
@@ -117,11 +120,21 @@
 .md-typeset h3 { font-stretch: 105%; font-weight: 700; }
 .md-typeset h4 { font-weight: 700; }
 
-/* Code blocks: heavy rule on top, square corners, like the landing page. */
-.md-typeset pre > code { border-top: 3px solid var(--td-rule); border-radius: 0; padding: 1.1em 1.3em; }
+/* Code blocks: heavy rule on top, square corners, like the landing page.
+   Block code is set near prose size at normal width with open leading so longer
+   examples stay readable; inline code keeps the condensed cut to sit in a sentence. */
 .md-typeset code { font-stretch: 87.5%; border-radius: 2px; }
-.md-typeset pre { font-size: .82em; }
+.md-typeset pre { font-size: 1em; line-height: 1.6; }
+.md-typeset pre > code {
+  font-size: .845em;
+  font-stretch: 100%;
+  background-color: var(--td-block-bg);
+  border-top: 3px solid var(--td-rule);
+  border-radius: 0;
+  padding: 1.1em 1.4em;
+}
 .md-typeset .highlight .kn, .md-typeset .highlight .k { font-weight: 500; }
+.md-typeset .highlight .nc, .md-typeset .highlight .nf { font-weight: 600; }
 
 /* Tables: rules instead of boxes. */
 .md-typeset table:not([class]) { border: 0; border-top: 3px solid var(--td-rule); border-radius: 0; font-size: .74rem; }
