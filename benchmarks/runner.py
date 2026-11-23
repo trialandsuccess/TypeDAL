@@ -22,7 +22,7 @@ PROFILES: dict[str, dict[str, t.Any]] = {
     # one verified repetition per cell: a correctness smoke test, no timing value
     "check": {"sizes": [1, 10, 1_000], "min_reps": 1, "max_reps": 1, "budget_s": 0.0, "warmup": 0},
 }
-SLOW_CELL_S = 2.0  # cells whose warm-up exceeds this run only SLOW_MIN_REPS measured repetitions
+SLOW_CELL_S = 1.0  # cells whose warm-up exceeds this run only SLOW_MIN_REPS measured repetitions
 SLOW_MIN_REPS = 3
 MEMORY_MIN_N = 1_000
 
@@ -76,7 +76,7 @@ def _stats(samples_ns: list[int]) -> dict[str, float]:
 
 
 def run_cell(
-    ctx: Ctx, case: Case, variant: str, n: int, st: Settings, log: t.Callable[[str], None]
+    ctx: Ctx, case: Case, variant: str, n: int, st: Settings, log: t.Callable[[str], None], memory: bool = False
 ) -> dict[str, t.Any]:
     fn = case.variants[variant]
     db = ctx.db_for(variant)
@@ -114,7 +114,7 @@ def run_cell(
         cpu_ns.append(cpu)
 
     peak = None
-    if st.memory and n >= MEMORY_MIN_N:
+    if memory:
         if case.mutating:
             state = case.prepare(ctx, db, n)
         gc.collect()
@@ -145,41 +145,67 @@ def run_cell(
     }
 
 
+def _plan(backend: str, st: Settings) -> list[tuple[Case, int, str, bool]]:
+    """Every (case, n, variant, measure_memory) cell this run will execute, in order."""
+    plan = []
+    for case in CASES:
+        if st.cases and case.name not in st.cases:
+            continue
+        sizes = [n for n in case.sizes or st.sizes if not case.max_n or n <= case.max_n.get(backend, n)]
+        for n in sizes:
+            # one tracemalloc pass per case/variant, at its largest size
+            memory = st.memory and n == max(sizes) and n >= MEMORY_MIN_N
+            for variant in case.variants:
+                if not st.variants or variant in st.variants:
+                    plan.append((case, n, variant, memory))
+    return plan
+
+
+def _clock(seconds: float) -> str:
+    m, s = divmod(int(seconds), 60)
+    return f"{m // 60}h{m % 60:02d}m" if m >= 60 else f"{m}m{s:02d}s"
+
+
 def run_backend(backend: str, pg_uri: str | None, st: Settings, log: t.Callable[[str], None]) -> list[dict[str, t.Any]]:
     results = []
+    plan = _plan(backend, st)
+    n_cases = len({c.name for c, *_ in plan})
+    started = time.perf_counter()
     with tempfile.TemporaryDirectory(prefix=f"typedal-bench-{backend}-") as tmp:
         ctx = make_ctx(backend, pg_uri, Path(tmp))
         try:
-            for case in CASES:
-                if st.cases and case.name not in st.cases:
-                    continue
-                sizes = case.sizes or st.sizes
-                for n in sizes:
-                    if case.max_n and n > case.max_n.get(backend, n):
-                        continue
-                    for variant in case.variants:
-                        if st.variants and variant not in st.variants:
-                            continue
+            current = None
+            case_no = 0
+            for i, (case, n, variant, memory) in enumerate(plan, 1):
+                if case.name != current:
+                    current = case.name
+                    case_no += 1
+                    log(
+                        f"[progress] {backend} case {case_no}/{n_cases} {case.name} | cell {i}/{len(plan)} "
+                        f"| {_clock(time.perf_counter() - started)} elapsed"
+                    )
+                prefix = f"[{i:>3}/{len(plan)} {_clock(time.perf_counter() - started):>7}]"
+                try:
+                    results.append(run_cell(ctx, case, variant, n, st, lambda m: log(prefix + m), memory=memory))
+                except Exception as e:  # recorded, never skipped silently
+                    log(f"{prefix}  {case.name:<20} {variant:<16} n={n:<7} FAILED: {type(e).__name__}: {e}")
+                    for db in (ctx.pdb, ctx.tdb):
                         try:
-                            results.append(run_cell(ctx, case, variant, n, st, log))
-                        except Exception as e:  # recorded, never skipped silently
-                            log(f"  {case.name:<20} {variant:<16} n={n:<7} FAILED: {type(e).__name__}: {e}")
-                            for db in (ctx.pdb, ctx.tdb):
-                                try:
-                                    db.rollback()
-                                except Exception:
-                                    pass
-                            results.append(
-                                {
-                                    "backend": backend,
-                                    "case": case.name,
-                                    "op": case.op,
-                                    "variant": variant,
-                                    "n": n,
-                                    "verified": False,
-                                    "error": f"{type(e).__name__}: {e}",
-                                }
-                            )
+                            db.rollback()
+                        except Exception:
+                            pass
+                    results.append(
+                        {
+                            "backend": backend,
+                            "case": case.name,
+                            "op": case.op,
+                            "variant": variant,
+                            "n": n,
+                            "verified": False,
+                            "error": f"{type(e).__name__}: {e}",
+                        }
+                    )
+            log(f"[progress] {backend} done: {len(plan)} cells in {_clock(time.perf_counter() - started)}")
         finally:
             ctx.pdb.close()
             ctx.tdb.close()

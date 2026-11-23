@@ -76,11 +76,11 @@ and 1k on PostgreSQL: they scale linearly and on PostgreSQL every row is a netwo
   verification. Read cases seed once per cell; mutating cases re-seed before every repetition.
 - Warm-up: 2 repetitions for n ≤ 100, otherwise 1. The first warm-up time is kept as `first_ms` (the cold-ish path).
 - Measured repetitions (`full`/`large`): at least 5 and at most 30, stopping after 1 s of measuring once the minimum is met.
-  Cells whose warm-up takes over 2 s run 3 measured repetitions.
+  Cells whose warm-up takes over 1 s run 3 measured repetitions.
 - Wall time (`perf_counter_ns`) and process CPU time (`process_time_ns`) per repetition; stats are median, mean,
   min/max, quartiles (≥ 4 reps), stdev and p95 (≥ 20 reps), plus rows/s.
-- Peak Python memory: one extra, unmeasured-for-time repetition under `tracemalloc` for n ≥ 1000 (`--no-memory` to
-  skip). It measures Python allocations only, not driver/C memory.
+- Peak Python memory: one extra, unmeasured-for-time repetition under `tracemalloc` at each case's largest size
+  (when ≥ 1000; `--no-memory` to skip). It measures Python allocations only, not driver/C memory.
 - Each result file records the git SHA and dirty state, Python, pydal/TypeDAL versions and paths, SQLite version,
   PostgreSQL version and settings, CPU, memory, load average and the run settings.
 
