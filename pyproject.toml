@@ -224,7 +224,7 @@ exclude = ["venv", ".bak"]
 target-version = "py312"
 line-length = 120
 
-extend-exclude = ["*.bak/", "venv*/", "tests/", "example_*.py"]
+extend-exclude = ["*.bak/", "venv*/", "tests/", "benchmarks/", "example_*.py"]
 
 [tool.ty.src]
 include = ["src"]
