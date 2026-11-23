@@ -217,4 +217,5 @@ class TableDefinitionBuilder:
     def build_field(cls, name: str, field_type: str, **kw: t.Any) -> Field:
         """Create a pydal Field with default kwargs."""
         kw_combined = TypeDAL.default_kwargs | kw
-        return Field(name, field_type, **kw_combined)
+        field_class: type[Field] = getattr(field_type, "field_class", Field)
+        return field_class(name, field_type, **kw_combined)

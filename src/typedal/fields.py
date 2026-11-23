@@ -14,6 +14,7 @@ import uuid
 
 import pydal
 from pydal.helpers.classes import SQLCustomType
+from pydal.validators import IS_LIST_OF_INTS, IS_LIST_OF_STRINGS
 
 from .core import TypeDAL
 from .types import (
@@ -646,6 +647,142 @@ def UUIDField(**kw: t.Unpack[FieldSettings]) -> TypedField[uuid.UUID]:
     """
     kw["type"] = NativeUUIDField
     return TypedField(uuid.UUID, **kw)
+
+
+# python element type -> postgres element type; add an entry to support another type
+ARRAY_ELEMENT_TYPES: dict[type, str] = {
+    str: "text",
+    int: "bigint",
+    uuid.UUID: "uuid",
+}
+
+
+class NativeArrayType(SQLCustomType):
+    """
+    Native Postgres array column that poses as pydal's list:* type for forms and validators.
+    """
+
+    def __init__(self, element: type) -> None:
+        """
+        Build the custom type for a supported element type (see ARRAY_ELEMENT_TYPES).
+        """
+        if element not in ARRAY_ELEMENT_TYPES:
+            raise TypeError(f"Unsupported array element type {element}; choose from {list(ARRAY_ELEMENT_TYPES)}")
+
+        self.element = element
+        self.list_type = "list:integer" if element is int else "list:string"
+        # type="text" makes pydal pass the encoded list to psycopg2, which turns it into ARRAY[...]:
+        super().__init__(
+            type="text", native=f"{ARRAY_ELEMENT_TYPES[element]}[]", encoder=self.encode, decoder=self.decode
+        )
+
+    @property
+    def field_class(self) -> type[Field]:
+        """Pydal Field class to build for this type (see TableDefinitionBuilder.build_field)."""
+        return NativeArrayField
+
+    def encode(self, values: t.Iterable[t.Any] | None) -> list[t.Any] | str:
+        """
+        Drop None and blank items (like pydal's |a|b| lists); '{}' because pydal stores a falsy value as NULL.
+        """
+        if isinstance(values, str):
+            raise TypeError(f"Expected a list for an array field, got the string {values!r}")
+        items = [v for v in values or () if v is not None and str(v).strip()]
+        if self.element is uuid.UUID:
+            # psycopg2 can't adapt UUIDs by default; this renders '...'::uuid
+            from psycopg2.extras import UUID_adapter
+
+            items = [UUID_adapter(v if isinstance(v, uuid.UUID) else uuid.UUID(str(v))) for v in items]
+        return items or "{}"
+
+    def decode(self, value: list[t.Any] | str | None) -> list[t.Any]:
+        """
+        Turn the driver's list into a list of `element`, with NULL as [].
+        """
+        if value is None:
+            return []
+        if isinstance(value, str):
+            # psycopg2 returns uuid[] as a '{...}' string; uuids are never quoted in it:
+            value = value[1:-1].split(",") if value != "{}" else []
+        return [v if isinstance(v, self.element) else self.element(v) for v in value if v is not None]
+
+    def startswith(self, prefix: str | tuple[str, ...], *args: t.Any) -> bool:  # type: ignore[override]
+        """Pretend to be list:* so pydal and py4web treat this as a list field."""
+        return self.list_type.startswith(prefix, *args)
+
+    def split(self, *args: t.Any) -> list[str]:
+        """Forms call field.type.split(), so behave like the list:* type string."""
+        return self.list_type.split(*args)
+
+
+def _array_any(first: Field, second: t.Any, case_sensitive: bool = True, query_env: dict[str, t.Any] = {}) -> str:
+    adapter = first._db._adapter
+    column = adapter.expand(first, query_env=query_env)
+    value = (
+        adapter.expand(second, query_env=query_env) if isinstance(second, Expression) else adapter.adapt(str(second))
+    )
+    if case_sensitive or t.cast(NativeArrayType, first.type).element is not str:
+        return f"({value} = ANY({column}))"
+    # cheap substring prefilter (strpos has no wildcards), then the exact check on the lowercased array;
+    # ILIKE ANY would treat % and _ in elements as wildcards
+    prefilter = f"strpos(lower(array_to_string({column}, chr(1))), lower({value})) > 0"
+    return f"({prefilter} AND lower({value}) = ANY(lower({column}::text)::text[]))"
+
+
+def _array_binary(operator: str) -> AnyCallable:
+    def op(first: Field, second: t.Any, query_env: dict[str, t.Any] = {}) -> str:
+        adapter = first._db._adapter
+        column = adapter.expand(first, query_env=query_env)
+        values = adapter.expand(second, first.type, query_env=query_env)
+        # cast, since e.g. ARRAY[1,2] is integer[] and bigint[] && integer[] doesn't exist
+        return f"({column} {operator} {values}::{t.cast(NativeArrayType, first.type).native})"
+
+    return op
+
+
+def _array_cardinality(first: Field, query_env: dict[str, t.Any] = {}) -> str:
+    # not array_length(col, 1), which is NULL for an empty array
+    return f"cardinality({first._db._adapter.expand(first, query_env=query_env)})"
+
+
+class NativeArrayField(Field):
+    """
+    Pydal Field for native Postgres arrays, with array-aware query operators.
+    """
+
+    def contains(self, value: t.Any, all: bool = False, case_sensitive: bool = False) -> Query:  # noqa: A002
+        """
+        Whole-element match (case-insensitive text by default); a list means overlaps, or contains_all with all=True.
+        """
+        if isinstance(value, (list, tuple, set)):
+            return self.contains_all(value) if all else self.overlaps(value)
+        return Query(self.db, _array_any, self, value, case_sensitive=case_sensitive)
+
+    def contains_all(self, values: t.Iterable[t.Any]) -> Query:
+        """`col @> values`: the array holds every one of `values`."""
+        return Query(self.db, _array_binary("@>"), self, list(values))
+
+    def overlaps(self, values: t.Iterable[t.Any]) -> Query:
+        """`col && values`: the array holds at least one of `values`."""
+        return Query(self.db, _array_binary("&&"), self, list(values))
+
+    def like(self, value: t.Any, case_sensitive: bool = True, escape: str | None = None) -> Query:
+        """Match the array's text form, e.g. {a,b}; pydal would otherwise cast it to CHAR(512)."""
+        return t.cast(Query, self.cast("text").like(value, case_sensitive=case_sensitive, escape=escape))
+
+    def len(self) -> Expression:
+        """Number of elements; LENGTH() only exists for strings."""
+        return Expression(self.db, _array_cardinality, self, None, "integer")
+
+
+def ArrayField[T](element: type[T], **kw: t.Unpack[FieldSettings]) -> TypedField[list[T]]:
+    """
+    Database type is a native Postgres array (e.g. text[]), Python type is list[element].
+    """
+    kw["type"] = NativeArrayType(element)
+    kw.setdefault("requires", IS_LIST_OF_INTS() if element is int else IS_LIST_OF_STRINGS())
+    kw.setdefault("default", lambda: [])
+    return TypedField(list[element], **kw)  # type: ignore[valid-type]
 
 
 # note: import at the end to prevent circular imports:
