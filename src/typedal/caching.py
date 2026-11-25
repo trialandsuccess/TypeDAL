@@ -9,6 +9,7 @@ import json
 import typing as t
 
 import dill
+from pydal.helpers.methods import delete_uploaded_files
 
 from .fields import TypedField
 from .rows import TypedRows
@@ -195,6 +196,38 @@ def _determine_dependencies(instance: TypedRows[t.Any], rows: Rows, depends_on: 
     return _get_dependency_ids(rows, dependency_keys)
 
 
+def _dependency_probe_sql(db: "TypeDAL", table: str) -> str | None:
+    """SQL returning a row when any cache entry depends on `table`, or None when only the regular path is exact."""
+    cache, dependency = cache_models(db)
+    cache_table = cache._ensure_table_defined()
+    dep_table = dependency._ensure_table_defined()
+    if any(t_._common_filter is not None or db._request_tenant in t_.fields for t_ in (cache_table, dep_table)) or any(
+        hook is not delete_uploaded_files for hook in cache_table._before_delete
+    ):
+        # filters see other predicates on the regular path, and its cache delete runs these hooks: don't second-guess
+        return None
+
+    probes: dict[str, tuple[t.Any, str]] = db.__dict__.setdefault("_typedal_dependency_probes", {})
+    if (cached := probes.get(table)) and cached[0] is dep_table:
+        return cached[1]
+
+    # same shape as the regular path's first statement (cache ids via a dependency subquery), so the same locks
+    related = db(dep_table.table == table)._select(dep_table.entry)
+    sql = str(db(cache_table.id.belongs(related))._select(cache_table.id, limitby=(0, 1), orderby_on_limitby=False))
+    probes[table] = (dep_table, sql)
+    return sql
+
+
+def has_cache_dependencies(db: "TypeDAL", table: str) -> bool:
+    """Whether any cache entry may depend on `table`; False means invalidating it would change nothing."""
+    sql = _dependency_probe_sql(db, table)
+    if sql is None:
+        return True
+    adapter = db._adapter
+    adapter.execute(sql)
+    return bool(adapter.fetchall())
+
+
 def remove_cache(db: "TypeDAL", idx: int | t.Iterable[int], table: str) -> None:
     """
     Remove any cache entries that are dependant on one or multiple indices of a table.
@@ -202,6 +235,12 @@ def remove_cache(db: "TypeDAL", idx: int | t.Iterable[int], table: str) -> None:
     if not isinstance(idx, t.Iterable):
         idx = [idx]
 
+    if has_cache_dependencies(db, table):
+        _remove_cache_entries(db, idx, table)
+
+
+def _remove_cache_entries(db: "TypeDAL", idx: t.Iterable[int], table: str) -> None:
+    """Delete the cache entries that depend on these rows of `table`, without probing first."""
     cache, dependency = cache_models(db)
     related = dependency.where(table=table).where(lambda row: row.idx.belongs(idx)).select("entry").to_sql()
 
@@ -217,6 +256,9 @@ def remove_cache_for_table(db: "TypeDAL", table: str | type[TypedTable]) -> None
     """
     if not isinstance(table, str):
         table = str(table._table)
+
+    if not has_cache_dependencies(db, table):
+        return
 
     cache, dependency = cache_models(db)
     related = dependency.where(table=table).select("entry").to_sql()
@@ -249,8 +291,10 @@ def _remove_cache(db: "TypeDAL", s: Set, tablename: str) -> None:
     """
     Used as the table._before_delete for every TypeDAL table (on by default).
     """
+    # the id lookup comes first (as before), so the probe runs at the point the cache delete used to: same locks
     indeces = s.select("id").column("id")
-    remove_cache(db, indeces, tablename)
+    if has_cache_dependencies(db, tablename):
+        _remove_cache_entries(db, indeces, tablename)
 
 
 def _remove_cache_after_update(db: "TypeDAL", rows: Set, tablename: str) -> None:
@@ -267,6 +311,47 @@ def _remove_cache_after_update(db: "TypeDAL", rows: Set, tablename: str) -> None
     else:
         # cache dependencies only exist for TypedTables, whose primary key is always the integer id
         remove_cache(db, t.cast(list[int], affected_ids), tablename)
+
+
+class _CacheInvalidationHook:
+    """Base for the cache invalidation hooks `db.define` adds to every TypeDAL table."""
+
+    __slots__ = ("db", "tablename")
+
+    def __init__(self, db: "TypeDAL", tablename: str) -> None:
+        """Bind the hook to its database and (pydal) table name."""
+        self.db = db
+        self.tablename = tablename
+
+
+class AfterInsertCacheHook(_CacheInvalidationHook):
+    """table._after_insert: a new row may match any cached query of its table."""
+
+    __slots__ = ()
+
+    def __call__(self, _row: t.Any, _id: t.Any) -> None:
+        """Invalidate every cache entry depending on the table."""
+        remove_cache_for_table(self.db, self.tablename)
+
+
+class AfterUpdateCacheHook(_CacheInvalidationHook):
+    """table._after_update: invalidate the cache entries of the updated rows."""
+
+    __slots__ = ()
+
+    def __call__(self, rows: Set, _row: t.Any) -> None:
+        """Invalidate cache entries depending on the updated rows."""
+        _remove_cache_after_update(self.db, rows, self.tablename)
+
+
+class BeforeDeleteCacheHook(_CacheInvalidationHook):
+    """table._before_delete: invalidate the cache entries of the rows about to be deleted."""
+
+    __slots__ = ()
+
+    def __call__(self, s: Set) -> None:
+        """Invalidate cache entries depending on the rows in `s` (returns None, so the delete goes on)."""
+        _remove_cache(self.db, s, self.tablename)
 
 
 def get_expire(
