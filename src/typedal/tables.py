@@ -266,9 +266,14 @@ class TableMeta(type):
         """
         Insert multiple rows, returns a TypedRows set of new instances.
         """
+        from .bulk_insert import bulk_insert_ids
+
         table = self._ensure_table_defined()
         require_permission(self._permissions, "insert")
-        result = table.bulk_insert(items)
+        result = bulk_insert_ids(table, items)
+        if result is None:
+            result = table.bulk_insert(items)
+        # selected again, so values set by the database (defaults, triggers) are there
         return self.where(lambda row: row.id.belongs(result)).collect()
 
     def update_or_insert(

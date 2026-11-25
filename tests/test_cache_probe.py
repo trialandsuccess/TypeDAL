@@ -85,7 +85,9 @@ def test_writes_without_cache_entries_only_probe(pdb: t.Any) -> None:
 
     assert cache_statements(pdb) == []
     probes = [s for s in pdb.statements if "typedal_cache_dependency" in s]
-    assert len(probes) == 7  # the check above, then one per hook call: 3 inserted rows, 1 update, 2 deletes
+    assert (
+        len(probes) == 6
+    )  # the check above, then one per insert call (the bulk insert probes once), 1 update, 2 deletes
     assert sorted(r.name for r in pdb(pdb.probe_pet).select()) == ["a2", "d", "e", "f"]
 
 
