@@ -14,8 +14,10 @@ import typing as t
 from collections import ChainMap
 
 from pydal import DAL
+from pydal.adapters.base import BaseAdapter
+from pydal.objects import Set as PydalSet
 
-from .types import AnyDict, Expression, Field, Row, Table, Template
+from .types import AnyDict, Expression, Field, Row, Rows, Table, Template
 
 try:
     import annotationlib
@@ -292,6 +294,33 @@ def match_strings(patterns: list[str] | str, string_list: list[str]) -> list[str
         matches.extend([s for s in string_list if fnmatch.fnmatch(s, pattern)])
 
     return matches
+
+
+def first_column(rows: t.Iterable[t.Sequence[t.Any]], *_: t.Any, **__: t.Any) -> list[t.Any]:
+    """A select processor returning the first column's raw values: for `select("id")` exactly what its Rows hold."""
+    return [row[0] for row in rows]
+
+
+# methods a select goes through on its way to the processor; an instance-level override of any of them is custom
+_SELECT_PATH = ("select", "_select", "_select_wcols", "_select_aux", "expand_all", "rowslice")
+
+
+def plain_rows(selection: t.Any) -> bool:
+    """Whether this Set selects with pydal's own code and classes, so `first_column` gives what its Rows would."""
+    db = selection.db
+    adapter = db._adapter
+    return (
+        db.Row is Row
+        and db.Rows is Rows
+        and type(selection).select is PydalSet.select
+        and "select" not in vars(selection)
+        and type(adapter).__module__.startswith("pydal.adapters.")
+        and all(
+            getattr(getattr(adapter, name), "__func__", None) is getattr(BaseAdapter, name)
+            for name in ("parse", "_parse", "parse_value", "_parse_expand_colnames")
+        )
+        and not any(name in vars(adapter) for name in _SELECT_PATH)
+    )
 
 
 def utcnow() -> dt.datetime:

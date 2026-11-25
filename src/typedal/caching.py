@@ -12,6 +12,7 @@ import dill
 from pydal.helpers.methods import delete_uploaded_files
 
 from .fields import TypedField
+from .helpers import first_column, plain_rows
 from .rows import TypedRows
 from .tables import TypedTable
 from .types import CacheStatus, Field, Query, Rows, Set
@@ -292,7 +293,10 @@ def _remove_cache(db: "TypeDAL", s: Set, tablename: str) -> None:
     Used as the table._before_delete for every TypeDAL table (on by default).
     """
     # the id lookup comes first (as before), so the probe runs at the point the cache delete used to: same locks
-    indeces = s.select("id").column("id")
+    if plain_rows(s):
+        indeces = t.cast(list[int], s.select("id", processor=first_column))
+    else:  # custom set, adapter, Row or Rows: let them build the ids, as before
+        indeces = s.select("id").column("id")
     if has_cache_dependencies(db, tablename):
         _remove_cache_entries(db, indeces, tablename)
 

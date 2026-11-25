@@ -26,8 +26,10 @@ from .helpers import (
     all_annotations,
     as_lambda,
     filter_out,
+    first_column,
     looks_like,
     normalize_table_keys,
+    plain_rows,
     throw,
 )
 from .tables import TableMeta, TypedTable, _TypedTable
@@ -747,7 +749,11 @@ class QueryBuilder[T_MetaInstance: _TypedTable](Select):
         """
         require_permission(self._permissions, "delete")
         db = self._get_db()
-        removed_ids = [_.id for _ in db(self._mutation_query()).select("id")]
+        selection = db(self._mutation_query())
+        if plain_rows(selection):
+            removed_ids = t.cast(list[int], selection.select("id", processor=first_column))
+        else:  # custom set, adapter, Row or Rows: let them build the ids, as before
+            removed_ids = [_.id for _ in selection.select("id")]
         if db(self._mutation_query()).delete():
             # success!
             return removed_ids
